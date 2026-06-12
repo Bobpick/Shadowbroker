@@ -91,3 +91,11 @@ def test_plan_playbook_track_snapshot_requires_query():
 def test_expensive_commands_set():
     assert "get_report" in EXPENSIVE_COMMANDS
     assert "route_query" not in EXPENSIVE_COMMANDS
+
+
+def test_routing_manifest_includes_infonet_hints():
+    manifest = routing_manifest()
+    recipes = " ".join(item.get("use", "") for item in manifest.get("recipes", []))
+    assert "post_gate_message" in recipes
+    writes = manifest.get("agent_surface", {}).get("writes", [])
+    assert "post_gate_message" in writes

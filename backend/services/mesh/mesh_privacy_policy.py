@@ -157,8 +157,45 @@ def transport_tier_is_sufficient(current_tier: str | None, required_tier: str | 
     return TRANSPORT_TIER_ORDER[current] >= TRANSPORT_TIER_ORDER[required]
 
 
-def release_lane_required_tier(lane: str) -> str:
-    return network_release_required_tier(lane)
+_DM_RUNTIME_ENFORCEMENT_ROUTES = {
+    ("POST", "/api/mesh/dm/send"),
+    ("POST", "/api/mesh/dm/poll"),
+    ("GET", "/api/mesh/dm/poll"),
+    ("GET", "/api/mesh/dm/count"),
+    ("POST", "/api/mesh/dm/count"),
+}
+
+
+def runtime_route_enforcement_tier(path: str, method: str, *, static_tier: str) -> str:
+    """Adjust static route tiers for Tor-only nodes that never reach private_strong."""
+    normalized_path = str(path or "").strip()
+    normalized_method = str(method or "").strip().upper()
+    static = normalize_transport_tier(static_tier)
+    if (normalized_method, normalized_path) not in _DM_RUNTIME_ENFORCEMENT_ROUTES:
+        return static
+    if static != "private_strong":
+        return static
+    return release_lane_required_tier("dm")
+
+
+def release_lane_required_tier(lane: str, *, wormhole_state: dict[str, Any] | None = None) -> str:
+    normalized_lane = str(lane or "").strip().lower()
+    required = network_release_required_tier(normalized_lane)
+    if normalized_lane != "dm":
+        return required
+    state = wormhole_state
+    if state is None:
+        try:
+            from services.wormhole_supervisor import get_wormhole_state
+
+            state = get_wormhole_state()
+        except Exception:
+            state = {}
+    # Tor-only nodes never reach private_strong (needs Arti + RNS). Encrypted
+    # relay over Arti still preserves ciphertext privacy for offline delivery.
+    if not bool((state or {}).get("rns_enabled")):
+        return "private_transitional"
+    return required
 
 
 def private_delivery_status(status_code: str, *, reason_code: str = "", plain_reason: str = "") -> dict[str, str]:

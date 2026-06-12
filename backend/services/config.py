@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     # When true, empty MESH_PEER_PUSH_SECRET uses the public fleet HMAC for seed join/announce.
     MESH_INFONET_FLEET_JOIN: bool = True
     MESH_INFONET_FLEET_JOIN_DISABLED: bool = False
+    # Headless relay/seed compose: auto-enable Tor wormhole on startup so
+    # docker compose redeploys keep the fleet onion reachable.
+    MESH_INFONET_RELAY_AUTO_WORMHOLE: bool = False
+    MESH_INFONET_RELAY_AUTO_WORMHOLE_DISABLED: bool = False
     MESH_BOOTSTRAP_SIGNER_ID: str = ""
     MESH_PEER_REGISTRY_ENABLED: bool = False
     MESH_PEER_REGISTRY_DISABLED: bool = False

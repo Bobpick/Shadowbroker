@@ -583,56 +583,81 @@ class ShadowBrokerClient:
         r = await self._delete("/api/ai/inject", params=params)
         return r.json()
 
-    # ── Wormhole / InfoNet ────────────────────────────────────────────
+    # ── Wormhole / InfoNet (operator-delegated via command channel) ───
 
+    async def ensure_infonet_ready(self, *, join_swarm: bool = True) -> dict:
+        """Warm Tor, enable the node, and join the private Infonet swarm."""
+        resp = await self.send_command(
+            "ensure_infonet_ready",
+            {"join_swarm": join_swarm},
+        )
+        return resp.get("result") if isinstance(resp.get("result"), dict) else resp
+
+    async def join_infonet_swarm(self) -> dict:
+        """Announce to the fleet seed and pull the signed peer manifest."""
+        resp = await self.send_command("join_infonet_swarm", {})
+        return resp.get("result") if isinstance(resp.get("result"), dict) else resp
+
+    async def infonet_status(self) -> dict:
+        """Participant node + hashchain status snapshot."""
+        return self.unwrap_channel_result(await self.send_command("infonet_status", {}))
+
+    async def list_gates(self) -> dict:
+        """List encrypted gate channels."""
+        return self.unwrap_channel_result(await self.send_command("list_gates", {}))
+
+    async def read_gate_messages(
+        self,
+        gate_id: str,
+        *,
+        limit: int = 20,
+        decrypt: bool = False,
+    ) -> dict:
+        """Read gate messages (optionally decrypt with the operator MLS persona)."""
+        return self.unwrap_channel_result(
+            await self.send_command(
+                "read_gate_messages",
+                {"gate_id": gate_id, "limit": limit, "decrypt": decrypt},
+            )
+        )
+
+    async def post_to_gate(self, gate_id: str, message: str, *, reply_to: str = "") -> dict:
+        """Post an MLS-encrypted gate message on behalf of the operator."""
+        resp = await self.send_command(
+            "post_gate_message",
+            {
+                "gate_id": gate_id,
+                "plaintext": message,
+                "reply_to": reply_to,
+            },
+        )
+        return resp.get("result") if isinstance(resp.get("result"), dict) else resp
+
+    async def cast_vote(
+        self,
+        target_id: str,
+        vote: int,
+        *,
+        gate: str = "",
+    ) -> dict:
+        """Upvote (+1) or downvote (-1) a node; optional gate scope."""
+        resp = await self.send_command(
+            "cast_vote",
+            {"target_id": target_id, "vote": vote, "gate": gate},
+        )
+        return resp.get("result") if isinstance(resp.get("result"), dict) else resp
+
+    # Legacy aliases — prefer command-channel methods above
     async def join_wormhole(self) -> dict:
-        """Create a Wormhole identity and join the network."""
-        r = await self._post("/api/wormhole/join")
-        return r.json()
-
-    async def sign_event(self, event_type: str, payload: dict) -> dict:
-        """Sign an event with the Wormhole Ed25519 key."""
-        r = await self._post("/api/wormhole/sign", json={
-            "event_type": event_type,
-            "payload": payload,
-        })
-        r.raise_for_status()
-        return r.json()
+        return await self.ensure_infonet_ready(join_swarm=True)
 
     async def post_to_infonet(self, message: str, event_type: str = "message") -> dict:
-        """Post a signed event to the InfoNet ledger."""
-        signed = await self.sign_event(event_type, {"message": message})
-        r = await self._post("/api/mesh/infonet/ingest", json={
-            "events": [signed],
-        })
-        r.raise_for_status()
-        return r.json()
+        if event_type != "message":
+            raise RuntimeError("use post_to_gate for encrypted gate traffic")
+        return await self.post_to_gate("infonet", message)
 
-    async def read_infonet(self, limit: int = 20, gate: str = "") -> dict:
-        """Read recent InfoNet messages."""
-        params = {"limit": limit}
-        if gate:
-            params["gate"] = gate
-        r = await self._get("/api/mesh/infonet/messages", params=params)
-        return r.json()
-
-    async def list_gates(self) -> list:
-        """List available encrypted gate channels."""
-        r = await self._get("/api/mesh/gate/list")
-        return r.json()
-
-    async def post_to_gate(self, gate_id: str, message: str) -> dict:
-        """Compose and post an MLS-encrypted message to a gate."""
-        compose = await self._post("/api/wormhole/gate/message/compose", json={
-            "gate_id": gate_id,
-            "plaintext": message,
-        })
-        compose.raise_for_status()
-        envelope = compose.json()
-
-        post = await self._post(f"/api/mesh/gate/{gate_id}/message", json=envelope)
-        post.raise_for_status()
-        return post.json()
+    async def read_infonet(self, limit: int = 20, gate: str = "infonet") -> dict:
+        return await self.read_gate_messages(gate or "infonet", limit=limit, decrypt=True)
 
     # ── Meshtastic ────────────────────────────────────────────────────
 
@@ -830,19 +855,31 @@ class ShadowBrokerClient:
 
     # ── Encrypted DMs ─────────────────────────────────────────────
 
-    async def send_encrypted_dm(self, recipient_pubkey: str, message: str) -> dict:
-        """Send an E2E encrypted direct message to another Wormhole identity."""
-        r = await self._post("/api/wormhole/dm/send", json={
-            "recipient": recipient_pubkey,
-            "plaintext": message,
-        })
-        r.raise_for_status()
-        return r.json()
+    async def send_encrypted_dm(
+        self,
+        peer_id: str,
+        message: str,
+        *,
+        delivery_class: str = "shared",
+        recipient_token: str = "",
+    ) -> dict:
+        """Send an E2E encrypted DM to another node (peer_id / !sb_...)."""
+        resp = await self.send_command(
+            "send_dm",
+            {
+                "peer_id": peer_id,
+                "plaintext": message,
+                "delivery_class": delivery_class,
+                "recipient_token": recipient_token,
+            },
+        )
+        return resp.get("result") if isinstance(resp.get("result"), dict) else resp
 
-    async def read_encrypted_dms(self, limit: int = 20) -> list:
-        """Read received encrypted direct messages."""
-        r = await self._get("/api/wormhole/dm/inbox", params={"limit": limit})
-        return r.json()
+    async def read_encrypted_dms(self, limit: int = 20) -> dict:
+        """Poll encrypted DMs for the operator identity."""
+        return self.unwrap_channel_result(
+            await self.send_command("poll_dms", {"limit": limit})
+        )
 
     # ── Dead Drop ─────────────────────────────────────────────────
 

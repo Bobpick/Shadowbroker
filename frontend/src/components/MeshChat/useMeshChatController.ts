@@ -27,6 +27,7 @@ import {
   addContact,
   updateContact,
   blockContact,
+  severContact,
   getDMNotify,
   nextSequence,
   verifyEventSignature,
@@ -103,6 +104,7 @@ import {
   isEncryptedGateEnvelope,
 } from '@/mesh/gateEnvelope';
 import { fetchWormholeSettings, joinWormhole, leaveWormhole } from '@/mesh/wormholeClient';
+import { connectDeliveryMeta, ensureDmOutboxReleased } from '@/mesh/dmConnectDelivery';
 import {
   buildMailboxClaims,
   countDmMailboxes,
@@ -2295,6 +2297,7 @@ export function useMeshChatController({
                     API_BASE,
                     m.sender_id,
                     senderContact?.invitePinnedPrekeyLookupHandle,
+                    { lookupPeerUrl: senderContact?.invitePinnedLookupPeerUrl },
                   );
                   if (senderKey?.dh_pub_key) {
                     const sharedKey = await deriveSharedKey(String(senderKey.dh_pub_key));
@@ -2310,6 +2313,7 @@ export function useMeshChatController({
                   API_BASE,
                   m.sender_id,
                   senderContact?.invitePinnedPrekeyLookupHandle,
+                  { lookupPeerUrl: senderContact?.invitePinnedLookupPeerUrl },
                 ).catch(() => null);
                 if (senderKey?.dh_pub_key) {
                   addContact(m.sender_id, String(senderKey.dh_pub_key), undefined, senderKey.dh_algo);
@@ -3336,7 +3340,9 @@ export function useMeshChatController({
         'import or re-import a signed invite before refreshing this contact; legacy direct lookup is disabled',
       );
     }
-    const registry = await fetchDmPublicKey(API_BASE, targetId, lookupHandle).catch(() => null);
+    const registry = await fetchDmPublicKey(API_BASE, targetId, lookupHandle, {
+      lookupPeerUrl: existing?.invitePinnedLookupPeerUrl,
+    }).catch(() => null);
     if (!registry?.dh_pub_key) {
       throw new Error(
         'invite-scoped lookup failed for this contact; re-import a signed invite and try again',
@@ -3585,29 +3591,26 @@ export function useMeshChatController({
       setTimeout(() => setSendError(''), 3000);
       return;
     }
-    if (requiresVerifiedFirstContact(getContacts()[targetId])) {
-      setSendError('import a signed invite before first secure contact; TOFU requests are disabled');
-      setTimeout(() => setSendError(''), 4000);
-      return;
-    }
-    if (wormholeEnabled && !wormholeReadyState) {
-      setSendError('wormhole required for dead drop');
-      setTimeout(() => setSendError(''), 3000);
-      return;
-    }
     try {
       const registration = await ensureRegisteredDmKey(API_BASE, identity!, { force: false });
       const myPub = registration.dhPubKey;
       if (!myPub) return;
       const dhAlgo = registration.dhAlgo || getDHAlgo() || 'X25519';
       const targetContact = getContacts()[targetId];
-      const lookupHandle = String(targetContact?.invitePinnedPrekeyLookupHandle || '').trim();
+      let lookupHandle = String(targetContact?.invitePinnedPrekeyLookupHandle || '').trim();
+      let resolvedTargetId = targetId;
+      if (!lookupHandle && /^[a-fA-F0-9]{32,}$/.test(targetId)) {
+        lookupHandle = targetId;
+        resolvedTargetId = '';
+      }
       if (!lookupHandle) {
         throw new Error(
-          'import or re-import a signed invite before sending a contact request; legacy direct lookup is disabled',
+          'Paste their short contact address (from Secure Messages → Copy Short Address), not their node id.',
         );
       }
-      const targetKey = await fetchDmPublicKey(API_BASE, targetId, lookupHandle);
+      const targetKey = await fetchDmPublicKey(API_BASE, resolvedTargetId, lookupHandle, {
+        lookupPeerUrl: targetContact?.invitePinnedLookupPeerUrl,
+      });
       if (!targetKey?.dh_pub_key) {
         throw new Error(
           'invite-scoped lookup failed for this contact; re-import a signed invite and try again',
@@ -3631,12 +3634,13 @@ export function useMeshChatController({
           geoHint = '';
         }
       }
+      const recipientId = String(targetKey.agent_id || resolvedTargetId || targetId).trim();
       const requestPlaintext = buildContactOfferMessage(myPub, dhAlgo, geoHint || undefined);
       let ciphertext = '';
       const secureRequired = await isWormholeSecureRequired();
       if (await canUseWormholeBootstrap()) {
         try {
-          ciphertext = await bootstrapEncryptAccessRequest(targetId, requestPlaintext);
+          ciphertext = await bootstrapEncryptAccessRequest(recipientId, requestPlaintext);
         } catch {
           ciphertext = '';
         }
@@ -3651,16 +3655,24 @@ export function useMeshChatController({
       const msgId = `dm_${Date.now()}_${identity!.nodeId.slice(-4)}`;
       const msgTimestamp = Math.floor(Date.now() / 1000);
       await sleep(jitterDelay(ACCESS_REQUEST_BATCH_DELAY_MS, ACCESS_REQUEST_BATCH_JITTER_MS));
+      const connectMeta = connectDeliveryMeta({
+        intent: lookupHandle === targetId ? 'invite_short_address' : 'contact_request',
+        contact: targetContact,
+      });
       await enqueueDmSend(async () => {
-        const sent = await sendOffLedgerConsentMessage({
-          apiBase: API_BASE,
-          identity: identity!,
-          recipientId: targetId,
-          recipientDhPub: String(targetKey.dh_pub_key),
-          ciphertext,
-          msgId,
-          timestamp: msgTimestamp,
-        });
+        const sent = await ensureDmOutboxReleased(
+          await sendOffLedgerConsentMessage({
+            apiBase: API_BASE,
+            identity: identity!,
+            recipientId,
+            recipientDhPub: String(targetKey.dh_pub_key),
+            ciphertext,
+            msgId,
+            timestamp: msgTimestamp,
+            connectIntent: connectMeta.connectIntent,
+            lookupPeerUrl: connectMeta.lookupPeerUrl,
+          }),
+        );
         if (!sent.ok) {
           throw new Error(sent.detail || 'access_request_send_failed');
         }
@@ -3668,7 +3680,8 @@ export function useMeshChatController({
           setLastDmTransport(sent.transport);
         }
       });
-      const updated = [...pendingSent, targetId];
+      const recipientForPending = String(targetKey.agent_id || resolvedTargetId || targetId).trim();
+      const updated = [...pendingSent, recipientForPending];
       setPendingSent(updated, dmConsentScopeId);
       setPendingSentState(updated);
     } catch (err) {
@@ -3680,11 +3693,6 @@ export function useMeshChatController({
 
   const handleAcceptRequest = async (senderId: string) => {
     if (!hasId) return;
-    if (requiresVerifiedFirstContact(getContacts()[senderId])) {
-      setSendError('import a signed invite before accepting an unverified request');
-      setTimeout(() => setSendError(''), 4000);
-      return;
-    }
     if (anonymousDmBlocked) {
       setSendError('hidden transport required for anonymous dm');
       setTimeout(() => setSendError(''), 3000);
@@ -3697,6 +3705,7 @@ export function useMeshChatController({
         API_BASE,
         senderId,
         existingContact?.invitePinnedPrekeyLookupHandle,
+        { lookupPeerUrl: existingContact?.invitePinnedLookupPeerUrl },
       ).catch(() => null);
       const resolvedDhPubKey = String(registry?.dh_pub_key || req?.dh_pub_key || '').trim();
       const resolvedDhAlgo = String(registry?.dh_algo || req?.dh_algo || 'X25519').trim();
@@ -3843,16 +3852,24 @@ export function useMeshChatController({
         }
         const msgId = `dm_${Date.now()}_${identity!.nodeId.slice(-4)}`;
         const msgTimestamp = Math.floor(Date.now() / 1000);
+        const acceptMeta = connectDeliveryMeta({
+          intent: 'contact_accept',
+          contact: existingContact,
+        });
         await enqueueDmSend(async () => {
-          const sent = await sendOffLedgerConsentMessage({
-            apiBase: API_BASE,
-            identity: identity!,
-            recipientId: senderId,
-            recipientDhPub: resolvedDhPubKey,
-            ciphertext,
-            msgId,
-            timestamp: msgTimestamp,
-          });
+          const sent = await ensureDmOutboxReleased(
+            await sendOffLedgerConsentMessage({
+              apiBase: API_BASE,
+              identity: identity!,
+              recipientId: senderId,
+              recipientDhPub: resolvedDhPubKey,
+              ciphertext,
+              msgId,
+              timestamp: msgTimestamp,
+              connectIntent: acceptMeta.connectIntent,
+              lookupPeerUrl: acceptMeta.lookupPeerUrl,
+            }),
+          );
           if (!sent.ok) {
             throw new Error(sent.detail || 'access_granted_send_failed');
           }
@@ -3878,11 +3895,6 @@ export function useMeshChatController({
 
   const handleDenyRequest = (senderId: string) => {
     void (async () => {
-      if (requiresVerifiedFirstContact(getContacts()[senderId])) {
-        setSendError('import a signed invite before denying an unverified request');
-        setTimeout(() => setSendError(''), 4000);
-        return;
-      }
       try {
         const req = accessRequests.find((r) => r.sender_id === senderId);
         const existingContact = getContacts()[senderId];
@@ -3893,6 +3905,7 @@ export function useMeshChatController({
                 API_BASE,
                 senderId,
                 existingContact?.invitePinnedPrekeyLookupHandle,
+                { lookupPeerUrl: existingContact?.invitePinnedLookupPeerUrl },
               ).catch(() => null);
         if (identity && targetKey?.dh_pub_key) {
           const denyPlaintext = buildContactDenyMessage('declined');
@@ -3933,6 +3946,20 @@ export function useMeshChatController({
         setAccessRequestsState(updated);
       }
     })();
+  };
+
+  const handleSeverContact = async (agentId: string) => {
+    try {
+      await severContact(agentId);
+      setContacts(getContacts());
+      if (selectedContact === agentId) {
+        setDmView('contacts');
+      }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'end contact failed';
+      setSendError(detail);
+      setTimeout(() => setSendError(''), 4000);
+    }
   };
 
   const handleBlockDM = async (agentId: string) => {
@@ -4751,6 +4778,7 @@ export function useMeshChatController({
     handleAcceptRequest,
     handleDenyRequest,
     handleBlockDM,
+    handleSeverContact,
     handleVouch,
     handleAddContact,
     openChat,

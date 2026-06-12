@@ -6,6 +6,10 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     env_file: .env
+    environment:
+      # Keep Tor wormhole up across redeploys (no NODE UI on headless relay).
+      MESH_INFONET_RELAY_AUTO_WORMHOLE: "true"
+      MESH_ARTI_ENABLED: "true"
     volumes:
       - relay_data:/app/data
     restart: unless-stopped

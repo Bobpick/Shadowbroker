@@ -36,6 +36,15 @@ LATENCY_TIER_MS: dict[str, int] = {
     "entity_expand": 40,
     "osint_lookup": 200,
     "run_playbook": 120,
+    "infonet_status": 20,
+    "list_gates": 15,
+    "read_gate_messages": 40,
+    "poll_dms": 80,
+    "ensure_infonet_ready": 120000,
+    "join_infonet_swarm": 90000,
+    "post_gate_message": 15000,
+    "cast_vote": 5000,
+    "send_dm": 20000,
     "search_telemetry": 8000,
     "get_telemetry": 3500,
     "get_slow_telemetry": 1500,
@@ -172,6 +181,18 @@ def routing_manifest() -> dict[str, Any]:
                 "intent": "hot snapshot",
                 "use": "run_playbook(name=hot_snapshot)",
             },
+            {
+                "intent": "post to infonet gate / join swarm",
+                "use": "ensure_infonet_ready then post_gate_message (full tier)",
+            },
+            {
+                "intent": "read encrypted gate traffic",
+                "use": "read_gate_messages(gate_id=infonet, decrypt=true)",
+            },
+            {
+                "intent": "dm another node",
+                "use": "send_dm(peer_id=..., plaintext=...) (full tier)",
+            },
         ],
         "playbooks": {
             name: {"description": spec.get("description", "")}
@@ -184,6 +205,16 @@ def routing_manifest() -> dict[str, Any]:
                 "add_watch",
                 "inject_data",
                 "place_analysis_zone",
+                "ensure_infonet_ready",
+                "post_gate_message",
+                "cast_vote",
+                "send_dm",
+            ],
+            "infonet_reads": [
+                "infonet_status",
+                "list_gates",
+                "read_gate_messages",
+                "poll_dms",
             ],
         },
     }

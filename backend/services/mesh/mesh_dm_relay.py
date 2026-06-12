@@ -1506,6 +1506,7 @@ class DMRelay:
         sender_token_hash: str = "",
         payload_format: str = "dm1",
         session_welcome: str = "",
+        replication_peer_urls: list[str] | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             self._refresh_from_shared_relay()
@@ -1609,6 +1610,7 @@ class DMRelay:
                 if envelope_for_push:
                     self._replicate_envelope_to_peers_async(
                         envelope=envelope_for_push,
+                        preferred_peer_urls=list(replication_peer_urls or []),
                     )
             except Exception:
                 metrics_inc("dm_replication_push_error")
@@ -1716,6 +1718,7 @@ class DMRelay:
         self,
         *,
         envelope: dict[str, Any],
+        preferred_peer_urls: list[str] | None = None,
     ) -> None:
         """Push an outbound DM envelope to every authenticated relay peer.
 
@@ -1747,7 +1750,15 @@ class DMRelay:
                     authenticated_push_peer_urls,
                 )
 
-                peers = authenticated_push_peer_urls()
+                peers: list[str] = []
+                for raw_url in list(preferred_peer_urls or []):
+                    normalized_preferred = normalize_peer_url(str(raw_url or "").strip())
+                    if normalized_preferred and normalized_preferred not in peers:
+                        peers.append(normalized_preferred)
+                for peer_url in authenticated_push_peer_urls():
+                    normalized_peer = normalize_peer_url(str(peer_url or "").strip())
+                    if normalized_peer and normalized_peer not in peers:
+                        peers.append(normalized_peer)
                 if not peers:
                     return
 

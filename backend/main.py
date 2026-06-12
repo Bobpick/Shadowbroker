@@ -2696,8 +2696,10 @@ async def lifespan(app: FastAPI):
     if not _MESH_ONLY:
         def _startup_wormhole_runtime():
             try:
+                from services.mesh.mesh_infonet_relay_bootstrap import ensure_infonet_relay_wormhole_ready
                 from services.wormhole_supervisor import get_wormhole_state, sync_wormhole_with_settings
 
+                ensure_infonet_relay_wormhole_ready(reason="startup_relay")
                 sync_wormhole_with_settings()
                 _resume_private_delivery_background_work(
                     current_tier=_current_private_lane_tier(get_wormhole_state()),
@@ -3472,7 +3474,10 @@ def _request_private_surface_warmup(*, path: str, method: str, current_tier: str
 
 
 def _is_invite_scoped_prekey_bundle_lookup(request: Request, path: str) -> bool:
-    if request.method.upper() != "GET" or str(path or "").strip() != "/api/mesh/dm/prekey-bundle":
+    if request.method.upper() != "GET":
+        return False
+    normalized_path = str(path or "").strip()
+    if normalized_path not in {"/api/mesh/dm/prekey-bundle", "/api/mesh/dm/pubkey"}:
         return False
     try:
         lookup_token = str(request.query_params.get("lookup_token", "") or "").strip()
@@ -3573,6 +3578,14 @@ async def enforce_high_privacy_mesh(request: Request, call_next):
         except Exception:
             logger.debug("Private surface warm-up request failed", exc_info=True)
         required_tier = _minimum_transport_tier(path, request.method)
+        if required_tier:
+            from services.mesh.mesh_privacy_policy import runtime_route_enforcement_tier
+
+            required_tier = runtime_route_enforcement_tier(
+                path,
+                request.method,
+                static_tier=required_tier,
+            )
         if required_tier:
             if not _transport_tier_is_sufficient(current_tier, required_tier):
                 if request.method.upper() == "POST" and path == "/api/mesh/dm/send":
@@ -6865,12 +6878,22 @@ def _queue_dm_release(*, current_tier: str, payload: dict[str, Any]) -> dict[str
             required_tier=release_lane_required_tier("dm"),
         )
     _wake_private_release_worker()
+    outbox_id = str(item.get("id", "") or "")
+    auto_release: dict[str, Any] = {"ok": True, "skipped": True}
+    if outbox_id:
+        try:
+            from services.mesh.mesh_dm_connect_delivery import auto_release_connect_dm_outbox
+
+            auto_release = auto_release_connect_dm_outbox(outbox_id=outbox_id, payload=payload)
+        except Exception as exc:
+            auto_release = {"ok": False, "detail": str(exc) or type(exc).__name__}
     return {
         "ok": True,
         "msg_id": str(payload.get("msg_id", "") or ""),
-        "outbox_id": str(item.get("id", "") or ""),
+        "outbox_id": outbox_id,
         "queued": True,
         "detail": str((item.get("status") or {}).get("label", "") or "Queued for private delivery"),
+        "auto_release": auto_release,
         "delivery": {
             "state": canonical_release_state(str(item.get("release_state", "") or "queued")),
             "internal_state": str(item.get("release_state", "") or "queued"),
@@ -7043,7 +7066,8 @@ async def _dm_send_from_signed_request(request: Request):
         return {"ok": False, "detail": "DM timestamp is too far from current time"}
     if delivery_class not in ("request", "shared"):
         return {"ok": False, "detail": "delivery_class must be request or shared"}
-    if delivery_class == "request":
+    # Contact requests are the first-contact handshake — do not require prior verification.
+    if delivery_class == "shared":
         try:
             from services.mesh.mesh_wormhole_contacts import verified_first_contact_requirement
 
@@ -7127,6 +7151,8 @@ async def _dm_send_from_signed_request(request: Request):
 
             relay_salt_hex = _os.urandom(16).hex()
 
+    connect_intent = str(body.get("connect_intent", "") or "").strip().lower()
+    lookup_peer_url = str(body.get("lookup_peer_url", "") or "").strip().rstrip("/")
     release_payload = {
         "sender_id": sender_id,
         "sender_token_hash": sender_token_hash,
@@ -7141,6 +7167,16 @@ async def _dm_send_from_signed_request(request: Request):
         "sender_seal": sender_seal,
         "relay_salt": relay_salt_hex,
     }
+    if connect_intent:
+        release_payload["connect_intent"] = connect_intent
+    if lookup_peer_url:
+        release_payload["lookup_peer_url"] = lookup_peer_url
+    try:
+        from services.mesh.mesh_dm_connect_delivery import enrich_connect_release_payload
+
+        release_payload = enrich_connect_release_payload(release_payload)
+    except Exception:
+        pass
     hashchain_spool: dict[str, Any] = {"ok": False, "detail": "not attempted"}
     try:
         from services.mesh.mesh_hashchain import infonet
@@ -7427,7 +7463,12 @@ async def dm_register_key(request: Request):
 
 @app.get("/api/mesh/dm/pubkey")
 @limiter.limit("30/minute")
-async def dm_get_pubkey(request: Request, agent_id: str = "", lookup_token: str = ""):
+async def dm_get_pubkey(
+    request: Request,
+    agent_id: str = "",
+    lookup_token: str = "",
+    lookup_peer_url: str = "",
+):
     """Fetch an agent's DH public key for key exchange."""
     exposure = metadata_exposure_for_request(
         request,
@@ -7447,11 +7488,49 @@ async def dm_get_pubkey(request: Request, agent_id: str = "", lookup_token: str 
     if resolved_lookup:
         key_bundle, resolved_id = dm_relay.get_dh_key_by_lookup(resolved_lookup)
         if key_bundle is None:
-            return dm_lookup_response_view(
-                {"ok": False, "detail": "Agent not found or has no DH key", "lookup_mode": "invite_lookup_handle"},
-                exposure=exposure,
-                lookup_token_present=True,
+            # Invite handles are minted on the owner's node. When a remote peer
+            # pastes a short address, resolve it across the private fleet before
+            # failing — same path as prekey-bundle import.
+            from services.mesh.mesh_wormhole_prekey import fetch_dm_prekey_bundle
+
+            preferred_lookup_peer = str(lookup_peer_url or "").strip().rstrip("/")
+            remote_bundle = fetch_dm_prekey_bundle(
+                agent_id="",
+                lookup_token=resolved_lookup,
+                lookup_peer_urls=[preferred_lookup_peer] if preferred_lookup_peer else None,
             )
+            if remote_bundle.get("ok"):
+                bundle = dict(remote_bundle.get("bundle") or remote_bundle)
+                dh_pub = str(
+                    bundle.get("identity_dh_pub_key", "")
+                    or remote_bundle.get("identity_dh_pub_key", "")
+                    or ""
+                ).strip()
+                if dh_pub:
+                    resolved_id = str(remote_bundle.get("agent_id", "") or resolved_id or "").strip()
+                    key_bundle = {
+                        "dh_pub_key": dh_pub,
+                        "dh_algo": str(remote_bundle.get("dh_algo", "X25519") or "X25519"),
+                        "timestamp": int(remote_bundle.get("timestamp", 0) or 0),
+                        "public_key": str(remote_bundle.get("public_key", "") or ""),
+                        "public_key_algo": str(remote_bundle.get("public_key_algo", "") or ""),
+                        "signature": str(remote_bundle.get("signature", "") or ""),
+                        "sequence": int(remote_bundle.get("sequence", 0) or 0),
+                        "prekey_transparency_head": str(
+                            remote_bundle.get("prekey_transparency_head", "") or ""
+                        ),
+                        "prekey_transparency_size": int(
+                            remote_bundle.get("prekey_transparency_size", 0) or 0
+                        ),
+                        "witness_count": int(remote_bundle.get("witness_count", 0) or 0),
+                        "witness_latest_at": int(remote_bundle.get("witness_latest_at", 0) or 0),
+                    }
+            if key_bundle is None:
+                return dm_lookup_response_view(
+                    {"ok": False, "detail": "Agent not found or has no DH key", "lookup_mode": "invite_lookup_handle"},
+                    exposure=exposure,
+                    lookup_token_present=True,
+                )
         lookup_mode = "invite_lookup_handle"
     if key_bundle is None and resolved_id:
         blocked = legacy_agent_id_lookup_blocked()
@@ -7487,7 +7566,12 @@ async def dm_get_pubkey(request: Request, agent_id: str = "", lookup_token: str 
 
 @app.get("/api/mesh/dm/prekey-bundle")
 @limiter.limit("30/minute")
-async def dm_get_prekey_bundle(request: Request, agent_id: str = "", lookup_token: str = ""):
+async def dm_get_prekey_bundle(
+    request: Request,
+    agent_id: str = "",
+    lookup_token: str = "",
+    lookup_peer_url: str = "",
+):
     exposure = metadata_exposure_for_request(
         request,
         authenticated=_scoped_view_authenticated(request, "mesh"),
@@ -7499,7 +7583,12 @@ async def dm_get_prekey_bundle(request: Request, agent_id: str = "", lookup_toke
             lookup_token_present=bool(lookup_token),
         )
     resolved_id, resolved_lookup = _preferred_dm_lookup_target(agent_id, lookup_token)
-    result = fetch_dm_prekey_bundle(agent_id=resolved_id, lookup_token=resolved_lookup)
+    preferred_lookup_peer = str(lookup_peer_url or "").strip().rstrip("/")
+    result = fetch_dm_prekey_bundle(
+        agent_id=resolved_id,
+        lookup_token=resolved_lookup,
+        lookup_peer_urls=[preferred_lookup_peer] if preferred_lookup_peer else None,
+    )
     return dm_lookup_response_view(
         result,
         exposure=exposure,
@@ -9349,7 +9438,8 @@ class WormholeDmResetRequest(BaseModel):
 
 
 class WormholeDmBootstrapEncryptRequest(BaseModel):
-    peer_id: str
+    peer_id: str = ""
+    lookup_token: str = ""
     plaintext: str
 
 
@@ -11311,9 +11401,12 @@ async def api_wormhole_dm_bootstrap_encrypt(request: Request, body: WormholeDmBo
     result = bootstrap_encrypt_for_peer(
         peer_id=str(body.peer_id or ""),
         plaintext=str(body.plaintext or ""),
+        lookup_token=str(body.lookup_token or ""),
     )
     if isinstance(result, dict) and "trust_level" not in result:
-        result["trust_level"] = _get_contact_trust_level(str(body.peer_id or ""))
+        result["trust_level"] = _get_contact_trust_level(
+            str(result.get("peer_id", "") or body.peer_id or "")
+        )
     return result
 
 
@@ -11329,7 +11422,7 @@ async def api_wormhole_dm_bootstrap_decrypt(request: Request, body: WormholeDmBo
     return result
 
 
-@app.post("/api/wormhole/dm/sender-token", dependencies=[Depends(require_admin)])
+@app.post("/api/wormhole/dm/sender-token", dependencies=[Depends(require_local_operator)])
 @limiter.limit("60/minute")
 async def api_wormhole_dm_sender_token(request: Request, body: WormholeDmSenderTokenRequest):
     if _safe_int(body.count or 1, 1) > 1:
@@ -11546,6 +11639,24 @@ async def api_wormhole_dm_contact_delete(request: Request, peer_id: str):
 
     deleted = delete_wormhole_dm_contact(peer_id)
     return {"ok": True, "peer_id": peer_id, "deleted": deleted}
+
+
+@app.post("/api/wormhole/dm/contact/{peer_id}/sever", dependencies=[Depends(require_admin)])
+@limiter.limit("60/minute")
+async def api_wormhole_dm_contact_sever(request: Request, peer_id: str):
+    from services.mesh.mesh_wormhole_contacts import sever_wormhole_dm_contact
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    block = bool(body.get("block", False))
+    try:
+        return sever_wormhole_dm_contact(peer_id, block=block)
+    except ValueError as exc:
+        return {"ok": False, "detail": str(exc)}
 
 
 _WORMHOLE_PUBLIC_FIELDS = {"installed", "configured", "running", "ready"}

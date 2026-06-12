@@ -682,6 +682,20 @@ export default function InfonetShell({
 
           {/* Main Terminal Area */}
           <div className="flex-1 overflow-y-auto pr-4 pb-4">
+            <button
+              type="button"
+              onClick={() => handleNavigate('messages')}
+              className="w-full mb-6 text-left border border-emerald-500/30 bg-emerald-950/10 hover:bg-emerald-950/20 px-4 py-3 transition-colors"
+            >
+              <div className="flex items-center gap-2 text-emerald-300 text-xs tracking-[0.2em] uppercase font-bold">
+                <Mail size={14} />
+                Secure Messages — Quick Connect
+              </div>
+              <p className="mt-2 text-sm text-gray-400 leading-relaxed">
+                Message someone on the fleet in three steps: copy your short address (or ask for theirs),
+                paste it in Secure Messages, tap Send Request — they tap Accept. No terminal commands.
+              </p>
+            </button>
             <div className="flex flex-col lg:flex-row justify-between items-start gap-6 mb-8">
               <TrendingPosts />
 

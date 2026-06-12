@@ -90,6 +90,11 @@ READ_COMMANDS = frozenset({
     # Agent routing helpers
     "route_query",
     "run_playbook",
+    # Private Infonet reads (operator-delegated)
+    "infonet_status",
+    "list_gates",
+    "read_gate_messages",
+    "poll_dms",
 })
 
 WRITE_COMMANDS = frozenset({
@@ -121,6 +126,12 @@ WRITE_COMMANDS = frozenset({
     "clear_analysis_zones",
     # Active recon (subnet device discovery)
     "osint_sweep",
+    # Private Infonet writes (operator wormhole identity)
+    "ensure_infonet_ready",
+    "join_infonet_swarm",
+    "post_gate_message",
+    "cast_vote",
+    "send_dm",
 })
 
 
@@ -1597,6 +1608,85 @@ def _dispatch_command(cmd: str, args: dict[str, Any]) -> dict[str, Any]:
         from services.analysis_zone_store import clear_zones
         count = clear_zones(source="openclaw")
         return {"ok": True, "data": {"removed_count": count}}
+
+    # -- Infonet / gate / DM (operator-delegated, full tier for writes) ------
+
+    if cmd == "infonet_status":
+        from services.openclaw_infonet import get_infonet_status
+
+        return get_infonet_status()
+
+    if cmd == "ensure_infonet_ready":
+        from services.openclaw_infonet import ensure_infonet_ready
+
+        return ensure_infonet_ready(join_swarm=bool(args.get("join_swarm", True)))
+
+    if cmd == "join_infonet_swarm":
+        from services.openclaw_infonet import join_infonet_swarm
+
+        return join_infonet_swarm()
+
+    if cmd == "list_gates":
+        from services.openclaw_infonet import list_gates
+
+        return list_gates()
+
+    if cmd == "read_gate_messages":
+        from services.openclaw_infonet import read_gate_messages
+
+        gate_id = str(args.get("gate_id", "") or args.get("gate", "")).strip()
+        return read_gate_messages(
+            gate_id,
+            limit=int(args.get("limit", 20) or 20),
+            decrypt=bool(args.get("decrypt", False)),
+        )
+
+    if cmd == "post_gate_message":
+        from services.openclaw_infonet import post_gate_message
+
+        gate_id = str(args.get("gate_id", "") or args.get("gate", "")).strip()
+        plaintext = str(args.get("plaintext", "") or args.get("message", "")).strip()
+        return post_gate_message(
+            gate_id,
+            plaintext,
+            reply_to=str(args.get("reply_to", "") or ""),
+        )
+
+    if cmd == "cast_vote":
+        from services.openclaw_infonet import cast_vote
+
+        target_id = str(args.get("target_id", "") or args.get("target", "")).strip()
+        vote_raw = args.get("vote", args.get("direction"))
+        try:
+            vote_val = int(vote_raw)
+        except (TypeError, ValueError):
+            return {"ok": False, "detail": "vote must be 1 or -1"}
+        return cast_vote(
+            target_id,
+            vote_val,
+            gate=str(args.get("gate", "") or args.get("gate_id", "")).strip(),
+        )
+
+    if cmd == "send_dm":
+        from services.openclaw_infonet import send_dm
+
+        peer_id = str(
+            args.get("peer_id", "")
+            or args.get("recipient_id", "")
+            or args.get("recipient", "")
+        ).strip()
+        plaintext = str(args.get("plaintext", "") or args.get("message", "")).strip()
+        return send_dm(
+            peer_id,
+            plaintext,
+            delivery_class=str(args.get("delivery_class", "shared") or "shared"),
+            recipient_token=str(args.get("recipient_token", "") or ""),
+        )
+
+    if cmd == "poll_dms":
+        from services.openclaw_infonet import poll_dms
+
+        return poll_dms(limit=int(args.get("limit", 20) or 20))
 
     return {"ok": False, "detail": f"unhandled command: {cmd}"}
 

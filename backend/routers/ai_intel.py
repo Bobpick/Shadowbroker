@@ -2719,6 +2719,7 @@ def _connect_info_metadata(settings) -> dict:
                     "get_telemetry", "get_pins", "satellite_images",
                     "news_near", "ai_summary", "ai_report",
                     "timemachine_list", "timemachine_view",
+                    "infonet_status", "list_gates", "read_gate_messages", "poll_dms",
                 ],
             },
             "full": {
@@ -2729,6 +2730,8 @@ def _connect_info_metadata(settings) -> dict:
                     "satellite_images", "news_near", "data_injection",
                     "ai_summary", "ai_report", "timemachine_snapshot",
                     "timemachine_list", "timemachine_view", "timemachine_diff",
+                    "ensure_infonet_ready", "join_infonet_swarm",
+                    "post_gate_message", "cast_vote", "send_dm",
                 ],
             },
         },

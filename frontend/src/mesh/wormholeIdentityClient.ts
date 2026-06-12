@@ -2016,6 +2016,18 @@ export async function deleteWormholeDmContact(
   });
 }
 
+export async function severWormholeDmContact(
+  peerId: string,
+  options: { block?: boolean } = {},
+): Promise<{ ok: boolean; peer_id: string; severed?: boolean; blocked?: boolean }> {
+  return controlPlaneJson(`/api/wormhole/dm/contact/${encodeURIComponent(peerId)}/sever`, {
+    method: 'POST',
+    requireAdminSession: false,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ block: Boolean(options.block) }),
+  });
+}
+
 export async function getActiveSigningContext(): Promise<ActiveSigningContext | null> {
   const secureRequired = await isWormholeSecureRequired();
   if (await isWormholeReady()) {

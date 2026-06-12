@@ -1085,7 +1085,7 @@ async def api_wormhole_dm_bootstrap_decrypt(request: Request, body: WormholeDmBo
     )
 
 
-@router.post("/api/wormhole/dm/sender-token", dependencies=[Depends(require_admin)])
+@router.post("/api/wormhole/dm/sender-token", dependencies=[Depends(require_local_operator)])
 @limiter.limit("60/minute")
 async def api_wormhole_dm_sender_token(request: Request, body: WormholeDmSenderTokenRequest):
     if _safe_int(body.count or 1, 1) > 1:
@@ -1285,6 +1285,24 @@ async def api_wormhole_dm_contact_delete(request: Request, peer_id: str):
 
     deleted = delete_wormhole_dm_contact(peer_id)
     return {"ok": True, "peer_id": peer_id, "deleted": deleted}
+
+
+@router.post("/api/wormhole/dm/contact/{peer_id}/sever", dependencies=[Depends(require_admin)])
+@limiter.limit("60/minute")
+async def api_wormhole_dm_contact_sever(request: Request, peer_id: str):
+    from services.mesh.mesh_wormhole_contacts import sever_wormhole_dm_contact
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    block = bool(body.get("block", False))
+    try:
+        return sever_wormhole_dm_contact(peer_id, block=block)
+    except ValueError as exc:
+        return {"ok": False, "detail": str(exc)}
 
 
 _WORMHOLE_PUBLIC_FIELDS = {"installed", "configured", "running", "ready"}

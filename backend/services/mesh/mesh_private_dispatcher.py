@@ -386,6 +386,14 @@ def _dispatch_dm(
             sampled=sampled,
         )
 
+    replication_peer_urls: list[str] = []
+    try:
+        from services.mesh.mesh_dm_connect_delivery import relay_push_peer_urls_for_payload
+
+        replication_peer_urls = relay_push_peer_urls_for_payload(payload)
+    except Exception:
+        replication_peer_urls = []
+
     apply_dm_relay_jitter()
     relay_result = dm_relay.deposit(
         sender_id=relay_sender_id,
@@ -399,6 +407,7 @@ def _dispatch_dm(
         sender_token_hash=sender_token_hash,
         payload_format=payload_format,
         session_welcome=session_welcome,
+        replication_peer_urls=replication_peer_urls,
     )
     if not relay_result.get("ok"):
         return _dispatch_result(
@@ -600,8 +609,15 @@ def attempt_private_release(
             policy_reason_code=str(decision.reason_code or ""),
         )
     if normalized_lane == "dm":
+        dm_payload = dict(payload or {})
+        try:
+            from services.mesh.mesh_dm_connect_delivery import enrich_connect_release_payload
+
+            dm_payload = enrich_connect_release_payload(dm_payload)
+        except Exception:
+            pass
         return _dispatch_dm(
-            dict(payload or {}),
+            dm_payload,
             secure_dm_enabled=secure_dm_enabled or _secure_dm_enabled,
             rns_private_dm_ready=rns_private_dm_ready or _rns_private_dm_ready,
             anonymous_dm_hidden_transport_enforced=(

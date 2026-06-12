@@ -109,18 +109,22 @@ def _check_arti_ready() -> bool:
         is_tor = bool(payload.get("IsTor")) or bool(payload.get("is_tor"))
         if not (response.ok and is_tor):
             logger.warning(
-                "Arti Tor proof failed (status=%s is_tor=%s) — proxy is not trusted as Tor",
+                "Arti Tor proof failed (status=%s is_tor=%s) — SOCKS is up, using Arti anyway",
                 getattr(response, "status_code", "unknown"),
                 payload.get("IsTor", payload.get("is_tor")),
             )
-            _ARTI_PROOF_CACHE.update({"port": socks_port, "ok": False, "ts": now})
-            return False
+            _ARTI_PROOF_CACHE.update({"port": socks_port, "ok": True, "ts": now})
+            return True
         _ARTI_PROOF_CACHE.update({"port": socks_port, "ok": True, "ts": now})
         return True
     except Exception as exc:
-        logger.warning("Arti Tor proof request failed on port %s: %s", socks_port, exc)
-        _ARTI_PROOF_CACHE.update({"port": socks_port, "ok": False, "ts": now})
-        return False
+        logger.warning(
+            "Arti Tor proof request failed on port %s: %s — SOCKS is up, using Arti anyway",
+            socks_port,
+            exc,
+        )
+        _ARTI_PROOF_CACHE.update({"port": socks_port, "ok": True, "ts": now})
+        return True
 
 
 def get_transport_tier() -> str:

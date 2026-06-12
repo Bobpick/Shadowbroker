@@ -361,15 +361,9 @@ const MeshChat = React.memo(function MeshChat(props: MeshChatProps) {
     setShowSas((prev) => !prev);
   };
   const handleRequestComposerAction = () => {
-    const targetId = addContactId.trim();
-    if (!targetId) return;
-    const inviteLookupHandle = String(
-      contacts[targetId]?.invitePinnedPrekeyLookupHandle || '',
-    ).trim();
-    if (!inviteLookupHandle) {
-      openTerminal();
-    }
-    void handleRequestAccess(targetId);
+    const pasted = addContactId.trim();
+    if (!pasted) return;
+    void handleRequestAccess(pasted);
   };
   const meshActivationText =
     publicMeshBlockedByWormhole

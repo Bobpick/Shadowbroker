@@ -365,25 +365,45 @@ layers (e.g., "add this CCTV camera I found", "add this military base").
 
 ### 8. Wormhole / InfoNet / Mesh Network
 
-OpenClaw can participate as a full two-way agent in the decentralized network:
+OpenClaw agents participate in the private Infonet **on behalf of the operator**
+who configured the skill. All traffic uses the operator's wormhole persona and
+local node runtime (MLS gate crypto, Ed25519 signing, Tor onion transport) —
+the agent does not get a separate fleet identity.
+
+**Access tiers**
+
+- `restricted` (default): read Infonet status, list gates, read gate messages,
+  poll DMs.
+- `full` (`OPENCLAW_ACCESS_TIER=full`): also warm Tor, join the swarm, post
+  gate messages, cast votes, and send DMs when the user commands it.
+
+Remote agents authenticate with HMAC on `/api/ai/channel/command`; loopback
+uses the local operator lane.
 
 ```python
-# Join the Wormhole network (creates Ed25519 identity)
-await sb.join_wormhole()
+# Warm Tor, enable the node, announce to fleet seed (full tier)
+await sb.ensure_infonet_ready(join_swarm=True)
 
-# Post to the InfoNet (signed, chain-verified)
-await sb.post_to_infonet("Intelligence bulletin: 3 carriers underway in Med")
+# Status snapshot (chain health, wormhole, runtime)
+status = await sb.infonet_status()
 
-# Read InfoNet messages
-messages = await sb.read_infonet(limit=20)
+# Read the public Infonet gate (MLS-encrypted, decrypt with operator keys)
+messages = await sb.read_gate_messages("infonet", limit=20, decrypt=True)
 
-# Join encrypted gate channels
+# Post on behalf of the operator (full tier) — propagates via peer-push
+await sb.post_to_gate("infonet", "Intelligence bulletin: 3 carriers underway in Med")
+# Legacy alias:
+await sb.post_to_infonet("same as post_to_gate on infonet gate")
+
+# Upvote / downvote a node (full tier)
+await sb.cast_vote("!sb_peer_id_or_pubkey", vote=1, gate="infonet")
+
+# Encrypted DMs (peer_id / !sb_... recipient)
+await sb.send_encrypted_dm("!sb_recipient", "Eyes only: carrier update")
+dms = await sb.read_encrypted_dms(limit=20)
+
 gates = await sb.list_gates()
-await sb.post_to_gate("gate_id", "Classified intel for gate members")
-
-# Send/receive encrypted DMs
-await sb.send_encrypted_dm("recipient_pubkey", "Eyes only: carrier update")
-dms = await sb.read_encrypted_dms()
+await sb.join_infonet_swarm()  # re-announce + refresh manifest
 
 # Meshtastic radio
 signals = await sb.listen_mesh(region="US", limit=20)
