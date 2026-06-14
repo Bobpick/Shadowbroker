@@ -330,6 +330,14 @@ class WormholeDmBootstrapDecryptRequest(BaseModel):
     ciphertext: str
 
 
+class WormholeDmConnectContactRequest(BaseModel):
+    lookup_token: str = ""
+    peer_id: str = ""
+    note: str = ""
+    lookup_peer_url: str = ""
+    cached_prekey_bundle: dict[str, Any] | None = None
+
+
 class WormholeDmInviteImportRequest(BaseModel):
     invite: dict[str, Any]
     alias: str = ""
@@ -1086,6 +1094,20 @@ async def api_wormhole_dm_bootstrap_decrypt(request: Request, body: WormholeDmBo
     return bootstrap_decrypt_from_sender(
         sender_id=str(body.sender_id or ""),
         ciphertext=str(body.ciphertext or ""),
+    )
+
+
+@router.post("/api/wormhole/dm/connect-contact", dependencies=[Depends(require_local_operator)])
+@limiter.limit("30/minute")
+async def api_wormhole_dm_connect_contact(request: Request, body: WormholeDmConnectContactRequest):
+    from services.openclaw_infonet import send_contact_request
+
+    return send_contact_request(
+        lookup_token=str(body.lookup_token or ""),
+        peer_id=str(body.peer_id or ""),
+        note=str(body.note or ""),
+        lookup_peer_url=str(body.lookup_peer_url or ""),
+        cached_prekey_bundle=dict(body.cached_prekey_bundle or {}) if body.cached_prekey_bundle else None,
     )
 
 

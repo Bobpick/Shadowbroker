@@ -592,6 +592,7 @@ def send_contact_request(
     peer_id: str = "",
     note: str = "",
     lookup_peer_url: str = "",
+    cached_prekey_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Send a first-contact request using a short address or peer id."""
     from services.mesh.mesh_wormhole_dead_drop import build_contact_offer
@@ -604,11 +605,14 @@ def send_contact_request(
         return {"ok": False, "detail": "lookup_token or peer_id required"}
 
     preferred_peer = str(lookup_peer_url or "").strip().rstrip("/")
-    bundle = fetch_dm_prekey_bundle(
-        agent_id=peer if not token else "",
-        lookup_token=token,
-        lookup_peer_urls=[preferred_peer] if preferred_peer else None,
-    )
+    if cached_prekey_bundle and cached_prekey_bundle.get("ok"):
+        bundle = dict(cached_prekey_bundle)
+    else:
+        bundle = fetch_dm_prekey_bundle(
+            agent_id=peer if not token else "",
+            lookup_token=token,
+            lookup_peer_urls=[preferred_peer] if preferred_peer else None,
+        )
     if not bundle.get("ok"):
         return bundle
     recipient = str(bundle.get("agent_id") or peer).strip()
@@ -621,7 +625,11 @@ def send_contact_request(
         dh_algo=str(identity.get("dh_algo") or "X25519"),
         geo_hint=str(note or ""),
     )
-    encrypted = bootstrap_encrypt_for_peer(recipient, offer, lookup_token=token)
+    encrypted = bootstrap_encrypt_for_peer(
+        recipient,
+        offer,
+        fetched_bundle=bundle,
+    )
     if not encrypted.get("ok"):
         return encrypted
 

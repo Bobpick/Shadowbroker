@@ -1361,13 +1361,15 @@ def bootstrap_encrypt_for_peer(
     plaintext: str,
     *,
     lookup_token: str = "",
+    fetched_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     token = str(lookup_token or "").strip()
     peer = str(peer_id or "").strip()
-    fetched_bundle = fetch_dm_prekey_bundle(
-        agent_id=peer if not token else "",
-        lookup_token=token,
-    )
+    if fetched_bundle is None:
+        fetched_bundle = fetch_dm_prekey_bundle(
+            agent_id=peer if not token else "",
+            lookup_token=token,
+        )
     if not fetched_bundle.get("ok"):
         detail = str(fetched_bundle.get("detail", "") or "")
         if "root attestation" in detail.lower():

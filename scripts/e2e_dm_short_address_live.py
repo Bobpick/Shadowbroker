@@ -18,6 +18,7 @@ import hmac
 import os
 import subprocess
 import sys
+import tempfile
 import textwrap
 import time
 import urllib.error
@@ -129,15 +130,26 @@ _EMBED_SIGNED_MAILBOX_HELPERS = textwrap.dedent(
 
 
 def _docker_json(method: str, path: str, body: dict | None = None, *, admin_key: str = "", timeout_s: int = 30) -> dict:
-    payload = ["docker", "exec", "shadowbroker-backend", "curl", "-s", "--max-time", str(timeout_s)]
+    use_stdin = body is not None
+    payload = ["docker", "exec"]
+    if use_stdin:
+        payload.append("-i")
+    payload.extend(["shadowbroker-backend", "curl", "-s", "--max-time", str(timeout_s)])
     if admin_key:
         payload.extend(["-H", f"X-Admin-Key: {admin_key}"])
     if body is not None:
-        payload.extend(["-H", "Content-Type: application/json", "-X", method.upper(), "-d", json.dumps(body)])
+        payload.extend(["-H", "Content-Type: application/json", "-X", method.upper(), "-d", "@-"])
     else:
         payload.extend(["-X", method.upper()])
     payload.append(f"http://127.0.0.1:8000{path}")
-    proc = subprocess.run(payload, capture_output=True, text=True, timeout=timeout_s + 15, check=False)
+    proc = subprocess.run(
+        payload,
+        input=json.dumps(body) if body is not None else None,
+        capture_output=True,
+        text=True,
+        timeout=timeout_s + 15,
+        check=False,
+    )
     raw = (proc.stdout or "").strip()
     if not raw:
         raise RuntimeError(proc.stderr.strip() or f"{method} {path} produced no response")
@@ -328,6 +340,46 @@ def _docker_python(code: str, *, timeout_s: int = 600) -> dict:
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "docker python failed")
     line = proc.stdout.strip().splitlines()[-1]
     return json.loads(line)
+
+
+def _docker_python_contact_send(
+    *,
+    handle: str,
+    peer_id: str,
+    note: str,
+    lookup_peer_url: str,
+    cached_prekey_bundle: dict,
+    timeout_s: int = 120,
+) -> dict:
+    """Send contact request in an isolated backend subprocess with a cached prekey bundle."""
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json", encoding="utf-8") as tmp:
+        json.dump(cached_prekey_bundle, tmp)
+        local_path = tmp.name
+    try:
+        subprocess.run(
+            ["docker", "cp", local_path, "shadowbroker-backend:/tmp/e2e_prekey_bundle.json"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        os.unlink(local_path)
+    code = (
+        "import json\n"
+        "from services.openclaw_infonet import send_contact_request\n"
+        'bundle = json.load(open("/tmp/e2e_prekey_bundle.json", encoding="utf-8"))\n'
+        f"result = send_contact_request(lookup_token={json.dumps(handle)}, "
+        f"peer_id={json.dumps(peer_id)}, note={json.dumps(note)}, "
+        f"lookup_peer_url={json.dumps(lookup_peer_url)}, cached_prekey_bundle=bundle)\n"
+        "print(json.dumps({"
+        "'ok': bool(result.get('ok')), "
+        "'send': result, "
+        "'msg_id': result.get('msg_id',''), "
+        "'sender_id': result.get('sender_id',''), "
+        "'recipient_id': result.get('recipient_id','')"
+        "}))\n"
+    )
+    return _docker_python(code, timeout_s=timeout_s)
 
 
 def _local_compose_cmd(*subcommand: str) -> list[str]:
@@ -2295,6 +2347,15 @@ def _fetch_peer_prekey_bundle(
     lookup_token: str = "",
     lookup_peer_url: str = "",
 ) -> dict:
+    hint = str(lookup_peer_url or (f"http://{PETE_ONION}" if PETE_ONION else "")).strip()
+    if ".onion" in hint and lookup_token:
+        try:
+            bundle = _direct_tor_prekey_bundle(lookup_token, hint)
+            if bundle.get("ok"):
+                bundle["source"] = "direct_tor_prekey_bundle"
+                return bundle
+        except Exception as exc:
+            print(json.dumps({"direct_tor_prekey_bundle_fallback": str(exc) or type(exc).__name__}, indent=2))
     path = "/api/mesh/dm/prekey-bundle?"
     params: list[str] = []
     if lookup_token:
@@ -2529,8 +2590,8 @@ print(json.dumps({{
         return {"ok": False, "detail": str(exc) or type(exc).__name__}
 
 
-def _direct_tor_prekey_lookup(handle: str, lookup_peer_url: str) -> dict:
-    """Fetch invite-scoped prekey over Tor without blocking local uvicorn on /dm/pubkey."""
+def _direct_tor_prekey_bundle(handle: str, lookup_peer_url: str) -> dict:
+    """Fetch invite-scoped prekey bundle over Tor without blocking local uvicorn."""
     peer = str(lookup_peer_url or "").strip().rstrip("/")
     if not peer:
         peer = f"http://{PETE_ONION}".rstrip("/") if PETE_ONION else ""
@@ -2560,8 +2621,16 @@ def _direct_tor_prekey_lookup(handle: str, lookup_peer_url: str) -> dict:
     )
     raw = (proc.stdout or "").strip()
     if not raw:
-        raise RuntimeError(proc.stderr.strip() or "direct tor prekey lookup produced no response")
+        raise RuntimeError(proc.stderr.strip() or "direct tor prekey bundle produced no response")
     payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        return {"ok": False, "detail": "invalid prekey bundle response"}
+    return payload
+
+
+def _direct_tor_prekey_lookup(handle: str, lookup_peer_url: str) -> dict:
+    """Fetch invite-scoped pubkey fields over Tor without blocking local uvicorn."""
+    payload = _direct_tor_prekey_bundle(handle, lookup_peer_url)
     if not isinstance(payload, dict) or not payload.get("ok"):
         return payload if isinstance(payload, dict) else {"ok": False, "detail": "invalid prekey response"}
     bundle = payload.get("bundle") if isinstance(payload.get("bundle"), dict) else {}
@@ -2705,19 +2774,13 @@ def main() -> int:
         raise RuntimeError(f"Pete prekey bundle unavailable before contact send: {pete_prekey_bundle}")
 
     print("== step 2: send contact request from local ==")
-    send_code = (
-        "import json\n"
-        "from services.openclaw_infonet import send_contact_request\n"
-        f"result = send_contact_request(lookup_token={json.dumps(handle)}, note={json.dumps(MARKER)}, lookup_peer_url={json.dumps(lookup_peer_url)})\n"
-        "print(json.dumps({"
-        "'ok': bool(result.get('ok')), "
-        "'send': result, "
-        "'msg_id': result.get('msg_id',''), "
-        "'sender_id': result.get('sender_id',''), "
-        "'recipient_id': result.get('recipient_id','')"
-        "}))\n"
+    send_result = _docker_python_contact_send(
+        handle=handle,
+        peer_id=pete_id,
+        note=MARKER,
+        lookup_peer_url=lookup_peer_url,
+        cached_prekey_bundle=pete_prekey_bundle,
     )
-    send_result = _docker_python(send_code)
     print(json.dumps(send_result, indent=2))
     if not send_result.get("ok"):
         raise RuntimeError(f"local send failed: {send_result}")
