@@ -621,6 +621,7 @@ export interface NewsArticle {
   source: string;
   link: string;
   pub_date: string;
+  published?: string;
   risk_score: number;
   lat: number;
   lng: number;

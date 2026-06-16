@@ -8,6 +8,8 @@ import {
   TELEGRAM_ALERT_AVOID_METERS,
 } from '@/components/map/geoJSONBuilders';
 
+const RECENT_PUBLISHED = '2026-06-15T12:00:00Z';
+
 describe('telegramMapPinCoords', () => {
   it('stays on the geocoded city when no threat alert overlaps', () => {
     const [lat, lng] = telegramMapPinCoords(31.046, 34.851, false);
@@ -49,6 +51,7 @@ describe('buildTelegramOsintGeoJSON', () => {
           id: 'tg-1',
           title: 'Strike near Kyiv',
           coords: [50.45, 30.52],
+          published: RECENT_PUBLISHED,
         },
       ],
     });
@@ -59,12 +62,55 @@ describe('buildTelegramOsintGeoJSON', () => {
     expect(lng).toBeCloseTo(30.52, 2);
   });
 
+  it('uses the newest post as the cluster lead description', () => {
+    const geo = buildTelegramOsintGeoJSON({
+      posts: [
+        {
+          id: 'old',
+          title: 'Older headline',
+          description: 'Older body',
+          coords: [50.45, 30.52],
+          published: '2026-06-11T07:34:00Z',
+        },
+        {
+          id: 'new',
+          title: 'Newest headline',
+          description: 'Newest body',
+          coords: [50.45, 30.52],
+          published: '2026-06-16T09:31:00Z',
+        },
+      ],
+    });
+    expect(geo?.features[0]?.properties?.description).toBe('Newest body');
+  });
+
+  it('drops posts older than the 7-day retention window', () => {
+    const geo = buildTelegramOsintGeoJSON({
+      posts: [
+        {
+          id: 'fresh',
+          title: 'Recent post',
+          coords: [50.45, 30.52],
+          published: '2026-06-15T12:00:00Z',
+        },
+        {
+          id: 'stale',
+          title: 'Buzzfeed/TikTok OSINT',
+          coords: [50.45, 30.52],
+          published: '2022-06-17T15:30:00Z',
+        },
+      ],
+    });
+    expect(geo?.features).toHaveLength(1);
+    expect(geo?.features[0]?.properties?.post_count).toBe(1);
+  });
+
   it('merges posts in the same city into one pin', () => {
     const geo = buildTelegramOsintGeoJSON({
       posts: [
-        { id: 'a', title: 'Post A', coords: [50.45, 30.52] },
-        { id: 'b', title: 'Post B', coords: [50.451, 30.521] },
-        { id: 'c', title: 'Post C', coords: [48.0, 37.8] },
+        { id: 'a', title: 'Post A', coords: [50.45, 30.52], published: RECENT_PUBLISHED },
+        { id: 'b', title: 'Post B', coords: [50.451, 30.521], published: RECENT_PUBLISHED },
+        { id: 'c', title: 'Post C', coords: [48.0, 37.8], published: RECENT_PUBLISHED },
       ],
     });
     expect(geo?.features).toHaveLength(2);
@@ -78,8 +124,8 @@ describe('applyTelegramAlertAvoidance', () => {
   it('offsets only clusters that share a grid cell with a news alert', () => {
     const geo = buildTelegramOsintGeoJSON({
       posts: [
-        { id: 'il', title: 'Israel post', coords: [31.046, 34.851] },
-        { id: 'ua', title: 'Kyiv post', coords: [50.45, 30.52] },
+        { id: 'il', title: 'Israel post', coords: [31.046, 34.851], published: RECENT_PUBLISHED },
+        { id: 'ua', title: 'Kyiv post', coords: [50.45, 30.52], published: RECENT_PUBLISHED },
       ],
     });
     const placed = applyTelegramAlertAvoidance(geo, [{ coords: [31.046, 34.851] }]);

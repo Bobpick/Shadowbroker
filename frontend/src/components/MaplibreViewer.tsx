@@ -1,6 +1,7 @@
 'use client';
 
 import { API_BASE } from '@/lib/api';
+import { compareEventTimestampsDesc, formatEventTimestamp } from '@/lib/eventDateTime';
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import Map, {
   Source,
@@ -6080,7 +6081,9 @@ const MaplibreViewer = ({
           const sentArrow = sent != null ? (sent < -0.1 ? '▼' : sent > 0.1 ? '▲' : '—') : '';
           const sentLabel = sent != null ? (sent < -0.1 ? 'NEGATIVE' : sent > 0.1 ? 'POSITIVE' : 'NEUTRAL') : '';
           const pred = item.prediction_odds as any;
-          const articles = (item.articles as any[]) || [];
+          const articles = [...((item.articles as any[]) || [])].sort((a, b) =>
+            compareEventTimestampsDesc(a?.published, b?.published),
+          );
           const clusterCount = (item.cluster_count as number) || 1;
           const isBreaking = item.breaking === true;
 
@@ -6142,7 +6145,9 @@ const MaplibreViewer = ({
                     </h2>
                     <div className="flex items-center gap-3 mt-2 text-[11px] text-[var(--text-muted)]">
                       <span className="text-white font-bold text-[12px]">{item.source || 'UNKNOWN'}</span>
-                      {item.published && <span>• {item.published}</span>}
+                      {item.published && (
+                        <span>• {formatEventTimestamp(item.published, { style: 'full' })}</span>
+                      )}
                       {clusterCount > 1 && <span className="text-cyan-400 font-bold">• {clusterCount} SOURCES REPORTING</span>}
                       {item.coords && (
                         <span className="ml-auto text-[10px] font-mono text-[var(--text-muted)]">
@@ -6302,7 +6307,11 @@ const MaplibreViewer = ({
                                 <div className="flex items-center gap-2 text-[10px]">
                                   <span className="text-white font-bold">{sub.source}</span>
                                   <span className={`${subColor} font-bold`}>LVL: {subRs}/10</span>
-                                  {sub.published && <span className="text-[var(--text-muted)] text-[9px]">{sub.published}</span>}
+                                  {sub.published && (
+                                    <span className="text-[var(--text-muted)] text-[9px]">
+                                      {formatEventTimestamp(sub.published)}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-[11px] text-[var(--text-secondary)] leading-snug mt-0.5 group-hover:text-cyan-300 transition-colors">
                                   {sub.title}

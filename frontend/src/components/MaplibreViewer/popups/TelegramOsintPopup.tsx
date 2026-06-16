@@ -5,6 +5,7 @@ import { Popup } from 'react-map-gl/maplibre';
 import { Radio } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import { TELEGRAM_MARKER_OFFSET } from '@/components/map/geoJSONBuilders';
+import { compareEventTimestampsDesc, formatEventTimestamp } from '@/lib/eventDateTime';
 import { buildTelegramMediaProxyUrl } from '@/lib/telegramProxy';
 import type { TelegramOsintPost } from '@/types/dashboard';
 
@@ -13,15 +14,6 @@ export interface TelegramOsintPopupProps {
   lat: number;
   lng: number;
   onClose: () => void;
-}
-
-function formatTime(pubDate?: string) {
-  if (!pubDate) return '';
-  try {
-    return new Date(pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
 }
 
 function riskTheme(rs: number) {
@@ -171,7 +163,7 @@ function TelegramPostMedia({ post }: { post: TelegramOsintPost }) {
   );
 }
 
-function TelegramPostCard({ post }: { post: TelegramOsintPost }) {
+function TelegramPostCard({ post, locale }: { post: TelegramOsintPost; locale: string }) {
   const { t } = useTranslation();
   const [showOriginal, setShowOriginal] = useState(false);
   const rs = post.risk_score ?? 1;
@@ -190,7 +182,7 @@ function TelegramPostCard({ post }: { post: TelegramOsintPost }) {
           {isHigh && <span className="text-red-400 mr-1">BREAKING</span>}
           &gt;_ {post.source || 'TELEGRAM'}
         </span>
-        <span>[{formatTime(post.published)}]</span>
+        <span>[{formatEventTimestamp(post.published, { locale, style: 'compact' })}]</span>
       </div>
 
       <h3 className={`text-[12px] leading-tight ${theme.titleClass}`}>{headline}</h3>
@@ -275,15 +267,18 @@ export function TelegramOsintPopup({ posts, lat, lng, onClose }: TelegramOsintPo
 
   const sortedPosts = useMemo(
     () =>
-      [...localizedPosts].sort(
-        (a, b) =>
-          (b.risk_score ?? 0) - (a.risk_score ?? 0) ||
-          String(b.published || '').localeCompare(String(a.published || '')),
-      ),
+      [...localizedPosts].sort((a, b) => {
+        const byDate = compareEventTimestampsDesc(a.published, b.published);
+        if (byDate !== 0) return byDate;
+        return (b.risk_score ?? 0) - (a.risk_score ?? 0);
+      }),
     [localizedPosts],
   );
 
-  const maxRisk = sortedPosts[0]?.risk_score ?? 1;
+  const maxRisk = useMemo(
+    () => localizedPosts.reduce((max, post) => Math.max(max, post.risk_score ?? 0), 0) || 1,
+    [localizedPosts],
+  );
   const header = riskTheme(maxRisk);
 
   return (
@@ -346,7 +341,7 @@ export function TelegramOsintPopup({ posts, lat, lng, onClose }: TelegramOsintPo
 
         <div className="overflow-y-auto styled-scrollbar flex flex-col gap-2 p-3 max-h-[min(420px,55vh)]">
           {sortedPosts.map((post) => (
-            <TelegramPostCard key={post.id} post={post} />
+            <TelegramPostCard key={post.id} post={post} locale={locale} />
           ))}
         </div>
       </div>

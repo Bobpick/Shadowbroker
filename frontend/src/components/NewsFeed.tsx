@@ -11,18 +11,9 @@ import { fetchWikipediaSummary } from '@/lib/wikimediaClient';
 import type { SelectedEntity, RegionDossier, FimiData } from "@/types/dashboard";
 import { useDataKeys } from '@/hooks/useDataStore';
 import { API_BASE } from '@/lib/api';
+import { formatEventTimestamp } from '@/lib/eventDateTime';
 import { lookupShodanHost } from '@/lib/shodanClient';
 import type { ShodanHost } from '@/types/shodan';
-
-// Format time from pubish string "Tue, 24 Feb 2026 15:30:00 GMT" to "15:30"
-function formatTime(pubDate: string) {
-    try {
-        const d = new Date(pubDate);
-        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-        return "00:00";
-    }
-}
 
 // ICAO type designator → Wikipedia article title
 const AIRCRAFT_WIKI: Record<string, string> = {
@@ -1647,7 +1638,7 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                                     MKT {marketsCorrelationEnabled ? 'ON' : 'OFF'}
                                 </button>
                             </div>
-                            <span className="flex items-center gap-1 shrink-0"><Clock size={10} /> {data?.last_updated ? formatTime(data.last_updated) : "SCANNING"}</span>
+                            <span className="flex items-center gap-1 shrink-0"><Clock size={10} /> {data?.last_updated ? formatEventTimestamp(data.last_updated) : "SCANNING"}</span>
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -1983,7 +1974,7 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                                             {isBreaking && <span className="text-red-400 mr-1">BREAKING</span>}
                                             &gt;_ {item.source}
                                         </span>
-                                        <span>[{item.published ? formatTime(item.published) : ''}]</span>
+                                        <span>[{item.published ? formatEventTimestamp(item.published) : ''}]</span>
                                     </div>
 
                                     <button

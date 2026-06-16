@@ -10,6 +10,8 @@ from pydantic import BaseModel
 from limiter import limiter
 from auth import require_admin, require_local_operator
 from services.data_fetcher import update_all_data
+from services.fetchers.telegram_osint import prune_telegram_posts
+from services.liveuamap_retention import prune_liveuamap_incidents
 import orjson
 import json as json_mod
 
@@ -44,6 +46,21 @@ _LAST_VIEWPORT_UPDATE_TS = 0.0
 _VIEWPORT_UPDATE_LOCK = threading.Lock()
 _VIEWPORT_DEDUPE_EPSILON = 1.0
 _VIEWPORT_MIN_UPDATE_S = 10.0
+
+
+def _fresh_liveuamap_incidents(incidents: Any) -> list[dict[str, Any]]:
+    return prune_liveuamap_incidents(list(incidents or []))
+
+
+def _fresh_telegram_osint_payload(payload: Any) -> dict[str, Any]:
+    base = payload if isinstance(payload, dict) else {}
+    posts = prune_telegram_posts(list(base.get("posts") or []))
+    return {
+        **base,
+        "posts": posts,
+        "total": len(posts),
+        "geolocated": sum(1 for post in posts if post.get("coords")),
+    }
 
 
 def _normalize_longitude(value: float) -> float:
@@ -644,7 +661,9 @@ async def bootstrap_critical(request: Request):
         "ships": _cap_startup_items((d.get("ships") or []) if ships_enabled else [], 1500),
         "uavs": _cap_startup_items((d.get("uavs") or []) if active_layers.get("military", True) else [], 100),
         "liveuamap": _cap_startup_items(
-            (d.get("liveuamap") or []) if active_layers.get("global_incidents", True) else [],
+            _fresh_liveuamap_incidents(d.get("liveuamap") or [])
+            if active_layers.get("global_incidents", True)
+            else [],
             300,
         ),
         "gps_jamming": _cap_startup_items(
@@ -724,7 +743,11 @@ async def live_data_fast(
         "ships": (d.get("ships") or []) if ships_enabled else [],
         "cctv": (d.get("cctv") or []) if active_layers.get("cctv", True) else [],
         "uavs": (d.get("uavs") or []) if active_layers.get("military", True) else [],
-        "liveuamap": (d.get("liveuamap") or []) if active_layers.get("global_incidents", True) else [],
+        "liveuamap": (
+            _fresh_liveuamap_incidents(d.get("liveuamap") or [])
+            if active_layers.get("global_incidents", True)
+            else []
+        ),
         "gps_jamming": (d.get("gps_jamming") or []) if active_layers.get("gps_jamming", True) else [],
         "satellites": (d.get("satellites") or []) if active_layers.get("satellites", True) else [],
         "satellite_source": d.get("satellite_source", "none"),
@@ -835,7 +858,7 @@ async def live_data_slow(
         if active_layers.get("scm_suppliers", False)
         else {"suppliers": [], "total": 0, "critical_count": 0},
         "telegram_osint": (
-            d.get("telegram_osint") or {"posts": [], "total": 0, "geolocated": 0}
+            _fresh_telegram_osint_payload(d.get("telegram_osint"))
         )
         if active_layers.get("telegram_osint", True)
         else {"posts": [], "total": 0, "geolocated": 0},

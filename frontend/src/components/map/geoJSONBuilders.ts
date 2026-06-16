@@ -2,6 +2,9 @@
 // Extracted from MaplibreViewer to reduce component size and enable unit testing.
 // Each function takes data arrays + optional helpers and returns a GeoJSON FeatureCollection or null.
 
+import { compareEventTimestampsDesc } from '@/lib/eventDateTime';
+import { filterTelegramPostsWithinRetention } from '@/lib/telegramRetention';
+
 import type {
   Earthquake,
   GPSJammingZone,
@@ -1645,13 +1648,14 @@ export function buildTelegramOsintGeoJSON(
       source?: string;
       channel?: string;
       risk_score?: number;
+      published?: string;
       coords?: [number, number] | null;
     }>;
   },
   inView?: InViewFilter,
 ): FC {
-  const posts = payload?.posts;
-  if (!posts?.length) return null;
+  const posts = filterTelegramPostsWithinRetention(payload?.posts ?? []);
+  if (!posts.length) return null;
 
   const clusters = new Map<
     string,
@@ -1689,7 +1693,10 @@ export function buildTelegramOsintGeoJSON(
   return {
     type: 'FeatureCollection' as const,
     features: Array.from(clusters.entries()).map(([key, cluster]) => {
-      const lead = cluster.posts[0];
+      const orderedPosts = [...cluster.posts].sort((a, b) =>
+        compareEventTimestampsDesc(a.published, b.published),
+      );
+      const lead = orderedPosts[0];
       const count = cluster.posts.length;
       return {
         type: 'Feature' as const,

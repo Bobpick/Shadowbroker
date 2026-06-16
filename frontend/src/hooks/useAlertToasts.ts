@@ -21,6 +21,7 @@ export interface ToastItem {
   risk_score: number;
   lat: number;
   lng: number;
+  published?: string;
   timestamp: number; // when the toast was created
 }
 
@@ -56,6 +57,7 @@ export function useAlertToasts() {
         risk_score: article.risk_score,
         lat: article.lat || article.coords?.[0] || 0,
         lng: article.lng || article.coords?.[1] || 0,
+        published: article.published || article.pub_date,
         timestamp: Date.now(),
       });
     }

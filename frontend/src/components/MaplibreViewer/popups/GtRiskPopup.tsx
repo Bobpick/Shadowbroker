@@ -5,6 +5,7 @@ import { Popup } from 'react-map-gl/maplibre';
 import { Radar } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import { API_BASE } from '@/lib/api';
+import { formatEventTimestamp } from '@/lib/eventDateTime';
 import { formatGtRegionLabel } from '@/lib/gtAlerts';
 import type { GtDossier } from '@/types/dashboard';
 
@@ -169,8 +170,15 @@ export function GtRiskPopup({
                         .map(formatSignalName)
                         .join(', ') || entry.domain}
                     </div>
-                    <div className="text-[var(--text-muted)] truncate" title={entry.source}>
-                      {entry.source || t('gtRisk.unknownSource')}
+                    <div className="flex items-center justify-between gap-2 text-[var(--text-muted)]">
+                      <span className="truncate" title={entry.source}>
+                        {entry.source || t('gtRisk.unknownSource')}
+                      </span>
+                      {entry.timestamp ? (
+                        <span className="shrink-0 text-[9px]">
+                          {formatEventTimestamp(entry.timestamp)}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 ))}

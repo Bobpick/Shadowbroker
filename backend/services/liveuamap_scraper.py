@@ -3,8 +3,12 @@ import logging
 import base64
 import urllib.parse
 import re
+from datetime import datetime, timezone
+
 from playwright.sync_api import sync_playwright
 from playwright_stealth import stealth_sync
+
+from services.liveuamap_retention import liveuamap_max_age_days, prune_liveuamap_incidents
 
 logger = logging.getLogger(__name__)
 
@@ -135,8 +139,15 @@ def fetch_liveuamap():
 
         browser.close()
 
-    logger.info(f"Liveuamap scraper finished, extracted {len(all_markers)} unique markers.")
-    return all_markers
+    max_age_days = liveuamap_max_age_days()
+    pruned = prune_liveuamap_incidents(all_markers)
+    logger.info(
+        "Liveuamap scraper finished, extracted %s markers (%s within %sd)",
+        len(all_markers),
+        len(pruned),
+        max_age_days,
+    )
+    return pruned
 
 
 if __name__ == "__main__":
