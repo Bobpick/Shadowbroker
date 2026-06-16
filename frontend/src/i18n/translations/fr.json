@@ -211,6 +211,14 @@
     "telegramOsint": "OSINT Telegram",
     "strategicRisk": "Carte de risque stratégique"
   },
+  "gtAlerts": {
+    "title": "ALERTES TOP",
+    "counts": "{plotted} sur carte · {tracked} suivies (max {max})",
+    "empty": "Aucune région plottable — intel géolocalisée requise.",
+    "ignition": "IGNITE",
+    "line": "risque {risk} · conflit {conflict}",
+    "hint": "500 = régions max suivies, pas des événements. Cliquer pour voler."
+  },
   "gtRisk": {
     "popupTitle": "RISQUE STRATÉGIQUE",
     "region": "RÉGION",
@@ -218,7 +226,11 @@
     "financial": "FIN",
     "unrest": "TROUBLES",
     "conflict": "CONFLIT",
-    "contagion": "CONTAGION"
+    "contagion": "CONTAGION",
+    "costlySignals": "SIGNAUX COÛTEUX",
+    "loadingSignals": "Chargement des correspondances…",
+    "noSignals": "Aucun signal coûteux récent pour cette région dans Telegram/GDELT/news.",
+    "unknownSource": "source inconnue"
   },
   "gtBacktest": {
     "title": "Backtest GT",
@@ -235,7 +247,25 @@
     "fail": "ÉCHEC",
     "meetsTarget": "Objectif de confiance atteint",
     "belowTarget": "Sous l'objectif de confiance",
-    "misclassified": "{count} mal classés"
+    "misclassified": "{count} mal classés",
+    "tabBenchmark": "Référence",
+    "tabOperational": "Opérationnel",
+    "benchmarkNote": "Corpus historique étiqueté — test de régression, pas prévision live.",
+    "operationalLoading": "Chargement de la tendance opérationnelle…",
+    "operationalEmpty": "Aucun instantané hebdomadaire — gel chaque lundi 00:05 UTC ou via OpenClaw.",
+    "operationalWeeks": "{stored} semaines · {scorable} exploitables",
+    "operationalLabeled": "{labeled} étiquetés · {pending} en attente",
+    "operationalTrend": "Précision semaine après semaine",
+    "operationalImproving": "En hausse vs semaine précédente",
+    "operationalFlat": "Stable ou en baisse vs semaine précédente",
+    "operationalMinLabels": "≥{count} étiquettes/semaine requis",
+    "microTitle": "Micro 3 jours",
+    "microWindow": "Moy. glissante {days} j · ignition Δ ≥ {delta}",
+    "microIgnitions": "{count} ignition(s)",
+    "microAlerted3d": "{count} au-dessus du seuil (moy. 3j)",
+    "microEmpty": "Lecture quotidienne en cours — mis à jour à chaque ingest GT.",
+    "microRegionLine": "{region}: spot {spot} · 3j {avg} · Δ {delta}",
+    "microIgnitionBadge": "IGNITION"
   },
   "roadCorridor": {
     "analyzeHere": "ANALYSER ICI",

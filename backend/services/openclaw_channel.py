@@ -94,6 +94,11 @@ READ_COMMANDS = frozenset({
     "gt_dossier",
     "gt_analyze",
     "gt_backtest",
+    "gt_rolling_freeze",
+    "gt_rolling_label",
+    "gt_rolling_backtest",
+    "gt_micro_rolling",
+    "gt_top_alerts",
     # Private Infonet reads (operator-delegated)
     "infonet_status",
     "list_gates",
@@ -989,6 +994,154 @@ def _dispatch_command(cmd: str, args: dict[str, Any]) -> dict[str, Any]:
         data["recommended_alert_threshold"] = threshold
         if _wants_compact(args) or not include_cases:
             data.pop("cases", None)
+        return {"ok": True, "data": data}
+
+    if cmd == "gt_rolling_freeze":
+        from analytics.rolling_backtest import freeze_weekly_snapshot
+        from analytics.settings import gt_analytics_enabled
+
+        if not gt_analytics_enabled():
+            return {
+                "ok": True,
+                "data": {
+                    "enabled": False,
+                    "message": "Strategic Risk Analytics is disabled (GT_ANALYTICS_ENABLED).",
+                },
+            }
+
+        week_id = str(args.get("week_id", "") or "").strip() or None
+        force = bool(args.get("force", False))
+        result = freeze_weekly_snapshot(
+            week_id=week_id,
+            force=force,
+            frozen_by="openclaw",
+        )
+        if not result.get("ok"):
+            return {"ok": False, "detail": result.get("detail", "Freeze failed")}
+        data = dict(result)
+        data["enabled"] = True
+        if _wants_compact(args):
+            data.pop("snapshot", None)
+        return {"ok": True, "data": data}
+
+    if cmd == "gt_rolling_label":
+        from analytics.rolling_backtest import label_region, label_regions
+        from analytics.settings import gt_analytics_enabled
+
+        if not gt_analytics_enabled():
+            return {
+                "ok": True,
+                "data": {
+                    "enabled": False,
+                    "message": "Strategic Risk Analytics is disabled (GT_ANALYTICS_ENABLED).",
+                },
+            }
+
+        week_id = str(args.get("week_id", "") or "").strip()
+        if not week_id:
+            return {"ok": False, "detail": "week_id required"}
+
+        labels = args.get("labels")
+        if isinstance(labels, list) and labels:
+            result = label_regions(week_id, labels, labeled_by="openclaw")
+        else:
+            region = str(args.get("region", "") or "").strip().lower()
+            label = str(args.get("label", "") or "").strip().lower()
+            if not region or not label:
+                return {"ok": False, "detail": "region and label required (or labels batch)"}
+            result = label_region(
+                week_id,
+                region,
+                label,  # type: ignore[arg-type]
+                notes=str(args.get("notes", "") or ""),
+                labeled_by="openclaw",
+            )
+
+        if not result.get("ok"):
+            return {"ok": False, "detail": result.get("detail", "Label failed")}
+        data = dict(result)
+        data["enabled"] = True
+        return {"ok": True, "data": data}
+
+    if cmd == "gt_rolling_backtest":
+        from analytics.rolling_backtest import rolling_report
+        from analytics.settings import gt_analytics_enabled
+
+        if not gt_analytics_enabled():
+            return {
+                "ok": True,
+                "data": {
+                    "enabled": False,
+                    "message": "Strategic Risk Analytics is disabled (GT_ANALYTICS_ENABLED).",
+                },
+            }
+
+        try:
+            weeks = int(args.get("weeks", 8))
+        except (TypeError, ValueError):
+            weeks = 8
+        try:
+            target_confidence = float(args.get("target_confidence", 0.80))
+        except (TypeError, ValueError):
+            target_confidence = 0.80
+
+        data = rolling_report(weeks=weeks, target_confidence=target_confidence)
+        data["enabled"] = True
+        if _wants_compact(args):
+            for row in data.get("trend") or []:
+                if isinstance(row, dict):
+                    row.pop("frozen_at", None)
+        return {"ok": True, "data": data}
+
+    if cmd == "gt_top_alerts":
+        from analytics.gt_alerts import top_gt_alerts
+        from analytics.settings import gt_analytics_enabled
+
+        if not gt_analytics_enabled():
+            return {
+                "ok": True,
+                "data": {
+                    "enabled": False,
+                    "message": "Strategic Risk Analytics is disabled (GT_ANALYTICS_ENABLED).",
+                },
+            }
+
+        try:
+            limit = int(args.get("limit", 8))
+        except (TypeError, ValueError):
+            limit = 8
+
+        data = top_gt_alerts(limit=limit)
+        data["enabled"] = True
+        return {"ok": True, "data": data}
+
+    if cmd == "gt_micro_rolling":
+        from analytics.micro_rolling import micro_rolling_report
+        from analytics.settings import gt_analytics_enabled
+
+        if not gt_analytics_enabled():
+            return {
+                "ok": True,
+                "data": {
+                    "enabled": False,
+                    "message": "Strategic Risk Analytics is disabled (GT_ANALYTICS_ENABLED).",
+                },
+            }
+
+        try:
+            window_days = int(args.get("window_days", 3))
+        except (TypeError, ValueError):
+            window_days = 3
+        try:
+            limit = int(args.get("limit", 15))
+        except (TypeError, ValueError):
+            limit = 15
+
+        data = micro_rolling_report(window_days=window_days, limit=limit)
+        data["enabled"] = True
+        if _wants_compact(args):
+            data.pop("top_regions", None)
+            data["ignitions"] = (data.get("ignitions") or [])[:5]
         return {"ok": True, "data": data}
 
     if cmd == "brief_area":

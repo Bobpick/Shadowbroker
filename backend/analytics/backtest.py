@@ -11,7 +11,8 @@ easier here than in the wild, and the window is retrospective.
 
 Reports accuracy and a conservative Wilson 95% confidence lower bound on the
 benchmark only. Treat 100% here as "classifier fits the benchmark," not "ship
-it for multi-week forecasting."
+it for multi-week forecasting." For live week-over-week scoring with delayed
+labels, see ``rolling_backtest.py``.
 """
 
 from __future__ import annotations

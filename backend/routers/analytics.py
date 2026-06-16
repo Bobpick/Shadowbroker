@@ -17,6 +17,17 @@ from analytics.backtest import (
 )
 from analytics.feed_adapter import normalize_feed_item
 from analytics.integration import get_gt_engine, refresh_from_latest_data
+from analytics.gt_alerts import top_gt_alerts
+from analytics.micro_rolling import micro_rolling_report
+from analytics.rolling_backtest import (
+    freeze_weekly_snapshot,
+    label_region,
+    label_regions,
+    rolling_alert_threshold,
+    rolling_report,
+    score_week,
+)
+from analytics.weekly_store import load_week
 from analytics.settings import gt_analytics_enabled
 from services.fetchers._store import _data_lock, get_latest_data_subset_refs, latest_data
 
@@ -30,6 +41,22 @@ class RiskHeatmapRequest(BaseModel):
 
     refresh: bool = True
     items: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class RollingFreezeRequest(BaseModel):
+    week_id: str | None = None
+    force: bool = False
+
+
+class RollingLabelEntry(BaseModel):
+    region: str
+    label: str
+    notes: str = ""
+
+
+class RollingLabelRequest(BaseModel):
+    week_id: str
+    labels: list[RollingLabelEntry] = Field(default_factory=list)
 
 
 def _empty_heatmap() -> dict[str, Any]:
@@ -171,3 +198,142 @@ async def analytics_backtest(
     payload["tuned"] = tune
     payload["recommended_alert_threshold"] = threshold
     return payload
+
+
+@router.get("/api/analytics/rolling")
+@limiter.limit("12/minute")
+async def analytics_rolling(
+    request: Request,
+    weeks: int = 8,
+    target_confidence: float = 0.80,
+) -> dict[str, Any]:
+    """Rolling weekly operational validation — accuracy trend with delayed labels."""
+    if not gt_analytics_enabled():
+        return {
+            "enabled": False,
+            "message": "Strategic Risk Analytics is disabled.",
+        }
+
+    report = rolling_report(weeks=max(1, min(weeks, 52)), target_confidence=target_confidence)
+    report["enabled"] = True
+    return report
+
+
+@router.get("/api/analytics/alerts")
+@limiter.limit("30/minute")
+async def analytics_top_alerts(
+    request: Request,
+    limit: int = 8,
+) -> dict[str, Any]:
+    """Top GT risk regions ranked by score — fly-to targets for the map."""
+    if not gt_analytics_enabled():
+        return {
+            "enabled": False,
+            "message": "Strategic Risk Analytics is disabled.",
+        }
+
+    report = top_gt_alerts(limit=max(1, min(limit, 25)))
+    report["enabled"] = True
+    return report
+
+
+@router.get("/api/analytics/rolling/micro")
+@limiter.limit("30/minute")
+async def analytics_rolling_micro(
+    request: Request,
+    window_days: int = 3,
+    limit: int = 15,
+) -> dict[str, Any]:
+    """Rolling 3-day micro average — spot vs baseline, ignition detection."""
+    if not gt_analytics_enabled():
+        return {
+            "enabled": False,
+            "message": "Strategic Risk Analytics is disabled.",
+        }
+
+    report = micro_rolling_report(
+        window_days=max(2, min(window_days, 7)),
+        limit=max(1, min(limit, 50)),
+    )
+    report["enabled"] = True
+    return report
+
+
+@router.get("/api/analytics/rolling/{week_id}")
+@limiter.limit("12/minute")
+async def analytics_rolling_week(request: Request, week_id: str) -> dict[str, Any]:
+    """Return a single frozen week snapshot and its score."""
+    if not gt_analytics_enabled():
+        return {"enabled": False, "message": "Strategic Risk Analytics is disabled."}
+
+    snapshot = load_week(str(week_id).strip())
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail=f"Week {week_id} not found")
+
+    score = score_week(snapshot)
+    return {
+        "enabled": True,
+        "week_id": snapshot.week_id,
+        "snapshot": snapshot.to_dict(),
+        "score": score.to_dict(),
+        "alert_threshold": rolling_alert_threshold(),
+    }
+
+
+@router.post("/api/analytics/rolling/freeze")
+@limiter.limit("6/minute")
+async def analytics_rolling_freeze(
+    request: Request,
+    body: RollingFreezeRequest,
+    _: None = Depends(require_local_operator),
+) -> dict[str, Any]:
+    """Freeze current GT scores for the ISO week (idempotent unless force=true)."""
+    if not gt_analytics_enabled():
+        raise HTTPException(status_code=503, detail="Strategic Risk Analytics is disabled")
+
+    result = freeze_weekly_snapshot(
+        week_id=body.week_id,
+        force=body.force,
+        frozen_by="api",
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result.get("detail", "Freeze failed"))
+    result["enabled"] = True
+    return result
+
+
+@router.post("/api/analytics/rolling/label")
+@limiter.limit("12/minute")
+async def analytics_rolling_label(
+    request: Request,
+    body: RollingLabelRequest,
+    _: None = Depends(require_local_operator),
+) -> dict[str, Any]:
+    """Apply delayed outcome labels to a frozen week."""
+    if not gt_analytics_enabled():
+        raise HTTPException(status_code=503, detail="Strategic Risk Analytics is disabled")
+
+    week_id = str(body.week_id or "").strip()
+    if not week_id:
+        raise HTTPException(status_code=400, detail="week_id required")
+
+    if len(body.labels) == 1:
+        entry = body.labels[0]
+        result = label_region(
+            week_id,
+            entry.region,
+            entry.label,  # type: ignore[arg-type]
+            notes=entry.notes,
+            labeled_by="api",
+        )
+    else:
+        result = label_regions(
+            week_id,
+            [row.model_dump() for row in body.labels],
+            labeled_by="api",
+        )
+
+    if not result.get("ok"):
+        raise HTTPException(status_code=404, detail=result.get("detail", "Label failed"))
+    result["enabled"] = True
+    return result

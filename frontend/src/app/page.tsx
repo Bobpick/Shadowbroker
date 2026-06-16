@@ -23,6 +23,7 @@ import ShodanPanel from '@/components/ShodanPanel';
 import ReconPanel from '@/components/ReconPanel';
 import ScmPanel from '@/components/ScmPanel';
 import GtBacktestPanel from '@/components/GtBacktestPanel';
+import GtTopAlertsStrip from '@/components/GtTopAlertsStrip';
 import EntityGraphPanel from '@/components/EntityGraphPanel';
 import { isEntityGraphEligible } from '@/lib/entityGraph';
 import AIIntelPanel from '@/components/AIIntelPanel';
@@ -922,6 +923,16 @@ export default function Dashboard() {
           >
             {t('nav.restoreUi')}
           </button>
+        )}
+
+        {uiVisible && activeLayers.gt_risk && (
+          <div className="absolute bottom-[11.5rem] left-6 z-[201]">
+            <GtTopAlertsStrip
+              layerEnabled={activeLayers.gt_risk}
+              onFlyTo={handleFlyTo}
+              onSelectEntity={setSelectedEntity}
+            />
+          </div>
         )}
 
         {/* DYNAMIC SCALE BAR — hidden when fullscreen overlays or locate bar are open */}

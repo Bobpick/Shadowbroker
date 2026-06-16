@@ -55,6 +55,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useTranslation } from '@/i18n';
 import SarModeChooserModal from './SarModeChooserModal';
 import KiwiSdrConsentDialog from './ui/KiwiSdrConsentDialog';
+import { extractGtAlerts } from '@/lib/gtAlerts';
 
 function relativeTime(iso: string | undefined): string {
   if (!iso) return '';
@@ -1362,7 +1363,10 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
           id: 'gt_risk',
           name: t('layers.strategicRisk'),
           source: 'GT Early Warning',
-          count: data?.gt_risk?.heatmap?.features?.length || 0,
+          count:
+            extractGtAlerts(data?.gt_risk).plottedRegions ||
+            data?.gt_risk?.meta?.plotted_regions ||
+            0,
           icon: Radar,
         },
         {

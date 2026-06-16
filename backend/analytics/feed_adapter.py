@@ -40,7 +40,23 @@ def _infer_domain(text: str, explicit: str | None = None) -> str:
     return _DOMAIN_FINANCIAL
 
 
-def _text_from_record(record: dict[str, Any]) -> str:
+def _text_from_record(
+    record: dict[str, Any],
+    *,
+    prefer_translation: bool = False,
+) -> str:
+    """Build ingest text; prefer English translations for Telegram OSINT when set."""
+    if prefer_translation:
+        translated_parts = [
+            record.get("title_translated"),
+            record.get("description_translated"),
+        ]
+        translated = "\n".join(
+            str(p).strip() for p in translated_parts if p and str(p).strip()
+        )
+        if translated:
+            return translated
+
     parts = [
         record.get("title"),
         record.get("description"),
@@ -50,10 +66,37 @@ def _text_from_record(record: dict[str, Any]) -> str:
     return "\n".join(str(p).strip() for p in parts if p and str(p).strip())
 
 
-def _region_from_record(record: dict[str, Any]) -> str:
+_HASHTAG_REGION = re.compile(r"#([a-z][a-z0-9_-]{2,})", re.I)
+
+
+def _region_from_hashtags(text: str) -> str | None:
+    """Map common theater hashtags (#Ukraine) to dossier/heatmap region keys."""
+    for match in _HASHTAG_REGION.finditer(text or ""):
+        tag = match.group(1).lower()
+        if tag in {
+            "ukraine",
+            "russia",
+            "israel",
+            "iran",
+            "gaza",
+            "syria",
+            "taiwan",
+            "china",
+            "belfast",
+            "uk",
+            "usa",
+        }:
+            return tag
+    return None
+
+
+def _region_from_record(record: dict[str, Any], *, text: str = "") -> str:
     for key in ("geotag", "region", "country", "location"):
         if record.get(key):
             return _clean_region(record[key])
+    hashtag_region = _region_from_hashtags(text)
+    if hashtag_region:
+        return hashtag_region
     coords = record.get("coords")
     if isinstance(coords, (list, tuple)) and len(coords) >= 2:
         try:
@@ -84,8 +127,11 @@ def _entities_from_record(record: dict[str, Any]) -> list[str]:
 
 def normalize_feed_item(record: dict[str, Any], *, source_type: str = "generic") -> dict[str, Any]:
     """Map a news/Telegram/GDELT record into the GT engine schema."""
-    text = _text_from_record(record)
-    region = _region_from_record(record)
+    prefer_translation = source_type == "telegram_osint"
+    text = _text_from_record(record, prefer_translation=prefer_translation)
+    if prefer_translation and not text.strip():
+        text = _text_from_record(record, prefer_translation=False)
+    region = _region_from_record(record, text=text)
     domain = _infer_domain(text, record.get("domain"))
     coords = record.get("coords")
     lat = lng = None
@@ -111,10 +157,20 @@ def normalize_feed_item(record: dict[str, Any], *, source_type: str = "generic")
 
 
 def iter_telegram_posts(payload: dict[str, Any] | None) -> Iterable[dict[str, Any]]:
+    from services.telegram_translate import apply_post_translation, telegram_translate_enabled
+
     posts = list((payload or {}).get("posts") or [])
     for post in posts:
-        if isinstance(post, dict) and post.get("description") or post.get("title"):
-            yield normalize_feed_item(post, source_type="telegram_osint")
+        if not isinstance(post, dict):
+            continue
+        if not (post.get("description") or post.get("title")):
+            continue
+        enriched = (
+            apply_post_translation(post)
+            if telegram_translate_enabled()
+            else post
+        )
+        yield normalize_feed_item(enriched, source_type="telegram_osint")
 
 
 def iter_news_items(payload: list[dict[str, Any]] | None) -> Iterable[dict[str, Any]]:

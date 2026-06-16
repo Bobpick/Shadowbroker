@@ -977,6 +977,14 @@ def start_scheduler():
         except Exception as exc:
             logger.error("GT Louvain recompute failed: %s", exc)
 
+    def _freeze_gt_weekly_snapshot():
+        try:
+            from analytics.integration import maybe_freeze_gt_weekly_snapshot
+
+            maybe_freeze_gt_weekly_snapshot()
+        except Exception as exc:
+            logger.error("GT rolling weekly freeze failed: %s", exc)
+
     try:
         from analytics.settings import get_gt_settings
 
@@ -990,6 +998,16 @@ def start_scheduler():
                 max_instances=1,
                 misfire_grace_time=300,
                 next_run_time=datetime.utcnow() + timedelta(minutes=3),
+            )
+            _scheduler.add_job(
+                _freeze_gt_weekly_snapshot,
+                "cron",
+                day_of_week="mon",
+                hour=0,
+                minute=5,
+                id="gt_rolling_weekly_freeze",
+                max_instances=1,
+                misfire_grace_time=3600,
             )
     except Exception as exc:
         logger.warning("GT Louvain scheduler not registered: %s", exc)
