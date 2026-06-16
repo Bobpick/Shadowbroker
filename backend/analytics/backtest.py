@@ -1,7 +1,17 @@
 """Historical backtesting for Strategic Risk Analytics.
 
-Evaluates GT_EarlyWarning against labeled pre-crisis corpora and cheap-talk
-controls. Reports accuracy and a conservative Wilson 95% confidence lower bound.
+This is **benchmark validation**, not forward-weeks prediction on live feeds.
+
+The suite scores whether costly-signal patterns + Bayesian updating correctly
+classify curated pre-crisis text snippets (positive cases) vs cheap-talk
+controls (negative cases) at a tuned alert threshold. A high accuracy on this
+labeled corpus does **not** imply the engine will score 100% on messy,
+adversarial, or weeks-ahead production telemetry — opponents adapt, labels are
+easier here than in the wild, and the window is retrospective.
+
+Reports accuracy and a conservative Wilson 95% confidence lower bound on the
+benchmark only. Treat 100% here as "classifier fits the benchmark," not "ship
+it for multi-week forecasting."
 """
 
 from __future__ import annotations

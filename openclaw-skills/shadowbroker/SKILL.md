@@ -180,9 +180,18 @@ Requires `GT_ANALYTICS_ENABLED=true` on the ShadowBroker backend.
 | `await sb.gt_analyze(region="ukraine")` | Refresh beliefs from Telegram/news/GDELT + dossier |
 | `await sb.gt_risk_heatmap()` | GeoJSON posterior risk overlay + Louvain clusters |
 | `await sb.gt_dossier("ukraine")` | Costly signals, domain risks, scenarios |
-| `await sb.gt_backtest()` | Historical validation — accuracy + Wilson 95% lower bound |
+| `await sb.gt_backtest()` | Benchmark validation — accuracy + Wilson 95% lower bound |
 | `await sb.gt_backtest(tune=True)` | Grid-search alert threshold for target confidence |
 | `await sb.ask("Run GT historical backtest")` | Routes to `gt_backtest` |
+| `python sb_gt_report.py` | Local helper — backtest + heatmap (+ optional `--region`) |
+
+**Backtest caveat (read before citing accuracy):** `gt_backtest` scores curated
+pre-crisis text snippets vs cheap-talk controls. It validates costly-signal
+classification on a labeled benchmark — **not** multi-week forward prediction on
+live adversarial feeds. 100% on the benchmark means the classifier fits the
+suite; it is **not** proof of weeks-ahead forecasting skill. Ask: window size,
+event count, and whether labels are retrospective. Strong production performance
+is typically lower and must be tracked on live telemetry over time.
 | `await sb.send_command("gt_analyze", {"region": "europe"})` | Same as `gt_analyze()` |
 
 **When to use**: Use `get_summary()` first. Use `get_layer_slice()` for the layers
