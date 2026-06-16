@@ -211,6 +211,14 @@
     "telegramOsint": "Telegram OSINT",
     "strategicRisk": "战略风险热力图"
   },
+  "gtAlerts": {
+    "title": "重点警报",
+    "counts": "地图 {plotted} · 跟踪 {tracked}（上限 {max}）",
+    "empty": "尚无可绘制区域 — 需要带地理标签的情报。",
+    "ignition": "点火",
+    "line": "风险 {risk} · 冲突 {conflict}",
+    "hint": "500 = 最大跟踪区域数，非事件数。点击飞往。"
+  },
   "gtRisk": {
     "popupTitle": "战略风险",
     "region": "区域",
@@ -218,7 +226,11 @@
     "financial": "金融",
     "unrest": "动荡",
     "conflict": "冲突",
-    "contagion": "传染"
+    "contagion": "传染",
+    "costlySignals": "成本信号",
+    "loadingSignals": "正在加载情报匹配…",
+    "noSignals": "该区域最近在 Telegram/GDELT/新闻中未匹配到成本信号文本。",
+    "unknownSource": "未知来源"
   },
   "gtBacktest": {
     "title": "GT 回测",
@@ -235,7 +247,25 @@
     "fail": "未通过",
     "meetsTarget": "达到置信目标",
     "belowTarget": "低于置信目标",
-    "misclassified": "{count} 个误分类"
+    "misclassified": "{count} 个误分类",
+    "tabBenchmark": "基准测试",
+    "tabOperational": "运营验证",
+    "benchmarkNote": "静态标注语料 — 回归测试，非实时预测。",
+    "operationalLoading": "正在加载滚动运营趋势…",
+    "operationalEmpty": "尚无周快照 — 每周一 00:05 UTC 自动冻结，或通过 OpenClaw。",
+    "operationalWeeks": "已存 {stored} 周 · {scorable} 周可评分",
+    "operationalLabeled": "已标注 {labeled} · 待标注 {pending}",
+    "operationalTrend": "逐周准确率",
+    "operationalImproving": "较上一可评分周有所提升",
+    "operationalFlat": "较上一可评分周持平或下降",
+    "operationalMinLabels": "每周需 ≥{count} 条标注才可评分",
+    "microTitle": "3日微观",
+    "microWindow": "{days}日滚动均值 · 点火 Δ ≥ {delta}",
+    "microIgnitions": "{count} 个点火",
+    "microAlerted3d": "{count} 个区域 3日均值超阈值",
+    "microEmpty": "正在采集日读数 — 随 GT 摄入更新。",
+    "microRegionLine": "{region}：即时 {spot} · 3日 {avg} · Δ {delta}",
+    "microIgnitionBadge": "点火"
   },
   "roadCorridor": {
     "analyzeHere": "分析此处",

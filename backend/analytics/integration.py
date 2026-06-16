@@ -58,7 +58,22 @@ def _persist_gt_snapshot(
 ) -> dict[str, Any]:
     timestamp = datetime.now(timezone.utc).isoformat()
     heatmap = engine.get_risk_heatmap()
+    micro_summary: dict[str, Any] = {}
+    try:
+        from analytics.micro_rolling import capture_daily_readings, enrich_heatmap_features
+
+        micro_summary = capture_daily_readings(engine)
+        heatmap = enrich_heatmap_features(heatmap)
+    except Exception:
+        logger.exception("GT micro rolling capture failed")
+
     clusters = engine.compute_herding_clusters()
+    from analytics.gt_alerts import parse_heatmap_alerts
+
+    _, plotted_regions = parse_heatmap_alerts(heatmap)
+    with engine._lock:  # noqa: SLF001 — snapshot meta
+        engine_regions = len(engine._regions)
+    settings = get_gt_settings()
     payload = {
         "enabled": True,
         "timestamp": timestamp,
@@ -67,6 +82,13 @@ def _persist_gt_snapshot(
         "clusters": clusters,
         "sample": list(sample or [])[:5],
         "regions": len(heatmap.get("features") or []),
+        "micro": micro_summary,
+        "meta": {
+            "tracked_regions": len(heatmap.get("features") or []),
+            "engine_regions": engine_regions,
+            "plotted_regions": plotted_regions,
+            "max_regions": settings.max_heatmap_features,
+        },
     }
     with _data_lock:
         latest_data["gt_risk"] = payload
@@ -152,3 +174,22 @@ def maybe_refresh_gt_analytics() -> None:
         refresh_from_latest_data(snapshot, persist=True)
     except Exception:
         logger.exception("GT analytics refresh failed")
+
+
+def maybe_freeze_gt_weekly_snapshot() -> None:
+    """Hook for weekly scheduler — freeze operational backtest snapshot."""
+    if not gt_analytics_enabled():
+        return
+    try:
+        from analytics.rolling_backtest import freeze_weekly_snapshot
+
+        result = freeze_weekly_snapshot(frozen_by="scheduler")
+        if result.get("created"):
+            logger.info(
+                "GT rolling freeze: week=%s regions=%s alerts=%s",
+                result.get("week_id"),
+                result.get("region_count"),
+                result.get("alert_count"),
+            )
+    except Exception:
+        logger.exception("GT rolling weekly freeze failed")

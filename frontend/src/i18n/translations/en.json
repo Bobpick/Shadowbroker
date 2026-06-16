@@ -211,6 +211,14 @@
     "telegramOsint": "Telegram OSINT",
     "strategicRisk": "Strategic Risk Heatmap"
   },
+  "gtAlerts": {
+    "title": "TOP ALERTS",
+    "counts": "{plotted} on map · {tracked} tracked (max {max})",
+    "empty": "No plottable regions yet — need geotagged intel (Telegram/GDELT/news).",
+    "ignition": "IGNITE",
+    "line": "risk {risk} · conflict {conflict}",
+    "hint": "500 = max tracked regions, not individual events. Click to fly there."
+  },
   "gtRisk": {
     "popupTitle": "STRATEGIC RISK",
     "region": "REGION",
@@ -218,7 +226,11 @@
     "financial": "FIN",
     "unrest": "UNREST",
     "conflict": "CONFLICT",
-    "contagion": "CONTAGION"
+    "contagion": "CONTAGION",
+    "costlySignals": "COSTLY SIGNALS",
+    "loadingSignals": "Loading feed matches…",
+    "noSignals": "No costly-signal text matched in recent Telegram/GDELT/news for this region. Scores can rise from domain priors or nearby contagion.",
+    "unknownSource": "unknown source"
   },
   "gtBacktest": {
     "title": "GT Backtest",
@@ -235,7 +247,25 @@
     "fail": "FAIL",
     "meetsTarget": "Meets confidence target",
     "belowTarget": "Below confidence target",
-    "misclassified": "{count} misclassified"
+    "misclassified": "{count} misclassified",
+    "tabBenchmark": "Benchmark",
+    "tabOperational": "Operational",
+    "benchmarkNote": "Static labeled corpus — regression test, not live forecasting.",
+    "operationalLoading": "Loading rolling operational trend…",
+    "operationalEmpty": "No weekly snapshots yet — freeze runs Mondays 00:05 UTC or via OpenClaw.",
+    "operationalWeeks": "{stored} weeks stored · {scorable} scorable",
+    "operationalLabeled": "{labeled} labeled · {pending} pending",
+    "operationalTrend": "Week-over-week accuracy",
+    "operationalImproving": "Improving vs prior scorable week",
+    "operationalFlat": "Flat or down vs prior scorable week",
+    "operationalMinLabels": "Need ≥{count} labels/week to score",
+    "microTitle": "3-day micro",
+    "microWindow": "{days}-day rolling avg · ignition Δ ≥ {delta}",
+    "microIgnitions": "{count} ignition(s)",
+    "microAlerted3d": "{count} above threshold on 3d avg",
+    "microEmpty": "Collecting daily readings — refreshes with GT ingest.",
+    "microRegionLine": "{region}: spot {spot} · 3d {avg} · Δ {delta}",
+    "microIgnitionBadge": "IGNITION"
   },
   "roadCorridor": {
     "analyzeHere": "ANALYZE HERE",

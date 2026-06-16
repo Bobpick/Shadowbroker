@@ -2,6 +2,9 @@
 
 Evaluates GT_EarlyWarning against labeled pre-crisis corpora and cheap-talk
 controls. Reports accuracy and a conservative Wilson 95% confidence lower bound.
+
+This is a **static regression benchmark** — not forward operational validation.
+For live week-over-week scoring with delayed labels, see ``rolling_backtest.py``.
 """
 
 from __future__ import annotations
