@@ -22,6 +22,7 @@ import { endInfonetTerminalSession } from '@/lib/infonetTerminalSession';
 import ShodanPanel from '@/components/ShodanPanel';
 import ReconPanel from '@/components/ReconPanel';
 import ScmPanel from '@/components/ScmPanel';
+import GtBacktestPanel from '@/components/GtBacktestPanel';
 import EntityGraphPanel from '@/components/EntityGraphPanel';
 import { isEntityGraphEligible } from '@/lib/entityGraph';
 import AIIntelPanel from '@/components/AIIntelPanel';
@@ -37,6 +38,7 @@ import { useDataPolling, LAYER_TOGGLE_EVENT } from '@/hooks/useDataPolling';
 import { useBackendStatus, useDataKey, useDataKeys } from '@/hooks/useDataStore';
 import { useReverseGeocode } from '@/hooks/useReverseGeocode';
 import { useRegionDossier } from '@/hooks/useRegionDossier';
+import { useGtDossier } from '@/hooks/useGtDossier';
 import { useAgentActions } from '@/hooks/useAgentActions';
 import { useFeedHealth } from '@/hooks/useFeedHealth';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -237,6 +239,7 @@ export default function Dashboard() {
     wastewater: true,
     // CrowdThreat is operator opt-in only.
     crowdthreat: false,
+    gt_risk: true,
     // Shodan
     shodan_overlay: false,
     // AI Intel
@@ -244,6 +247,16 @@ export default function Dashboard() {
     // SAR (Synthetic Aperture Radar)
     sar: true,
   });
+  const regionLat =
+    selectedEntity?.type === 'region_dossier' ? selectedEntity.extra?.lat : undefined;
+  const regionLng =
+    selectedEntity?.type === 'region_dossier' ? selectedEntity.extra?.lng : undefined;
+  const { gtDossier, gtDossierLoading } = useGtDossier(
+    typeof regionLat === 'number' ? regionLat : undefined,
+    typeof regionLng === 'number' ? regionLng : undefined,
+    regionDossier?.country?.name,
+    activeLayers.gt_risk,
+  );
   const [shodanResults, setShodanResults] = useState<ShodanSearchMatch[]>([]);
   const [, setShodanQueryLabel] = useState('');
   const [shodanStyle, setShodanStyle] = useState<import('@/types/shodan').ShodanStyleConfig>({ shape: 'circle', color: '#16a34a', size: 'md' });
@@ -661,6 +674,7 @@ export default function Dashboard() {
                 <div className="contents" style={{ direction: 'ltr' }}>
                   <ReconPanel />
                   <ScmPanel layerEnabled={activeLayers.scm_suppliers} />
+                  <GtBacktestPanel layerEnabled={activeLayers.gt_risk} />
                 </div>
               )}
 
@@ -776,6 +790,8 @@ export default function Dashboard() {
                     selectedEntity={selectedEntity}
                     regionDossier={regionDossier}
                     regionDossierLoading={regionDossierLoading}
+                    gtDossier={gtDossier}
+                    gtDossierLoading={gtDossierLoading}
                     onExpandEntityGraph={() => {
                       if (isEntityGraphEligible(selectedEntity)) setShowEntityGraph(true);
                     }}

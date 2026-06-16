@@ -966,6 +966,100 @@ export interface DashboardData {
     timestamp?: string | null;
     channels?: string[];
   };
+  gt_risk?: GTRiskPayload;
+}
+
+export interface GTRiskHeatmapFeature {
+  type: 'Feature';
+  properties: {
+    region: string;
+    risk: number;
+    financial?: number;
+    unrest?: number;
+    conflict?: number;
+    contagion?: number;
+    updates?: number;
+  };
+  geometry: {
+    type: 'Point';
+    coordinates: [number, number];
+  };
+}
+
+export interface GTRiskPayload {
+  enabled?: boolean;
+  timestamp?: string | null;
+  processed?: number;
+  heatmap?: {
+    type: 'FeatureCollection';
+    features: GTRiskHeatmapFeature[];
+  };
+  clusters?: Array<{
+    cluster_id: number;
+    size: number;
+    mean_risk: number;
+    regions?: string[];
+    members?: string[];
+  }>;
+}
+
+export interface GtDossierSignalEntry {
+  timestamp: string;
+  domain: string;
+  signals: Record<string, number>;
+  strength: number;
+  posterior: number;
+  source: string;
+  deviation_score?: number;
+}
+
+export interface GtBacktestCaseResult {
+  case_id: string;
+  name: string;
+  kind: string;
+  correct: boolean;
+  alerted: boolean;
+  peak_domain_risk: number;
+  peak_composite_risk: number;
+  costly_signals: string[];
+}
+
+export interface GtBacktestReport {
+  enabled?: boolean;
+  total_cases: number;
+  correct: number;
+  accuracy: number;
+  confidence_rate: number;
+  wilson_lower_95: number;
+  wilson_upper_95: number;
+  true_positives: number;
+  true_negatives: number;
+  false_positives: number;
+  false_negatives: number;
+  sensitivity: number;
+  specificity: number;
+  alert_threshold: number;
+  target_confidence: number;
+  meets_target: boolean;
+  expanded_suite?: boolean;
+  tuned?: boolean;
+  recommended_alert_threshold?: number;
+  cases?: GtBacktestCaseResult[];
+}
+
+export interface GtDossier {
+  enabled?: boolean;
+  region: string;
+  current_risk: number;
+  domain_risks?: {
+    financial?: number;
+    unrest?: number;
+    conflict?: number;
+  };
+  recent_signals?: GtDossierSignalEntry[];
+  contagion_risk?: number;
+  interpretation?: string;
+  scenarios?: Array<{ name: string; summary: string }>;
 }
 
 export interface TelegramOsintPost {
@@ -1125,6 +1219,7 @@ export interface ActiveLayers {
   scm_suppliers: boolean;
   cyber_threats: boolean;
   telegram_osint: boolean;
+  gt_risk: boolean;
 }
 
 export interface SelectedEntity {

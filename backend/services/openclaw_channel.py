@@ -90,6 +90,10 @@ READ_COMMANDS = frozenset({
     # Agent routing helpers
     "route_query",
     "run_playbook",
+    "gt_risk_heatmap",
+    "gt_dossier",
+    "gt_analyze",
+    "gt_backtest",
     # Private Infonet reads (operator-delegated)
     "infonet_status",
     "list_gates",
@@ -856,6 +860,136 @@ def _dispatch_command(cmd: str, args: dict[str, Any]) -> dict[str, Any]:
         if _wants_compact(args):
             return {"ok": True, "data": _compact_query_result(result), "format": "compressed_v1"}
         return {"ok": True, "data": result}
+
+    if cmd == "gt_risk_heatmap":
+        from analytics.settings import gt_analytics_enabled
+        from analytics.integration import get_gt_engine
+        from services.fetchers._store import get_latest_data_subset_refs
+
+        if not gt_analytics_enabled():
+            return {"ok": True, "data": {"enabled": False, "features": [], "clusters": []}}
+        snap = get_latest_data_subset_refs("gt_risk")
+        payload = dict(snap.get("gt_risk") or {})
+        engine = get_gt_engine()
+        if engine is not None and not payload.get("heatmap"):
+            payload["heatmap"] = engine.get_risk_heatmap()
+        return {"ok": True, "data": payload}
+
+    if cmd == "gt_dossier":
+        from analytics.settings import gt_analytics_enabled
+        from analytics.integration import get_gt_engine
+
+        region = str(args.get("region", "") or args.get("area", "") or "").strip().lower()
+        if not region:
+            return {"ok": False, "detail": "region required (e.g. ukraine, uk, europe)"}
+        if not gt_analytics_enabled():
+            return {
+                "ok": True,
+                "data": {
+                    "enabled": False,
+                    "region": region,
+                    "interpretation": "Strategic Risk Analytics is disabled (GT_ANALYTICS_ENABLED).",
+                },
+            }
+        engine = get_gt_engine()
+        if engine is None:
+            return {"ok": False, "detail": "GT analytics engine unavailable"}
+        return {"ok": True, "data": engine.get_dossier(region)}
+
+    if cmd == "gt_analyze":
+        from analytics.settings import gt_analytics_enabled
+        from analytics.integration import get_gt_engine, refresh_from_latest_data
+        from services.fetchers._store import _data_lock, latest_data
+
+        if not gt_analytics_enabled():
+            return {"ok": False, "detail": "Strategic Risk Analytics is disabled (GT_ANALYTICS_ENABLED)"}
+        engine = get_gt_engine()
+        if engine is None:
+            return {"ok": False, "detail": "GT analytics engine unavailable"}
+
+        feeds = args.get("feeds") if isinstance(args.get("feeds"), (list, tuple)) else None
+        if feeds:
+            from analytics.feed_adapter import normalize_feed_item
+
+            ingested = 0
+            for raw in feeds:
+                if not isinstance(raw, dict):
+                    continue
+                item = normalize_feed_item(raw, source_type=str(raw.get("source_type") or "openclaw"))
+                result = engine.process_feed_item(item)
+                if result and not result.get("skipped"):
+                    ingested += 1
+            summary = {"ingested": ingested, "enabled": True}
+        else:
+            with _data_lock:
+                snapshot = dict(latest_data)
+            summary = refresh_from_latest_data(snapshot, persist=True)
+
+        region = str(args.get("region", "") or "").strip().lower()
+        data = {
+            "refresh": summary,
+            "heatmap_features": len((summary.get("sample") or [])),
+        }
+        if region:
+            data["dossier"] = engine.get_dossier(region)
+        else:
+            data["heatmap"] = engine.get_risk_heatmap()
+            data["clusters"] = engine.compute_herding_clusters()[:5]
+        return {"ok": True, "data": data}
+
+    if cmd == "gt_backtest":
+        from analytics.backtest import (
+            DEFAULT_BACKTEST_ALERT_THRESHOLD,
+            run_historical_backtest,
+            tune_alert_threshold,
+        )
+        from analytics.historical_events import default_historical_cases, expanded_historical_cases
+        from analytics.settings import gt_analytics_enabled
+
+        if not gt_analytics_enabled():
+            return {
+                "ok": True,
+                "data": {
+                    "enabled": False,
+                    "message": "Strategic Risk Analytics is disabled (GT_ANALYTICS_ENABLED).",
+                },
+            }
+
+        expanded = bool(args.get("expanded", True))
+        tune = bool(args.get("tune", False))
+        include_cases = bool(args.get("include_cases", False))
+        try:
+            target_confidence = float(args.get("target_confidence", 0.95))
+        except (TypeError, ValueError):
+            target_confidence = 0.95
+
+        if tune:
+            suite = expanded_historical_cases() if expanded else default_historical_cases()
+            threshold, report = tune_alert_threshold(
+                suite,
+                target_confidence=target_confidence,
+            )
+        else:
+            raw_threshold = args.get("alert_threshold")
+            threshold = (
+                float(raw_threshold)
+                if raw_threshold is not None
+                else DEFAULT_BACKTEST_ALERT_THRESHOLD
+            )
+            report = run_historical_backtest(
+                use_expanded_suite=expanded,
+                alert_threshold=threshold,
+                target_confidence=target_confidence,
+            )
+
+        data = report.to_dict()
+        data["enabled"] = True
+        data["expanded_suite"] = expanded
+        data["tuned"] = tune
+        data["recommended_alert_threshold"] = threshold
+        if _wants_compact(args) or not include_cases:
+            data.pop("cases", None)
+        return {"ok": True, "data": data}
 
     if cmd == "brief_area":
         from services.telemetry import entities_near, search_news, get_layer_slice

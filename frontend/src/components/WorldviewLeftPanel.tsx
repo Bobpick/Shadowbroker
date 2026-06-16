@@ -115,6 +115,7 @@ const FRESHNESS_MAP: Record<string, string> = {
   scm_suppliers: 'scm_suppliers',
   cyber_threats: 'cyber_threats',
   telegram_osint: 'telegram_osint',
+  gt_risk: 'gt_risk',
 };
 
 // POTUS fleet ICAO hex codes for client-side filtering
@@ -1358,6 +1359,13 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
           icon: Shield,
         },
         {
+          id: 'gt_risk',
+          name: t('layers.strategicRisk'),
+          source: 'GT Early Warning',
+          count: data?.gt_risk?.heatmap?.features?.length || 0,
+          icon: Radar,
+        },
+        {
           id: 'correlations',
           name: t('layers.correlations'),
           source: 'Cross-Layer Analysis',
@@ -1394,7 +1402,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
     sections.forEach((s) => {
       // Keep high-traffic intel overlays visible on first paint (GDELT, Telegram, etc.)
       initial[s.label] = s.layers.some((l) =>
-        ['global_incidents', 'telegram_osint', 'ukraine_frontline'].includes(l.id),
+        ['global_incidents', 'telegram_osint', 'ukraine_frontline', 'gt_risk'].includes(l.id),
       );
     });
     return initial;

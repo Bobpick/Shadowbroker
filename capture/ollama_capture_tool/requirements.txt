@@ -1,0 +1,9 @@
+# Required for the Ethical Capture Assistant
+ollama>=0.3.0
+
+# Strongly recommended for full document support
+pypdf>=5.0.0
+python-docx>=1.1.0
+
+# Optional but useful
+# markdown>=3.6   # if you want to render preview later

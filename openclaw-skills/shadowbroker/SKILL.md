@@ -170,6 +170,21 @@ The channel operates over HMAC-authenticated HTTP with body-integrity binding:
 | `await sb.get_slow_telemetry()` | Slow-tier: GDELT, news, earthquakes, markets, correlations, Telegram OSINT, malware/cyber threats, SCM suppliers |
 | `await sb.get_report()` | Full structured intelligence report |
 
+### Strategic Risk Analytics (GT early warning)
+
+Requires `GT_ANALYTICS_ENABLED=true` on the ShadowBroker backend.
+
+| Method / command | What It Returns |
+|------------------|----------------|
+| `await sb.ask("Run GT analysis on UK/Europe feeds")` | Routes to `gt_analyze` |
+| `await sb.gt_analyze(region="ukraine")` | Refresh beliefs from Telegram/news/GDELT + dossier |
+| `await sb.gt_risk_heatmap()` | GeoJSON posterior risk overlay + Louvain clusters |
+| `await sb.gt_dossier("ukraine")` | Costly signals, domain risks, scenarios |
+| `await sb.gt_backtest()` | Historical validation — accuracy + Wilson 95% lower bound |
+| `await sb.gt_backtest(tune=True)` | Grid-search alert threshold for target confidence |
+| `await sb.ask("Run GT historical backtest")` | Routes to `gt_backtest` |
+| `await sb.send_command("gt_analyze", {"region": "europe"})` | Same as `gt_analyze()` |
+
 **When to use**: Use `get_summary()` first. Use `get_layer_slice()` for the layers
 you actually need. Reserve full `get_telemetry()` / `get_slow_telemetry()` for rare
 cases where you genuinely need every field across every layer.

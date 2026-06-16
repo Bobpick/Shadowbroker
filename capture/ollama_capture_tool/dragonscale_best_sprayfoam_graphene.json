@@ -1,0 +1,15 @@
+{
+  "masses": {
+    "gypsum": 8.64,
+    "graphene": 1.65,
+    "ceramic_fiber": 10.78,
+    "fumed_silica": 22.78
+  },
+  "total_mass": 44.1,
+  "porosity": 96.0,
+  "bulk_density": 0.0259,
+  "effective_thermal_conductivity": 0.0001,
+  "num_components": 4,
+  "est_cost_per_kg": 10.34,
+  "score": 1e-06
+}
