@@ -181,3 +181,4 @@ export default function GtBacktestPanel({ layerEnabled = false }: Props) {
       )}
     </div>
   );
+}
