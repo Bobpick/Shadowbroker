@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Popup } from 'react-map-gl/maplibre';
 import { Radio } from 'lucide-react';
 import { useTranslation } from '@/i18n';
@@ -69,11 +69,30 @@ function riskTheme(rs: number) {
   };
 }
 
-function postHeadline(post: TelegramOsintPost): string {
+function hasTranslation(post: TelegramOsintPost): boolean {
+  const translated = String(post.title_translated || post.description_translated || '').trim();
+  const original = String(post.title || post.description || '').trim();
+  return Boolean(translated && translated !== original);
+}
+
+function postHeadline(post: TelegramOsintPost, showOriginal: boolean): string {
+  if (!showOriginal && post.title_translated) {
+    return post.title_translated.trim();
+  }
   return String(post.title || post.description || 'Telegram intercept').trim();
 }
 
-function postDetail(post: TelegramOsintPost): string | null {
+function postDetail(post: TelegramOsintPost, showOriginal: boolean): string | null {
+  if (!showOriginal && post.description_translated) {
+    const translatedTitle = String(post.title_translated || '').trim();
+    const translatedBody = String(post.description_translated || '').trim();
+    if (!translatedBody || translatedBody === translatedTitle) return null;
+    const extra = translatedBody.startsWith(translatedTitle)
+      ? translatedBody.slice(translatedTitle.length).trim()
+      : translatedBody;
+    return extra || null;
+  }
+
   const title = String(post.title || '').trim();
   const description = String(post.description || '').trim();
   if (!description || description === title || description.startsWith(title)) return null;
@@ -126,10 +145,12 @@ function TelegramPostMedia({ post }: { post: TelegramOsintPost }) {
 
 function TelegramPostCard({ post }: { post: TelegramOsintPost }) {
   const { t } = useTranslation();
+  const [showOriginal, setShowOriginal] = useState(false);
   const rs = post.risk_score ?? 1;
   const theme = riskTheme(rs);
-  const headline = postHeadline(post);
-  const detail = postDetail(post);
+  const translated = hasTranslation(post);
+  const headline = postHeadline(post, showOriginal);
+  const detail = postDetail(post, showOriginal);
   const isHigh = rs >= 8;
 
   return (
@@ -150,12 +171,27 @@ function TelegramPostCard({ post }: { post: TelegramOsintPost }) {
         <p className="text-[11px] text-[var(--text-muted)] leading-relaxed whitespace-pre-wrap">{detail}</p>
       ) : null}
 
+      {translated && !showOriginal && post.source_lang ? (
+        <p className="text-[10px] text-cyan-700/80 uppercase tracking-wider">
+          {t('telegram.translatedFrom').replace('{lang}', post.source_lang.toUpperCase())}
+        </p>
+      ) : null}
+
       <TelegramPostMedia post={post} />
 
       <div className="flex items-center gap-1.5 mt-1 flex-wrap">
         <span className={`text-[11px] font-bold font-mono px-1.5 py-0.5 rounded-sm border ${theme.badgeClass}`}>
           {isHigh ? 'BREAKING' : `LVL: ${rs}/10`}
         </span>
+        {translated ? (
+          <button
+            type="button"
+            onClick={() => setShowOriginal((prev) => !prev)}
+            className="text-[11px] font-mono text-cyan-600 hover:text-cyan-300 transition-colors"
+          >
+            {showOriginal ? t('telegram.showTranslation') : t('telegram.showOriginal')}
+          </button>
+        ) : null}
         {post.link ? (
           <a
             href={post.link}
@@ -172,15 +208,54 @@ function TelegramPostCard({ post }: { post: TelegramOsintPost }) {
 }
 
 export function TelegramOsintPopup({ posts, lat, lng, onClose }: TelegramOsintPopupProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const [localizedPosts, setLocalizedPosts] = useState(posts);
+
+  useEffect(() => {
+    setLocalizedPosts(posts);
+  }, [posts]);
+
+  useEffect(() => {
+    const needsLocale = posts.some(
+      (post) =>
+        post.source_lang &&
+        post.source_lang !== locale &&
+        post.translate_to !== locale,
+    );
+    if (!needsLocale) {
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    fetch(`/api/telegram-feed?lang=${encodeURIComponent(locale)}`, { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (cancelled || !payload?.posts) return;
+        const byId = new Map(
+          (payload.posts as TelegramOsintPost[]).map((post) => [post.id, post]),
+        );
+        setLocalizedPosts(posts.map((post) => byId.get(post.id) || post));
+      })
+      .catch(() => {
+        /* keep feed posts when locale translation fetch fails */
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [locale, posts]);
+
   const sortedPosts = useMemo(
     () =>
-      [...posts].sort(
+      [...localizedPosts].sort(
         (a, b) =>
           (b.risk_score ?? 0) - (a.risk_score ?? 0) ||
           String(b.published || '').localeCompare(String(a.published || '')),
       ),
-    [posts],
+    [localizedPosts],
   );
 
   const maxRisk = sortedPosts[0]?.risk_score ?? 1;

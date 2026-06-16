@@ -208,7 +208,34 @@
     "malwareC2": "Malware C2",
     "scmSuppliers": "SCM Suppliers",
     "cyberThreats": "Cyber Threats",
-    "telegramOsint": "Telegram OSINT"
+    "telegramOsint": "Telegram OSINT",
+    "strategicRisk": "Strategic Risk Heatmap"
+  },
+  "gtRisk": {
+    "popupTitle": "STRATEGIC RISK",
+    "region": "REGION",
+    "composite": "POSTERIOR RISK",
+    "financial": "FIN",
+    "unrest": "UNREST",
+    "conflict": "CONFLICT",
+    "contagion": "CONTAGION"
+  },
+  "gtBacktest": {
+    "title": "GT Backtest",
+    "layerOff": "Off — enable Strategic Risk Heatmap in Data Layers.",
+    "disabled": "GT analytics disabled (set GT_ANALYTICS_ENABLED=true).",
+    "loading": "Running historical validation…",
+    "refresh": "Refresh backtest",
+    "accuracy": "ACCURACY",
+    "confidence": "WILSON 95% LB",
+    "cases": "{count} labeled cases",
+    "threshold": "alert ≥ {value}",
+    "target": "target {value}",
+    "pass": "PASS",
+    "fail": "FAIL",
+    "meetsTarget": "Meets confidence target",
+    "belowTarget": "Below confidence target",
+    "misclassified": "{count} misclassified"
   },
   "roadCorridor": {
     "analyzeHere": "ANALYZE HERE",
@@ -273,6 +300,9 @@
     "loadMedia": "VIEW MEDIA (TELEGRAM)",
     "openOriginal": "OPEN ON TELEGRAM →",
     "embedTitle": "Telegram post embed",
-    "postsAtLocation": "{count} posts at this location — scroll for more"
+    "postsAtLocation": "{count} posts at this location — scroll for more",
+    "translatedFrom": "Translated from {lang}",
+    "showOriginal": "SHOW ORIGINAL",
+    "showTranslation": "SHOW TRANSLATION"
   }
 }

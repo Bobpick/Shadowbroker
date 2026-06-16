@@ -267,6 +267,17 @@ class ShadowBrokerClient:
         Returns:
             {ok, tier, reason, transport, pending_commands, pending_tasks, stats}
         """
+        # /api/ai/channel/status is local-operator only. HMAC-signed remote
+        # agents must probe via the command channel instead.
+        if self._hmac_secret:
+            resp = await self.send_command("get_summary", {"compact": True})
+            return {
+                "ok": bool(resp.get("ok")),
+                "tier": resp.get("tier"),
+                "status": resp.get("status"),
+                "transport": "http+hmac",
+                "reason": "remote_hmac_probe",
+            }
         r = await self._get("/api/ai/channel/status")
         return r.json()
 
@@ -550,6 +561,54 @@ class ShadowBrokerClient:
         })
         r.raise_for_status()
         return r.json()
+
+    # ── Strategic Risk Analytics (game-theoretic early warning) ───────
+
+    async def gt_risk_heatmap(self) -> dict:
+        """Cached Bayesian risk heatmap (GeoJSON features + Louvain clusters)."""
+        return self.unwrap_channel_result(await self.send_command("gt_risk_heatmap", {}))
+
+    async def gt_dossier(self, region: str) -> dict:
+        """GT rationale, costly signals, and scenarios for a region."""
+        return self.unwrap_channel_result(
+            await self.send_command("gt_dossier", {"region": region}),
+        )
+
+    async def gt_analyze(
+        self,
+        *,
+        region: str = "",
+        refresh: bool = True,
+        feeds: list[dict] | None = None,
+    ) -> dict:
+        """Refresh GT beliefs from intel feeds and return heatmap/dossier."""
+        args: dict[str, Any] = {"refresh": refresh}
+        if region:
+            args["region"] = region
+        if feeds:
+            args["feeds"] = feeds
+        return self.unwrap_channel_result(await self.send_command("gt_analyze", args))
+
+    async def gt_backtest(
+        self,
+        *,
+        expanded: bool = True,
+        tune: bool = False,
+        target_confidence: float = 0.95,
+        alert_threshold: float | None = None,
+        include_cases: bool = False,
+    ) -> dict:
+        """Run labeled historical backtest; returns accuracy + Wilson 95% CI."""
+        args: dict[str, Any] = {
+            "expanded": expanded,
+            "tune": tune,
+            "target_confidence": target_confidence,
+            "include_cases": include_cases,
+            "compact": True,
+        }
+        if alert_threshold is not None:
+            args["alert_threshold"] = alert_threshold
+        return self.unwrap_channel_result(await self.send_command("gt_backtest", args))
 
     # ── Geocoding ─────────────────────────────────────────────────────
 

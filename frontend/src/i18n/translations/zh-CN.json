@@ -208,7 +208,34 @@
     "malwareC2": "恶意软件 C2",
     "scmSuppliers": "供应链供应商",
     "cyberThreats": "网络威胁",
-    "telegramOsint": "Telegram OSINT"
+    "telegramOsint": "Telegram OSINT",
+    "strategicRisk": "战略风险热力图"
+  },
+  "gtRisk": {
+    "popupTitle": "战略风险",
+    "region": "区域",
+    "composite": "后验风险",
+    "financial": "金融",
+    "unrest": "动荡",
+    "conflict": "冲突",
+    "contagion": "传染"
+  },
+  "gtBacktest": {
+    "title": "GT 回测",
+    "layerOff": "已关闭 — 请在数据图层中启用战略风险热力图。",
+    "disabled": "GT 分析未启用（需设置 GT_ANALYTICS_ENABLED=true）。",
+    "loading": "正在运行历史验证…",
+    "refresh": "刷新回测",
+    "accuracy": "准确率",
+    "confidence": "Wilson 95% 下界",
+    "cases": "{count} 个标注案例",
+    "threshold": "警报阈值 ≥ {value}",
+    "target": "目标 {value}",
+    "pass": "通过",
+    "fail": "未通过",
+    "meetsTarget": "达到置信目标",
+    "belowTarget": "低于置信目标",
+    "misclassified": "{count} 个误分类"
   },
   "roadCorridor": {
     "analyzeHere": "分析此处",
@@ -273,6 +300,9 @@
     "loadMedia": "查看媒体（Telegram）",
     "openOriginal": "在 Telegram 打开 →",
     "embedTitle": "Telegram 帖子嵌入",
-    "postsAtLocation": "此位置 {count} 条帖子 — 向下滚动查看更多"
+    "postsAtLocation": "此位置 {count} 条帖子 — 向下滚动查看更多",
+    "translatedFrom": "由 {lang} 翻译",
+    "showOriginal": "显示原文",
+    "showTranslation": "显示译文"
   }
 }

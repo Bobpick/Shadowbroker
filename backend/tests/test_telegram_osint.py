@@ -77,6 +77,10 @@ def test_extract_new_channel_posts_stops_at_known_links():
     assert fresh == []
 
 
+def test_strip_html_decodes_numeric_entities():
+    assert telegram_osint._strip_html("Crimea&#33;") == "Crimea!"
+
+
 def test_merge_telegram_posts_keeps_existing_and_adds_only_new():
     existing = [
         {
