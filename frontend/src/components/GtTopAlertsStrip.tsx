@@ -11,6 +11,7 @@ interface Props {
   layerEnabled?: boolean;
   onFlyTo?: (lat: number, lng: number) => void;
   onSelectEntity?: (entity: SelectedEntity | null) => void;
+  embedded?: boolean;
 }
 
 function pct(value: number): string {
@@ -21,6 +22,7 @@ export default function GtTopAlertsStrip({
   layerEnabled = false,
   onFlyTo,
   onSelectEntity,
+  embedded = false,
 }: Props) {
   const { t } = useTranslation();
   const gtRisk = useDataKey('gt_risk');
@@ -55,8 +57,12 @@ export default function GtTopAlertsStrip({
     });
   };
 
+  const shellClass = embedded
+    ? 'pointer-events-auto border-t border-amber-800/30 bg-black/70'
+    : 'pointer-events-auto max-w-[min(92vw,52rem)] border border-amber-700/45 bg-black/80 backdrop-blur-sm shadow-[0_0_16px_rgba(245,158,11,0.12)]';
+
   return (
-    <div className="pointer-events-auto max-w-[min(92vw,52rem)] border border-amber-700/45 bg-black/80 backdrop-blur-sm shadow-[0_0_16px_rgba(245,158,11,0.12)]">
+    <div className={shellClass}>
       <div className="flex items-center gap-2 border-b border-amber-800/35 bg-amber-950/25 px-2.5 py-1.5">
         <Radar size={12} className="text-amber-400 shrink-0" />
         <span className="text-[10px] font-mono font-bold tracking-widest text-amber-300">

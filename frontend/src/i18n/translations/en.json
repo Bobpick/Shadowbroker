@@ -211,6 +211,12 @@
     "telegramOsint": "Telegram OSINT",
     "strategicRisk": "Strategic Risk Heatmap"
   },
+  "gtHud": {
+    "title": "GT ANALYTICS",
+    "dragHint": "drag to move",
+    "collapse": "Collapse panel",
+    "expand": "Expand panel"
+  },
   "gtAlerts": {
     "title": "TOP ALERTS",
     "counts": "{plotted} on map · {tracked} tracked (max {max})",
@@ -245,6 +251,7 @@
     "target": "target {value}",
     "pass": "PASS",
     "fail": "FAIL",
+    "collecting": "COLLECTING",
     "meetsTarget": "Meets confidence target",
     "belowTarget": "Below confidence target",
     "misclassified": "{count} misclassified",

@@ -211,6 +211,12 @@
     "telegramOsint": "OSINT Telegram",
     "strategicRisk": "Carte de risque stratégique"
   },
+  "gtHud": {
+    "title": "ANALYTIQUE GT",
+    "dragHint": "glisser pour déplacer",
+    "collapse": "Réduire le panneau",
+    "expand": "Développer le panneau"
+  },
   "gtAlerts": {
     "title": "ALERTES TOP",
     "counts": "{plotted} sur carte · {tracked} suivies (max {max})",
@@ -245,6 +251,7 @@
     "target": "cible {value}",
     "pass": "OK",
     "fail": "ÉCHEC",
+    "collecting": "COLLECTE",
     "meetsTarget": "Objectif de confiance atteint",
     "belowTarget": "Sous l'objectif de confiance",
     "misclassified": "{count} mal classés",

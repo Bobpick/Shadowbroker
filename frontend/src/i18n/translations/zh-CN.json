@@ -211,6 +211,12 @@
     "telegramOsint": "Telegram OSINT",
     "strategicRisk": "战略风险热力图"
   },
+  "gtHud": {
+    "title": "GT 分析",
+    "dragHint": "拖动移动",
+    "collapse": "收起面板",
+    "expand": "展开面板"
+  },
   "gtAlerts": {
     "title": "重点警报",
     "counts": "地图 {plotted} · 跟踪 {tracked}（上限 {max}）",
@@ -245,6 +251,7 @@
     "target": "目标 {value}",
     "pass": "通过",
     "fail": "未通过",
+    "collecting": "采集中",
     "meetsTarget": "达到置信目标",
     "belowTarget": "低于置信目标",
     "misclassified": "{count} 个误分类",

@@ -8,6 +8,7 @@ import type { GtBacktestReport, GtMicroRollingReport, GtRollingReport } from '@/
 
 interface Props {
   layerEnabled?: boolean;
+  embedded?: boolean;
 }
 
 type TabId = 'benchmark' | 'operational';
@@ -17,7 +18,7 @@ function pct(value: number | undefined): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-export default function GtBacktestPanel({ layerEnabled = false }: Props) {
+export default function GtBacktestPanel({ layerEnabled = false, embedded = false }: Props) {
   const { t } = useTranslation();
   const [isMinimized, setIsMinimized] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('operational');
@@ -89,10 +90,19 @@ export default function GtBacktestPanel({ layerEnabled = false }: Props) {
   }, [refresh, layerEnabled]);
 
   const failures = (benchmark?.cases || []).filter((row) => !row.correct);
+  const operationalScorable = Boolean(
+    rolling && ((rolling.weeks_scorable ?? 0) > 0 || rolling.latest?.scorable),
+  );
   const benchmarkPass = benchmark?.meets_target;
   const rollingPass = rolling?.meets_target;
   const passBadge =
-    activeTab === 'benchmark' ? benchmarkPass : rollingPass;
+    activeTab === 'benchmark'
+      ? benchmarkPass
+      : operationalScorable
+        ? rollingPass
+        : undefined;
+  const showCollectingBadge =
+    activeTab === 'operational' && layerEnabled && rolling?.enabled && !operationalScorable;
   const loading =
     activeTab === 'benchmark'
       ? loadingBenchmark
@@ -102,8 +112,12 @@ export default function GtBacktestPanel({ layerEnabled = false }: Props) {
     ? micro.ignitions
     : (micro?.top_regions || []).slice(0, 4);
 
+  const shellClass = embedded
+    ? 'pointer-events-auto flex-shrink-0 border-b border-amber-800/30 bg-black/70'
+    : 'pointer-events-auto flex-shrink-0 border border-amber-700/40 bg-black/75 backdrop-blur-sm shadow-[0_0_18px_rgba(245,158,11,0.10)]';
+
   return (
-    <div className="pointer-events-auto flex-shrink-0 border border-amber-700/40 bg-black/75 backdrop-blur-sm shadow-[0_0_18px_rgba(245,158,11,0.10)]">
+    <div className={shellClass}>
       <div
         className="flex items-center justify-between border-b border-amber-700/30 bg-amber-950/20 px-3 py-2.5 cursor-pointer hover:bg-amber-950/40 transition-colors"
         onClick={() => setIsMinimized((prev) => !prev)}
@@ -113,6 +127,11 @@ export default function GtBacktestPanel({ layerEnabled = false }: Props) {
           <span className="text-[12px] font-mono font-bold tracking-widest text-amber-400">
             {t('gtBacktest.title').toUpperCase()}
           </span>
+          {showCollectingBadge && (
+            <span className="text-[11px] font-mono px-1.5 py-0.5 tracking-wider border bg-amber-900/25 border-amber-700/40 text-amber-300">
+              {t('gtBacktest.collecting')}
+            </span>
+          )}
           {layerEnabled && passBadge != null && (
             <span
               className={`text-[11px] font-mono px-1.5 py-0.5 tracking-wider border ${
@@ -330,7 +349,7 @@ export default function GtBacktestPanel({ layerEnabled = false }: Props) {
                     {t('gtBacktest.tabOperational').toUpperCase()} — {t('gtBacktest.operationalTrend')}
                   </div>
 
-                  {rolling?.weeks_stored === 0 ? (
+                  {!rolling || rolling.weeks_stored === 0 ? (
                     <div className="text-[10px] font-mono tracking-wider text-amber-600/70 py-1">
                       {t('gtBacktest.operationalEmpty')}
                     </div>

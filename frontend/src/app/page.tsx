@@ -22,8 +22,7 @@ import { endInfonetTerminalSession } from '@/lib/infonetTerminalSession';
 import ShodanPanel from '@/components/ShodanPanel';
 import ReconPanel from '@/components/ReconPanel';
 import ScmPanel from '@/components/ScmPanel';
-import GtBacktestPanel from '@/components/GtBacktestPanel';
-import GtTopAlertsStrip from '@/components/GtTopAlertsStrip';
+import GtAnalyticsHud from '@/components/GtAnalyticsHud';
 import EntityGraphPanel from '@/components/EntityGraphPanel';
 import { isEntityGraphEligible } from '@/lib/entityGraph';
 import AIIntelPanel from '@/components/AIIntelPanel';
@@ -675,7 +674,6 @@ export default function Dashboard() {
                 <div className="contents" style={{ direction: 'ltr' }}>
                   <ReconPanel />
                   <ScmPanel layerEnabled={activeLayers.scm_suppliers} />
-                  <GtBacktestPanel layerEnabled={activeLayers.gt_risk} />
                 </div>
               )}
 
@@ -925,14 +923,12 @@ export default function Dashboard() {
           </button>
         )}
 
-        {uiVisible && activeLayers.gt_risk && (
-          <div className="absolute bottom-[11.5rem] left-6 z-[201]">
-            <GtTopAlertsStrip
-              layerEnabled={activeLayers.gt_risk}
-              onFlyTo={handleFlyTo}
-              onSelectEntity={setSelectedEntity}
-            />
-          </div>
+        {uiVisible && (
+          <GtAnalyticsHud
+            layerEnabled={activeLayers.gt_risk}
+            onFlyTo={handleFlyTo}
+            onSelectEntity={setSelectedEntity}
+          />
         )}
 
         {/* DYNAMIC SCALE BAR — hidden when fullscreen overlays or locate bar are open */}
