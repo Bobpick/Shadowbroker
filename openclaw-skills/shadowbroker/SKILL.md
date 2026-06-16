@@ -692,6 +692,34 @@ When the user asks a question, follow this decision tree:
    - YES if the user has configured alert channels
    - Use the `AlertDispatcher` with the correct signature
 
+### Telegram rhetoric monitoring (watchdog)
+
+Use watchdog watches for push alerts over SSE — no polling required. Keyword
+watches now scan Telegram OSINT too (translated **and** original text).
+
+```python
+# Alert when "nuclear" appears in news, GDELT, or Telegram OSINT
+await sb.send_command("add_watch", {
+    "type": "keyword",
+    "params": {"keyword": "nuclear", "include_telegram": True},
+})
+
+# Alert on new high-risk Telegram posts (LVL >= 7) — rhetoric/escalation monitor
+await sb.send_command("add_watch", {
+    "type": "telegram_rhetoric",
+    "params": {"min_risk_score": 7, "channels": ["nexta_live", "war_monitor"]},
+})
+
+# Combine risk threshold + topic filter
+await sb.send_command("add_watch", {
+    "type": "telegram_rhetoric",
+    "params": {"min_risk_score": 8, "keywords": ["crimea", "escalation", "missile"]},
+})
+```
+
+When a watch fires, you receive an SSE `alert` event. Forward it with
+`sb_alerts.send_intel()` if the user has Discord/Telegram notification channels.
+
 ---
 
 ## Important Rules

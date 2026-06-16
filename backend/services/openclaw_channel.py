@@ -1131,7 +1131,7 @@ def _dispatch_command(cmd: str, args: dict[str, Any]) -> dict[str, Any]:
         from services.openclaw_watchdog import add_watch
         watch_type = str(args.get("type", "")).strip()
         if not watch_type:
-            return {"ok": False, "detail": "watch type required (track_aircraft, track_callsign, track_registration, track_ship, track_entity, geofence, keyword, prediction_market)"}
+            return {"ok": False, "detail": "watch type required (track_aircraft, track_callsign, track_registration, track_ship, track_entity, geofence, keyword, telegram_rhetoric, prediction_market)"}
         watch_params = args.get("params", {})
         if not watch_params:
             # Allow flat args (e.g. {type: "track_callsign", callsign: "N189AM"})
