@@ -7,6 +7,10 @@ import { useTranslation } from '@/i18n';
 import { API_BASE } from '@/lib/api';
 import { formatEventTimestamp } from '@/lib/eventDateTime';
 import { formatGtRegionLabel } from '@/lib/gtAlerts';
+import {
+  consolidateCostlySignals,
+  formatConsolidatedSources,
+} from '@/lib/gtSignals';
 import type { GtDossier } from '@/types/dashboard';
 
 export interface GtRiskPopupProps {
@@ -27,10 +31,6 @@ function riskColor(score: number): string {
   if (score >= 0.4) return '#f97316';
   if (score >= 0.25) return '#eab308';
   return '#22c55e';
-}
-
-function formatSignalName(name: string): string {
-  return name.replace(/_/g, ' ');
 }
 
 async function fetchDossier(region: string, lat: number, lng: number): Promise<GtDossier | null> {
@@ -88,7 +88,7 @@ export function GtRiskPopup({
   }, [region, lat, lng]);
 
   const resolvedInterpretation = interpretation || dossier?.interpretation || '';
-  const signals = dossier?.recent_signals || [];
+  const consolidatedSignals = consolidateCostlySignals(dossier?.recent_signals || [], 4);
 
   return (
     <Popup
@@ -158,25 +158,27 @@ export function GtRiskPopup({
             </div>
             {loadingSignals ? (
               <div className="text-[10px] text-amber-600/80">{t('gtRisk.loadingSignals')}</div>
-            ) : signals.length > 0 ? (
+            ) : consolidatedSignals.length > 0 ? (
               <div className="space-y-1.5">
-                {signals.slice(-4).reverse().map((entry, idx) => (
+                {consolidatedSignals.map((signal) => (
                   <div
-                    key={`${entry.timestamp}-${idx}`}
+                    key={signal.signalKey}
                     className="border-l-2 border-amber-700/60 pl-2 text-[10px] text-[var(--text-secondary)]"
                   >
                     <div className="text-amber-300 uppercase">
-                      {Object.keys(entry.signals || {})
-                        .map(formatSignalName)
-                        .join(', ') || entry.domain}
+                      {signal.label}
+                      {signal.count > 1 ? ` x${signal.count}` : ''}
                     </div>
                     <div className="flex items-center justify-between gap-2 text-[var(--text-muted)]">
-                      <span className="truncate" title={entry.source}>
-                        {entry.source || t('gtRisk.unknownSource')}
+                      <span
+                        className="truncate"
+                        title={signal.sources.join(' · ') || undefined}
+                      >
+                        {formatConsolidatedSources(signal.sources) || t('gtRisk.unknownSource')}
                       </span>
-                      {entry.timestamp ? (
+                      {signal.latestTimestamp ? (
                         <span className="shrink-0 text-[9px]">
-                          {formatEventTimestamp(entry.timestamp)}
+                          {formatEventTimestamp(signal.latestTimestamp)}
                         </span>
                       ) : null}
                     </div>

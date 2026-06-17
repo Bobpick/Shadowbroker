@@ -12,6 +12,7 @@ import type { SelectedEntity, RegionDossier, FimiData } from "@/types/dashboard"
 import { useDataKeys } from '@/hooks/useDataStore';
 import { API_BASE } from '@/lib/api';
 import { formatEventTimestamp } from '@/lib/eventDateTime';
+import { consolidateCostlySignals, formatConsolidatedSources } from '@/lib/gtSignals';
 import { lookupShodanHost } from '@/lib/shodanClient';
 import type { ShodanHost } from '@/types/shodan';
 
@@ -575,16 +576,19 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                                                 <div className="text-[10px] text-[var(--text-muted)] tracking-widest">
                                                     COSTLY SIGNALS
                                                 </div>
-                                                {gtDossier.recent_signals.slice(-3).map((entry, idx) => (
+                                                {consolidateCostlySignals(gtDossier.recent_signals, 3).map((signal) => (
                                                     <div
-                                                        key={`${entry.timestamp}-${idx}`}
+                                                        key={signal.signalKey}
                                                         className="text-[10px] border-l-2 border-amber-700/60 pl-2 text-[var(--text-secondary)]"
                                                     >
                                                         <span className="text-amber-300 uppercase">
-                                                            {Object.keys(entry.signals || {}).join(', ') || entry.domain}
+                                                            {signal.label}
+                                                            {signal.count > 1 ? ` x${signal.count}` : ''}
                                                         </span>
                                                         {' · '}
-                                                        <span className="text-[var(--text-muted)]">{entry.source}</span>
+                                                        <span className="text-[var(--text-muted)]">
+                                                            {formatConsolidatedSources(signal.sources, 1) || 'unknown'}
+                                                        </span>
                                                     </div>
                                                 ))}
                                             </div>
