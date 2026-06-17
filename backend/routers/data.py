@@ -11,6 +11,7 @@ from limiter import limiter
 from auth import require_admin, require_local_operator
 from services.data_fetcher import update_all_data
 from services.fetchers.telegram_osint import prune_telegram_posts
+from services.fetchers.reddit_osint import prune_reddit_posts
 from services.liveuamap_retention import prune_liveuamap_incidents
 import orjson
 import json as json_mod
@@ -60,6 +61,18 @@ def _fresh_telegram_osint_payload(payload: Any) -> dict[str, Any]:
         "posts": posts,
         "total": len(posts),
         "geolocated": sum(1 for post in posts if post.get("coords")),
+    }
+
+
+def _fresh_reddit_osint_payload(payload: Any) -> dict[str, Any]:
+    base = payload if isinstance(payload, dict) else {}
+    posts = prune_reddit_posts(list(base.get("posts") or []))
+    return {
+        **base,
+        "posts": posts,
+        "total": len(posts),
+        "geolocated": sum(1 for post in posts if post.get("coords")),
+        "adversarial_count": sum(1 for post in posts if post.get("narrative_profile") == "adversarial"),
     }
 
 
@@ -797,7 +810,7 @@ async def live_data_slow(
         "fishing_activity", "psk_reporter", "correlations", "uap_sightings", "wastewater",
         "wastewater_surveillance",
         "crowdthreat", "threat_level", "trending_markets", "road_corridor_trends",
-        "malware_threats", "cyber_threats", "scm_suppliers", "telegram_osint", "gt_risk",
+        "malware_threats", "cyber_threats", "scm_suppliers", "telegram_osint", "reddit_osint", "gt_risk",
     )
     freshness = get_source_timestamps_snapshot()
     payload = {
@@ -875,6 +888,11 @@ async def live_data_slow(
             _fresh_telegram_osint_payload(d.get("telegram_osint"))
         )
         if active_layers.get("telegram_osint", True)
+        else {"posts": [], "total": 0, "geolocated": 0},
+        "reddit_osint": (
+            _fresh_reddit_osint_payload(d.get("reddit_osint"))
+        )
+        if active_layers.get("reddit_osint", True)
         else {"posts": [], "total": 0, "geolocated": 0},
         "gt_risk": (
             d.get("gt_risk")

@@ -2,7 +2,7 @@ import React from 'react';
 import { Marker } from 'react-map-gl/maplibre';
 import type { Earthquake, SelectedEntity, Ship, TrackedFlight, UAV } from '@/types/dashboard';
 import type { SpreadAlertItem } from '@/utils/alertSpread';
-import { TELEGRAM_MARKER_OFFSET } from '@/components/map/geoJSONBuilders';
+import { REDDIT_MARKER_OFFSET, TELEGRAM_MARKER_OFFSET } from '@/components/map/geoJSONBuilders';
 
 // Shared monospace label style base
 const LABEL_BASE: React.CSSProperties = {
@@ -521,6 +521,63 @@ export function TelegramOsintMarkers({ features, onEntityClick }: TelegramOsintM
                 background: '#ef4444',
                 border: '2.5px solid #fca5a5',
                 boxShadow: '0 0 14px rgba(239, 68, 68, 0.75)',
+                cursor: 'pointer',
+              }}
+            />
+          </Marker>
+        );
+      })}
+    </>
+  );
+}
+
+// -- Reddit OSINT pins (HTML, distinct from Telegram) --
+interface RedditOsintMarkersProps {
+  features: GeoJSON.Feature[];
+  onEntityClick?: (entity: SelectedEntity | null) => void;
+}
+
+export function RedditOsintMarkers({ features, onEntityClick }: RedditOsintMarkersProps) {
+  if (!features.length) return null;
+
+  return (
+    <>
+      {features.map((feature) => {
+        if (feature.geometry?.type !== 'Point') return null;
+        const [lng, lat] = feature.geometry.coordinates as [number, number];
+        const props = feature.properties || {};
+        const id = String(props.id || '');
+        if (!id) return null;
+        const postCount = Number(props.post_count || 1);
+        const adversarial = props.narrative_profile === 'adversarial';
+        const size = postCount > 1 ? Math.min(28, 14 + Math.log2(postCount) * 4) : 14;
+
+        return (
+          <Marker
+            key={`reddit-osint-${id}`}
+            longitude={lng}
+            latitude={lat}
+            anchor="center"
+            offset={REDDIT_MARKER_OFFSET}
+            style={{ zIndex: 94 }}
+            onClick={(e) => {
+              e.originalEvent.stopPropagation();
+              onEntityClick?.({
+                id,
+                type: 'reddit_osint',
+                name: String(props.name || 'Reddit OSINT'),
+              });
+            }}
+          >
+            <div
+              title={`Reddit OSINT${postCount > 1 ? ` (${postCount} posts)` : ''}`}
+              style={{
+                width: size,
+                height: size,
+                borderRadius: '50%',
+                background: adversarial ? '#ea580c' : '#ff4500',
+                border: '2px solid #fed7aa',
+                boxShadow: '0 0 12px rgba(255, 69, 0, 0.7)',
                 cursor: 'pointer',
               }}
             />

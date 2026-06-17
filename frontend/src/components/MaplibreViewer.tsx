@@ -160,6 +160,7 @@ import {
   EarthquakeLabels,
   ThreatMarkers,
   TelegramOsintMarkers,
+  RedditOsintMarkers,
 } from '@/components/map/MapMarkers';
 import type { DashboardData, Flight, KiwiSDR, MaplibreViewerProps, Scanner, Ship, SigintSignal } from '@/types/dashboard';
 import { useDataKeys } from '@/hooks/useDataStore';
@@ -189,6 +190,7 @@ import { MilitaryBasePopup } from '@/components/MaplibreViewer/popups/MilitaryBa
 import { RegionDossierPanel } from '@/components/MaplibreViewer/popups/RegionDossierPanel';
 import { GtRiskPopup } from '@/components/MaplibreViewer/popups/GtRiskPopup';
 import { TelegramOsintPopup } from '@/components/MaplibreViewer/popups/TelegramOsintPopup';
+import { RedditOsintPopup } from '@/components/MaplibreViewer/popups/RedditOsintPopup';
 import {
   buildSentinelTileUrl,
   hasSentinelCredentials,
@@ -310,6 +312,7 @@ const MAP_EXTRA_DATA_KEYS = [
   'crowdthreat',
   'malware_threats',
   'telegram_osint',
+  'reddit_osint',
   'gt_risk',
   'datacenters',
   'firms_fires',
@@ -1183,6 +1186,9 @@ const MaplibreViewer = ({
   const staticTelegramOsintPosts = activeLayers.telegram_osint
     ? data?.telegram_osint?.posts
     : undefined;
+  const staticRedditOsintPosts = activeLayers.reddit_osint
+    ? data?.reddit_osint?.posts
+    : undefined;
 
   const [submarineCablesGeoJSON, setSubmarineCablesGeoJSON] = useState<GeoJSON.FeatureCollection | null>(null);
   useEffect(() => {
@@ -1297,6 +1303,7 @@ const MaplibreViewer = ({
       crowdthreat: staticCrowdthreat,
       malwareThreats: staticMalwareThreats,
       telegramOsintPosts: staticTelegramOsintPosts,
+      redditOsintPosts: staticRedditOsintPosts,
     },
     [
       staticCctv,
@@ -1322,6 +1329,7 @@ const MaplibreViewer = ({
       staticCrowdthreat,
       staticMalwareThreats,
       staticTelegramOsintPosts,
+      staticRedditOsintPosts,
       mapZoom,
     ],
     {
@@ -1348,6 +1356,7 @@ const MaplibreViewer = ({
         crowdthreat: activeLayers.crowdthreat,
         malware_c2: activeLayers.malware_c2,
         telegram_osint: activeLayers.telegram_osint,
+        reddit_osint: activeLayers.reddit_osint,
       },
     },
     [
@@ -1373,6 +1382,7 @@ const MaplibreViewer = ({
       activeLayers.crowdthreat,
       activeLayers.malware_c2,
       activeLayers.telegram_osint,
+      activeLayers.reddit_osint,
     ],
   );
 
@@ -1410,11 +1420,16 @@ const MaplibreViewer = ({
     crowdthreatGeoJSON,
     malwareGeoJSON,
     telegramOsintGeoJSON,
+    redditOsintGeoJSON,
   } = staticMapLayers;
 
   const telegramOsintGeoJSONPlaced = useMemo(
     () => applyTelegramAlertAvoidance(telegramOsintGeoJSON, data?.news),
     [telegramOsintGeoJSON, data?.news],
+  );
+  const redditOsintGeoJSONPlaced = useMemo(
+    () => applyTelegramAlertAvoidance(redditOsintGeoJSON, data?.news),
+    [redditOsintGeoJSON, data?.news],
   );
 
   // Extract cluster label positions via shared hook
@@ -1801,6 +1816,7 @@ const MaplibreViewer = ({
   useImperativeSource(mapForHook, 'crowdthreat-source', crowdthreatGeoJSON, 100);
   useImperativeSource(mapForHook, 'malware-source', malwareGeoJSON, 100);
   useImperativeSource(mapForHook, 'telegram-osint-source', telegramOsintGeoJSONPlaced, 100);
+  useImperativeSource(mapForHook, 'reddit-osint-source', redditOsintGeoJSONPlaced, 100);
   useImperativeSource(mapForHook, 'submarine-cables-source', submarineCablesGeoJSON, 600);
   useImperativeSource(mapForHook, 'ships', shipsGeoJSON, 75);
   useImperativeSource(mapForHook, 'meshtastic-source', meshtasticGeoJSON, 60);
@@ -1832,7 +1848,7 @@ const MaplibreViewer = ({
 
   return (
     <div
-      className={`relative h-full w-full z-0 isolate ${selectedEntity && ['region_dossier', 'gdelt', 'liveuamap', 'news', 'telegram_osint', 'gt_risk'].includes(selectedEntity.type) ? 'map-focus-active' : ''}`}
+      className={`relative h-full w-full z-0 isolate ${selectedEntity && ['region_dossier', 'gdelt', 'liveuamap', 'news', 'telegram_osint', 'reddit_osint', 'gt_risk'].includes(selectedEntity.type) ? 'map-focus-active' : ''}`}
       style={pinPlacementMode || sarAoiDropMode ? { cursor: 'crosshair' } : undefined}
     >
       <Map
@@ -4482,6 +4498,13 @@ const MaplibreViewer = ({
           />
         ) : null}
 
+        {activeLayers.reddit_osint && !isMapInteracting && redditOsintGeoJSONPlaced?.features?.length ? (
+          <RedditOsintMarkers
+            features={redditOsintGeoJSONPlaced.features}
+            onEntityClick={onEntityClick}
+          />
+        ) : null}
+
         {activeLayers.wastewater && !isMapInteracting ? (
           <WastewaterSurveillanceBeacon
             enabled={activeLayers.wastewater}
@@ -5850,6 +5873,28 @@ const MaplibreViewer = ({
           const [pinLat, pinLng] = telegramMapPinCoords(anchor[0], anchor[1], avoidAlert);
           return (
             <TelegramOsintPopup
+              posts={clusterPosts}
+              lat={pinLat}
+              lng={pinLng}
+              onClose={() => onEntityClick?.(null)}
+            />
+          );
+        })()}
+
+        {(() => {
+          if (selectedEntity?.type !== 'reddit_osint' || !data?.reddit_osint?.posts) return null;
+          const allPosts = data.reddit_osint.posts;
+          const clusterPosts = allPosts.filter((p) => {
+            if (!p.coords || p.coords.length < 2) return false;
+            const key = telegramClusterKey(p.coords[0], p.coords[1]);
+            return key === selectedEntity.id || p.id === selectedEntity.id;
+          });
+          const anchor = clusterPosts[0]?.coords;
+          if (!anchor || anchor.length < 2) return null;
+          const avoidAlert = telegramClusterNearNewsAlert(anchor[0], anchor[1], data?.news);
+          const [pinLat, pinLng] = telegramMapPinCoords(anchor[0], anchor[1], avoidAlert);
+          return (
+            <RedditOsintPopup
               posts={clusterPosts}
               lat={pinLat}
               lng={pinLng}

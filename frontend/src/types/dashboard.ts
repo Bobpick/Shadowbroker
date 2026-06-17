@@ -1018,6 +1018,14 @@ export interface DashboardData {
     timestamp?: string | null;
     channels?: string[];
   };
+  reddit_osint?: {
+    posts?: RedditOsintPost[];
+    total?: number;
+    geolocated?: number;
+    adversarial_count?: number;
+    timestamp?: string | null;
+    subreddits?: string[];
+  };
   gt_risk?: GTRiskPayload;
 }
 
@@ -1196,6 +1204,21 @@ export interface GtDossier {
   scenarios?: Array<{ name: string; summary: string }>;
 }
 
+export interface RedditOsintPost {
+  id: string;
+  title?: string;
+  description?: string;
+  link?: string;
+  published?: string;
+  source?: string;
+  subreddit?: string;
+  author?: string;
+  reddit_score?: number;
+  risk_score?: number;
+  narrative_profile?: 'adversarial' | 'geopolitical' | 'general';
+  coords?: [number, number] | null;
+}
+
 export interface TelegramOsintPost {
   id: string;
   title?: string;
@@ -1353,6 +1376,7 @@ export interface ActiveLayers {
   scm_suppliers: boolean;
   cyber_threats: boolean;
   telegram_osint: boolean;
+  reddit_osint: boolean;
   gt_risk: boolean;
 }
 

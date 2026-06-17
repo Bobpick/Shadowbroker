@@ -75,6 +75,7 @@ class DashboardData(TypedDict, total=False):
     cyber_threats: Dict[str, Any]
     scm_suppliers: Dict[str, Any]
     telegram_osint: Dict[str, Any]
+    reddit_osint: Dict[str, Any]
     gt_risk: Dict[str, Any]
 
 
@@ -140,6 +141,7 @@ latest_data: DashboardData = {
     "cyber_threats": {"threats": [], "stats": {}},
     "scm_suppliers": {"suppliers": [], "total": 0, "critical_count": 0},
     "telegram_osint": {"posts": [], "total": 0, "geolocated": 0, "timestamp": None},
+    "reddit_osint": {"posts": [], "total": 0, "geolocated": 0, "timestamp": None},
     "gt_risk": {
         "enabled": False,
         "heatmap": {"type": "FeatureCollection", "features": []},
@@ -379,6 +381,7 @@ active_layers: dict[str, bool] = {
     "scm_suppliers": False,
     "cyber_threats": False,
     "telegram_osint": True,
+    "reddit_osint": True,
     "gt_risk": False,
 }
 

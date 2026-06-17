@@ -209,6 +209,7 @@
     "scmSuppliers": "SCM Suppliers",
     "cyberThreats": "Cyber Threats",
     "telegramOsint": "Telegram OSINT",
+    "redditOsint": "Reddit OSINT",
     "strategicRisk": "Strategic Risk Heatmap"
   },
   "gtHud": {

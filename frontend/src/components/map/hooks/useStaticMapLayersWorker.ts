@@ -50,6 +50,7 @@ const EMPTY_RESULT: StaticMapLayersResult = {
   crowdthreatGeoJSON: null,
   malwareGeoJSON: null,
   telegramOsintGeoJSON: null,
+  redditOsintGeoJSON: null,
 };
 
 let worker: Worker | null = null;

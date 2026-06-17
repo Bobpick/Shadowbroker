@@ -29,6 +29,7 @@ export const DEFAULT_ACTIVE_LAYERS: ActiveLayers = {
   scm_suppliers: false,
   cyber_threats: false,
   telegram_osint: true,
+  reddit_osint: true,
   // Hazards — no fire, rest ON
   earthquakes: true,
   firms: false,

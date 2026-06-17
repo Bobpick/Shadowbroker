@@ -44,6 +44,7 @@ import {
   Radar,
   MapPin,
   Truck,
+  MessageSquare,
 } from 'lucide-react';
 import RoadCorridorLayerControls from '@/components/RoadCorridorLayerControls';
 import { API_BASE } from '@/lib/api';
@@ -116,6 +117,7 @@ const FRESHNESS_MAP: Record<string, string> = {
   scm_suppliers: 'scm_suppliers',
   cyber_threats: 'cyber_threats',
   telegram_osint: 'telegram_osint',
+  reddit_osint: 'reddit_osint',
   gt_risk: 'gt_risk',
 };
 
@@ -1351,6 +1353,13 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
           source: 't.me public channels',
           count: data?.telegram_osint?.geolocated || 0,
           icon: Radio,
+        },
+        {
+          id: 'reddit_osint',
+          name: t('layers.redditOsint'),
+          source: 'reddit.com public subs',
+          count: data?.reddit_osint?.geolocated || 0,
+          icon: MessageSquare,
         },
         {
           id: 'crowdthreat',

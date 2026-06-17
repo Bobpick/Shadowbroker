@@ -103,6 +103,7 @@ from services.fetchers.sar_catalog import fetch_sar_catalog  # noqa: F401
 from services.fetchers.sar_products import fetch_sar_products  # noqa: F401
 from services.fetchers.malware import fetch_malware_threats  # noqa: F401
 from services.fetchers.telegram_osint import fetch_telegram_osint  # noqa: F401
+from services.fetchers.reddit_osint import fetch_reddit_osint  # noqa: F401
 from services.fetchers.cyber_status import fetch_cyber_threats  # noqa: F401
 from services.scm.suppliers import fetch_scm_suppliers  # noqa: F401
 from services.ais_stream import prune_stale_vessels  # noqa: F401
@@ -558,6 +559,7 @@ def _run_delayed_startup_heavy_refresh() -> None:
         [
             update_slow_data,
             fetch_telegram_osint,
+            fetch_reddit_osint,
             fetch_volcanoes,
             fetch_viirs_change_nodes,
             fetch_unusual_whales,
@@ -813,6 +815,7 @@ def start_scheduler():
 
     # Telegram OSINT — hourly t.me/s channel scrape (kept off the 5-minute slow tier).
     _telegram_interval_m = max(15, int(os.environ.get("TELEGRAM_OSINT_INTERVAL_MINUTES", "60")))
+    _reddit_interval_m = max(15, int(os.environ.get("REDDIT_OSINT_INTERVAL_MINUTES", "45")))
 
     def _fetch_telegram_osint_with_gt():
         fetch_telegram_osint()
@@ -829,6 +832,16 @@ def start_scheduler():
         minutes=_telegram_interval_m,
         next_run_time=datetime.utcnow() + timedelta(seconds=45),
         id="telegram_osint",
+        max_instances=1,
+        misfire_grace_time=600,
+    )
+
+    _scheduler.add_job(
+        lambda: _run_task_with_health(fetch_reddit_osint, "fetch_reddit_osint"),
+        "interval",
+        minutes=_reddit_interval_m,
+        next_run_time=datetime.utcnow() + timedelta(seconds=90),
+        id="reddit_osint",
         max_instances=1,
         misfire_grace_time=600,
     )

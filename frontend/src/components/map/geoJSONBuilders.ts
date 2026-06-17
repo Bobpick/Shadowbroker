@@ -4,6 +4,7 @@
 
 import { compareEventTimestampsDesc } from '@/lib/eventDateTime';
 import { filterTelegramPostsWithinRetention } from '@/lib/telegramRetention';
+import { filterRedditPostsWithinRetention } from '@/lib/redditRetention';
 
 import type {
   Earthquake,
@@ -1714,6 +1715,97 @@ export function buildTelegramOsintGeoJSON(
           link: lead.link || '',
           source: lead.source || '',
           channel: lead.channel || '',
+          risk_score: cluster.maxRisk,
+          post_count: count,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [cluster.lng, cluster.lat],
+        },
+      };
+    }),
+  };
+}
+
+// ─── Reddit OSINT ─────────────────────────────────────────────────────────
+
+export const REDDIT_MARKER_OFFSET: [number, number] = [20, -20];
+
+export function buildRedditOsintGeoJSON(
+  payload?: {
+    posts?: Array<{
+      id: string;
+      title?: string;
+      description?: string;
+      link?: string;
+      source?: string;
+      subreddit?: string;
+      narrative_profile?: string;
+      risk_score?: number;
+      published?: string;
+      coords?: [number, number] | null;
+    }>;
+  },
+  inView?: InViewFilter,
+): FC {
+  const posts = filterRedditPostsWithinRetention(payload?.posts ?? []);
+  if (!posts.length) return null;
+
+  const clusters = new Map<
+    string,
+    {
+      lat: number;
+      lng: number;
+      posts: NonNullable<typeof posts>;
+      maxRisk: number;
+    }
+  >();
+
+  for (const post of posts) {
+    const coords = post.coords;
+    if (!coords || coords.length < 2) continue;
+    const lat = coords[0];
+    const lng = coords[1];
+    if (inView && !inView(lat, lng)) continue;
+    const key = telegramClusterKey(lat, lng);
+    const bucket = clusters.get(key);
+    if (bucket) {
+      bucket.posts.push(post);
+      bucket.maxRisk = Math.max(bucket.maxRisk, post.risk_score ?? 1);
+    } else {
+      clusters.set(key, {
+        lat,
+        lng,
+        posts: [post],
+        maxRisk: post.risk_score ?? 1,
+      });
+    }
+  }
+
+  if (!clusters.size) return null;
+
+  return {
+    type: 'FeatureCollection' as const,
+    features: Array.from(clusters.entries()).map(([key, cluster]) => {
+      const orderedPosts = [...cluster.posts].sort((a, b) =>
+        compareEventTimestampsDesc(a.published, b.published),
+      );
+      const lead = orderedPosts[0];
+      const count = cluster.posts.length;
+      return {
+        type: 'Feature' as const,
+        properties: {
+          id: key,
+          type: 'reddit_osint',
+          name:
+            count > 1
+              ? `Reddit OSINT (${count} posts)`
+              : lead.title || 'Reddit OSINT',
+          description: lead.description || '',
+          link: lead.link || '',
+          source: lead.source || '',
+          subreddit: lead.subreddit || '',
+          narrative_profile: lead.narrative_profile || 'general',
           risk_score: cluster.maxRisk,
           post_count: count,
         },
