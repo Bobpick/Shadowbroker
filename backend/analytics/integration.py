@@ -93,6 +93,8 @@ def _persist_gt_snapshot(
             "engine_regions": engine_regions,
             "plotted_regions": plotted_regions,
             "max_regions": settings.max_heatmap_features,
+            "base_prior": settings.base_prior,
+            "top_alerts_min_score": settings.base_prior + 0.05,
         },
     }
     with _data_lock:

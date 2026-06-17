@@ -35,17 +35,17 @@ def test_diversify_alerts_spreads_nearby_regions() -> None:
         "features": [
             {
                 "type": "Feature",
-                "properties": {"region": "ukraine", "risk": 0.8, "conflict": 0.7},
+                "properties": {"region": "ukraine", "risk": 0.8, "conflict": 0.7, "updates": 3},
                 "geometry": {"type": "Point", "coordinates": [31.0, 48.0]},
             },
             {
                 "type": "Feature",
-                "properties": {"region": "48.50,31.20", "risk": 0.79, "conflict": 0.69},
+                "properties": {"region": "48.50,31.20", "risk": 0.79, "conflict": 0.69, "updates": 2},
                 "geometry": {"type": "Point", "coordinates": [31.2, 48.5]},
             },
             {
                 "type": "Feature",
-                "properties": {"region": "israel", "risk": 0.7, "conflict": 0.6},
+                "properties": {"region": "israel", "risk": 0.7, "conflict": 0.6, "updates": 2},
                 "geometry": {"type": "Point", "coordinates": [35.2, 31.8]},
             },
         ],
@@ -56,6 +56,48 @@ def test_diversify_alerts_spreads_nearby_regions() -> None:
     regions = {row["region"] for row in alerts}
     assert "ukraine" in regions
     assert "israel" in regions
+
+
+def test_baseline_theaters_excluded_from_top_alerts() -> None:
+    heatmap = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {
+                    "region": "ukraine",
+                    "risk": 0.68,
+                    "conflict": 0.83,
+                    "updates": 12,
+                },
+                "geometry": {"type": "Point", "coordinates": [31.0, 48.0]},
+            },
+            {
+                "type": "Feature",
+                "properties": {
+                    "region": "iran",
+                    "risk": 0.15,
+                    "conflict": 0.15,
+                    "updates": 1,
+                },
+                "geometry": {"type": "Point", "coordinates": [53.69, 32.43]},
+            },
+            {
+                "type": "Feature",
+                "properties": {
+                    "region": "russia",
+                    "risk": 0.15,
+                    "conflict": 0.15,
+                    "updates": 1,
+                },
+                "geometry": {"type": "Point", "coordinates": [37.62, 55.75]},
+            },
+        ],
+    }
+    alerts, plotted = parse_heatmap_alerts(heatmap, limit=8, base_prior=0.15)
+    assert plotted == 3
+    assert len(alerts) == 1
+    assert alerts[0]["region"] == "ukraine"
 
 
 def test_diversify_alerts_marks_nearby_count() -> None:

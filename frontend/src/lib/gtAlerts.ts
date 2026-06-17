@@ -15,6 +15,8 @@ export interface GtAlertRow {
   ignition: boolean;
   risk3d?: number;
   riskDelta?: number;
+  updates?: number;
+  alerted3d?: boolean;
   nearbyCount?: number;
 }
 
@@ -39,6 +41,24 @@ function peakScore(props: Record<string, unknown>): number {
   return Math.max(composite, financial, unrest, conflict);
 }
 
+const DEFAULT_BASE_PRIOR = 0.15;
+
+function topAlertsMinScore(basePrior: number): number {
+  return basePrior + 0.05;
+}
+
+function isAlertableRow(
+  row: Pick<GtAlertRow, 'score' | 'ignition' | 'riskDelta'> & {
+    alerted3d?: boolean;
+  },
+  basePrior: number,
+): boolean {
+  if (row.ignition) return true;
+  if ((row.riskDelta ?? 0) >= 0.08) return true;
+  if (row.alerted3d) return true;
+  return row.score >= topAlertsMinScore(basePrior);
+}
+
 export function extractGtAlerts(
   payload?: GTRiskPayload | null,
   limit = 8,
@@ -50,6 +70,7 @@ export function extractGtAlerts(
 } {
   const features = payload?.heatmap?.features || [];
   const meta = payload?.meta;
+  const basePrior = Number(meta?.base_prior ?? DEFAULT_BASE_PRIOR);
   const rows: GtAlertRow[] = [];
 
   for (const feature of features) {
@@ -72,19 +93,20 @@ export function extractGtAlerts(
       ignition: Boolean(props.micro_ignition),
       risk3d: props.risk_3d_avg != null ? Number(props.risk_3d_avg) : undefined,
       riskDelta: props.risk_delta != null ? Number(props.risk_delta) : undefined,
+      updates: props.updates != null ? Number(props.updates) : undefined,
+      alerted3d: Boolean(props.alerted_3d),
     });
   }
 
-  rows.sort((a, b) => {
+  const alertable = rows.filter((row) => isAlertableRow(row, basePrior));
+  alertable.sort((a, b) => {
     if (a.ignition !== b.ignition) return a.ignition ? -1 : 1;
-    const deltaA = a.riskDelta ?? 0;
-    const deltaB = b.riskDelta ?? 0;
-    if (deltaA !== deltaB) return deltaB - deltaA;
-    return b.score - a.score;
+    if (a.score !== b.score) return b.score - a.score;
+    return (b.riskDelta ?? 0) - (a.riskDelta ?? 0);
   });
 
   return {
-    alerts: diversifyGtAlerts(rows, limit),
+    alerts: diversifyGtAlerts(alertable, limit),
     trackedRegions: meta?.tracked_regions ?? features.length,
     plottedRegions: meta?.plotted_regions ?? rows.length,
     maxRegions: meta?.max_regions ?? 500,

@@ -125,13 +125,4 @@ def diversify_alerts_by_distance(
         selected.append(enriched)
         used_indices.add(idx)
 
-    if len(selected) < limit:
-        for idx, row in enumerate(rows):
-            if idx in used_indices:
-                continue
-            selected.append(dict(row))
-            used_indices.add(idx)
-            if len(selected) >= limit:
-                break
-
     return selected[:limit]

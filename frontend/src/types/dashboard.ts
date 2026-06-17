@@ -1059,6 +1059,8 @@ export interface GTRiskPayload {
     engine_regions?: number;
     plotted_regions?: number;
     max_regions?: number;
+    base_prior?: number;
+    top_alerts_min_score?: number;
   };
   heatmap?: {
     type: 'FeatureCollection';

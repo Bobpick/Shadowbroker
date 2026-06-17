@@ -62,13 +62,5 @@ export function diversifyGtAlerts<T extends { lat: number; lng: number }>(
     used.add(idx);
   }
 
-  if (selected.length < limit) {
-    for (let idx = 0; idx < rows.length && selected.length < limit; idx += 1) {
-      if (used.has(idx)) continue;
-      selected.push({ ...rows[idx] });
-      used.add(idx);
-    }
-  }
-
   return selected.slice(0, limit);
 }

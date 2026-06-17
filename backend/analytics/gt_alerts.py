@@ -17,6 +17,21 @@ def _peak_score(props: dict[str, Any]) -> float:
     return max(composite, financial, unrest, conflict)
 
 
+def _top_alerts_min_score(base_prior: float) -> float:
+    """Peak score must clear baseline noise before appearing in TOP ALERTS."""
+    return float(base_prior) + 0.05
+
+
+def _is_alertable_row(row: dict[str, Any], *, base_prior: float) -> bool:
+    if row.get("ignition"):
+        return True
+    if float(row.get("risk_delta") or 0.0) >= 0.08:
+        return True
+    if row.get("alerted_3d"):
+        return True
+    return float(row.get("score") or 0.0) >= _top_alerts_min_score(base_prior)
+
+
 def _valid_coords(coords: Any) -> tuple[float, float] | None:
     if not isinstance(coords, (list, tuple)) or len(coords) < 2:
         return None
@@ -40,8 +55,10 @@ def parse_heatmap_alerts(
     heatmap: dict[str, Any] | None,
     *,
     limit: int = 8,
+    base_prior: float | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Return ranked alerts and count of regions plottable on the map."""
+    prior = float(base_prior if base_prior is not None else get_gt_settings().base_prior)
     features = (heatmap or {}).get("features") or []
     rows: list[dict[str, Any]] = []
 
@@ -73,19 +90,21 @@ def parse_heatmap_alerts(
                 "ignition": bool(props.get("micro_ignition")),
                 "risk_3d_avg": props.get("risk_3d_avg"),
                 "risk_delta": props.get("risk_delta"),
+                "alerted_3d": bool(props.get("alerted_3d")),
                 "updates": int(props.get("updates") or 0),
             }
         )
 
-    rows.sort(
+    alertable = [row for row in rows if _is_alertable_row(row, base_prior=prior)]
+    alertable.sort(
         key=lambda row: (
             bool(row.get("ignition")),
-            float(row.get("risk_delta") or 0.0),
             float(row.get("score") or 0.0),
+            float(row.get("risk_delta") or 0.0),
         ),
         reverse=True,
     )
-    diversified = diversify_alerts_by_distance(rows, limit=max(1, limit))
+    diversified = diversify_alerts_by_distance(alertable, limit=max(1, limit))
     return diversified, len(rows)
 
 

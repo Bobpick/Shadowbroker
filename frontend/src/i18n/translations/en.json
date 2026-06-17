@@ -221,7 +221,7 @@
   "gtAlerts": {
     "title": "TOP ALERTS",
     "counts": "{plotted} on map · {tracked} tracked (max {max})",
-    "empty": "No plottable regions yet — need geotagged intel (Telegram/GDELT/news).",
+    "empty": "No elevated regions yet — baseline theaters are tracked on the map but hidden here until risk rises above 20%.",
     "ignition": "IGNITE",
     "line": "risk {risk} · conflict {conflict}",
     "hint": "Alerts are spread by theater (~100 mi); (+N) = nearby regions merged. Click to fly there."
