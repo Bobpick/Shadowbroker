@@ -1208,6 +1208,11 @@ export interface RedditOsintPost {
   id: string;
   title?: string;
   description?: string;
+  title_translated?: string;
+  description_translated?: string;
+  source_lang?: string;
+  source_lang_label?: string;
+  translate_to?: string;
   link?: string;
   published?: string;
   source?: string;

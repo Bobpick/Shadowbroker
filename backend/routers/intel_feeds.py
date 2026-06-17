@@ -15,7 +15,11 @@ from services.fetchers.telegram_osint import prune_telegram_posts, telegram_medi
 from services.fetchers.reddit_osint import prune_reddit_posts
 from services.intel_feeds.country_risk import build_country_risk_payload
 from services.network_utils import outbound_user_agent
-from services.telegram_translate import apply_posts_translations, normalize_translate_target
+from services.telegram_translate import (
+    apply_posts_translations,
+    apply_reddit_posts_translations,
+    normalize_translate_target,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +76,14 @@ async def telegram_feed(request: Request, lang: str | None = Query(default=None)
 
 @router.get("/api/reddit-feed")
 @limiter.limit("30/minute")
-async def reddit_feed(request: Request) -> dict:
+async def reddit_feed(request: Request, lang: str | None = Query(default=None)) -> dict:
     snap = get_latest_data_subset_refs("reddit_osint")
     payload = snap.get("reddit_osint")
     if not isinstance(payload, dict) or payload.get("posts") is None:
         return {"posts": [], "total": 0, "geolocated": 0, "timestamp": None}
 
     fresh_posts = prune_reddit_posts(list(payload.get("posts") or []))
-    return {
+    response = {
         **payload,
         "posts": fresh_posts,
         "total": len(fresh_posts),
@@ -88,6 +92,14 @@ async def reddit_feed(request: Request) -> dict:
             1 for post in fresh_posts if post.get("narrative_profile") == "adversarial"
         ),
     }
+
+    if lang:
+        target = normalize_translate_target(lang)
+        localized = dict(response)
+        localized["posts"] = apply_reddit_posts_translations(list(response.get("posts") or []), target)
+        localized["translate_locale"] = target
+        return localized
+    return response
 
 
 def _infer_telegram_media_type(target_url: str, content_type: str) -> str:

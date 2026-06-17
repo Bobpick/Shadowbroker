@@ -27,3 +27,21 @@ def test_hashtag_region_maps_ukraine_dossier_key() -> None:
     }
     item = normalize_feed_item(post, source_type="telegram_osint")
     assert item["region"] == "ukraine"
+
+
+def test_reddit_prefers_translated_text_for_gt() -> None:
+    post = {
+        "title": "Удары по инфраструктуре",
+        "description": "Обстрел продолжается в приграничных районах",
+        "title_translated": "Strikes on infrastructure",
+        "description_translated": "Shelling continues in border areas with troop buildup reported",
+        "subreddit": "Russia",
+        "narrative_profile": "adversarial",
+        "source": "reddit.com/r/Russia",
+        "coords": [50.45, 30.52],
+    }
+    item = normalize_feed_item(post, source_type="reddit_osint")
+    assert "troop buildup" in item["text"].lower()
+    assert item["domain"] == "conflict"
+    assert "subreddit:Russia" in item["entities"]
+    assert "narrative:adversarial" in item["entities"]

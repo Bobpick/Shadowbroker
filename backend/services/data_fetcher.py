@@ -836,8 +836,17 @@ def start_scheduler():
         misfire_grace_time=600,
     )
 
+    def _fetch_reddit_osint_with_gt():
+        fetch_reddit_osint()
+        try:
+            from analytics.integration import maybe_refresh_gt_analytics
+
+            maybe_refresh_gt_analytics()
+        except Exception as exc:
+            logger.error("GT analytics refresh after reddit failed: %s", exc)
+
     _scheduler.add_job(
-        lambda: _run_task_with_health(fetch_reddit_osint, "fetch_reddit_osint"),
+        lambda: _run_task_with_health(_fetch_reddit_osint_with_gt, "fetch_reddit_osint"),
         "interval",
         minutes=_reddit_interval_m,
         next_run_time=datetime.utcnow() + timedelta(seconds=90),

@@ -341,5 +341,10 @@
     "translatedFrom": "由 {lang} 翻译",
     "showOriginal": "显示原文（{lang}）",
     "showTranslation": "显示译文"
+  },
+  "reddit": {
+    "translatedFrom": "由 {lang} 翻译",
+    "showOriginal": "显示原文（{lang}）",
+    "showTranslation": "显示译文"
   }
 }

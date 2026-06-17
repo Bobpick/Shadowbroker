@@ -11,6 +11,7 @@ from typing import Any
 from services.fetchers._store import _data_lock, _mark_fresh, is_any_active, latest_data
 from services.fetchers.telegram_osint import _resolve_telegram_coords, _score_risk
 from services.network_utils import fetch_with_curl, outbound_user_agent
+from services.telegram_translate import apply_reddit_posts_translations
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,7 @@ def fetch_reddit_osint() -> dict[str, Any]:
         time.sleep(0.35)
 
     merged_posts, added = _merge_reddit_posts(existing_posts, incoming)
+    merged_posts = apply_reddit_posts_translations(merged_posts)
     geolocated = sum(1 for p in merged_posts if p.get("coords"))
     adversarial = sum(1 for p in merged_posts if p.get("narrative_profile") == "adversarial")
 

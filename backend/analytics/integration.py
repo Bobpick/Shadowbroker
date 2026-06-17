@@ -7,7 +7,12 @@ import threading
 from datetime import datetime, timezone
 from typing import Any
 
-from analytics.feed_adapter import iter_gdelt_features, iter_news_items, iter_telegram_posts
+from analytics.feed_adapter import (
+    iter_gdelt_features,
+    iter_news_items,
+    iter_reddit_posts,
+    iter_telegram_posts,
+)
 from analytics.gt_early_warning import GT_EarlyWarning
 from analytics.settings import gt_analytics_enabled, get_gt_settings
 from services.fetchers._store import _data_lock, _mark_fresh, latest_data
@@ -118,6 +123,13 @@ def refresh_from_latest_data(
         if result and not result.get("skipped"):
             processed += 1
             results.append(result)
+
+    for item in iter_reddit_posts(data_snapshot.get("reddit_osint")):
+        result = engine.process_feed_item(item)
+        if result and not result.get("skipped"):
+            processed += 1
+            if len(results) < 8:
+                results.append(result)
 
     for item in iter_news_items(data_snapshot.get("news")):
         result = engine.process_feed_item(item)

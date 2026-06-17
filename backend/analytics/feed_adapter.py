@@ -119,6 +119,12 @@ def _entities_from_record(record: dict[str, Any]) -> list[str]:
     channel = str(record.get("channel") or "").strip()
     if channel:
         entities.append(f"channel:{channel}")
+    subreddit = str(record.get("subreddit") or "").strip()
+    if subreddit:
+        entities.append(f"subreddit:{subreddit}")
+    narrative = str(record.get("narrative_profile") or "").strip()
+    if narrative:
+        entities.append(f"narrative:{narrative}")
     source = str(record.get("source") or "").strip()
     if source:
         entities.append(f"source:{source}")
@@ -127,7 +133,7 @@ def _entities_from_record(record: dict[str, Any]) -> list[str]:
 
 def normalize_feed_item(record: dict[str, Any], *, source_type: str = "generic") -> dict[str, Any]:
     """Map a news/Telegram/GDELT record into the GT engine schema."""
-    prefer_translation = source_type == "telegram_osint"
+    prefer_translation = source_type in {"telegram_osint", "reddit_osint"}
     text = _text_from_record(record, prefer_translation=prefer_translation)
     if prefer_translation and not text.strip():
         text = _text_from_record(record, prefer_translation=False)
@@ -171,6 +177,23 @@ def iter_telegram_posts(payload: dict[str, Any] | None) -> Iterable[dict[str, An
             else post
         )
         yield normalize_feed_item(enriched, source_type="telegram_osint")
+
+
+def iter_reddit_posts(payload: dict[str, Any] | None) -> Iterable[dict[str, Any]]:
+    from services.telegram_translate import apply_post_translation, reddit_translate_enabled
+
+    posts = list((payload or {}).get("posts") or [])
+    for post in posts:
+        if not isinstance(post, dict):
+            continue
+        if not (post.get("description") or post.get("title")):
+            continue
+        enriched = (
+            apply_post_translation(post, source="reddit")
+            if reddit_translate_enabled()
+            else post
+        )
+        yield normalize_feed_item(enriched, source_type="reddit_osint")
 
 
 def iter_news_items(payload: list[dict[str, Any]] | None) -> Iterable[dict[str, Any]]:

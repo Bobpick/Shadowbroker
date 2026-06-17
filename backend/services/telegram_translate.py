@@ -53,8 +53,8 @@ _LOCALE_TO_GOOGLE = {
 }
 
 
-def telegram_translate_enabled() -> bool:
-    return str(os.environ.get("TELEGRAM_OSINT_TRANSLATE", "true")).strip().lower() not in {
+def _env_flag_enabled(name: str, *, default: str = "true") -> bool:
+    return str(os.environ.get(name, default)).strip().lower() not in {
         "0",
         "false",
         "no",
@@ -63,9 +63,33 @@ def telegram_translate_enabled() -> bool:
     }
 
 
+def telegram_translate_enabled() -> bool:
+    return _env_flag_enabled("TELEGRAM_OSINT_TRANSLATE", default="true")
+
+
+def reddit_translate_enabled() -> bool:
+    raw = str(os.environ.get("REDDIT_OSINT_TRANSLATE", "")).strip()
+    if raw:
+        return _env_flag_enabled("REDDIT_OSINT_TRANSLATE", default="true")
+    return telegram_translate_enabled()
+
+
+def osint_translate_enabled(source: str = "telegram") -> bool:
+    if str(source or "").strip().lower() == "reddit":
+        return reddit_translate_enabled()
+    return telegram_translate_enabled()
+
+
 def telegram_translate_target() -> str:
     raw = str(os.environ.get("TELEGRAM_OSINT_TRANSLATE_TO", "en")).strip().lower()
     return _LOCALE_TO_GOOGLE.get(raw, raw or "en")
+
+
+def reddit_translate_target() -> str:
+    raw = str(os.environ.get("REDDIT_OSINT_TRANSLATE_TO", "")).strip().lower()
+    if raw:
+        return _LOCALE_TO_GOOGLE.get(raw, raw)
+    return telegram_translate_target()
 
 
 def normalize_translate_target(locale: str | None) -> str:
@@ -197,9 +221,14 @@ def translate_text(text: str, target_lang: str | None = None) -> tuple[str, str]
         return clean, fallback_lang
 
 
-def apply_post_translation(post: dict[str, Any], target_lang: str | None = None) -> dict[str, Any]:
-    """Add translation fields to a Telegram OSINT post dict."""
-    if not telegram_translate_enabled():
+def apply_post_translation(
+    post: dict[str, Any],
+    target_lang: str | None = None,
+    *,
+    source: str = "telegram",
+) -> dict[str, Any]:
+    """Add translation fields to an OSINT post dict (Telegram or Reddit)."""
+    if not osint_translate_enabled(source):
         return post
 
     target = normalize_translate_target(target_lang)
@@ -237,7 +266,17 @@ def apply_post_translation(post: dict[str, Any], target_lang: str | None = None)
 def apply_posts_translations(
     posts: list[dict[str, Any]],
     target_lang: str | None = None,
+    *,
+    source: str = "telegram",
 ) -> list[dict[str, Any]]:
-    if not telegram_translate_enabled():
+    if not osint_translate_enabled(source):
         return posts
-    return [apply_post_translation(post, target_lang) for post in posts]
+    return [apply_post_translation(post, target_lang, source=source) for post in posts]
+
+
+def apply_reddit_posts_translations(
+    posts: list[dict[str, Any]],
+    target_lang: str | None = None,
+) -> list[dict[str, Any]]:
+    target = target_lang if target_lang is not None else reddit_translate_target()
+    return apply_posts_translations(posts, target, source="reddit")

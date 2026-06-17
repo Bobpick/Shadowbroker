@@ -341,5 +341,10 @@
     "translatedFrom": "Traduit depuis {lang}",
     "showOriginal": "AFFICHER L'ORIGINAL ({lang})",
     "showTranslation": "AFFICHER LA TRADUCTION"
+  },
+  "reddit": {
+    "translatedFrom": "Traduit depuis {lang}",
+    "showOriginal": "AFFICHER L'ORIGINAL ({lang})",
+    "showTranslation": "AFFICHER LA TRADUCTION"
   }
 }
