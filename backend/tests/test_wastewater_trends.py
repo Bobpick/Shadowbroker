@@ -94,4 +94,20 @@ def test_build_surveillance_summary_aggregates_states_and_rates():
     assert rota["states_alert"] == 2
     assert rota["states_rising_delta"] == 1
     assert rota["rising_rate_pct"] == 100.0
+    assert rota["rising_rate_display"] == "+100.0%"
     assert summary["pathogens_rising"] >= 1
+
+
+def test_build_surveillance_summary_new_signal_without_baseline():
+    plants = [
+        {
+            "state": "Kansas",
+            "pathogens": [
+                {"name": "Rotavirus", "target_key": "Rota", "alert": True, "trend": "rising"},
+            ],
+        },
+    ]
+    summary = build_surveillance_summary(plants, baseline=None)
+    rota = summary["rising_pathogens"][0]
+    assert rota["rising_rate_pct"] is None
+    assert rota["rising_rate_display"] == "+1 states (new)"

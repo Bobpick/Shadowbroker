@@ -306,8 +306,22 @@ def load_baseline_snapshot(*, lookback_days: int = BASELINE_LOOKBACK_DAYS) -> di
 
 def _rate_increase(current: int, baseline: int) -> float | None:
     if baseline <= 0:
-        return float(current * 100) if current > 0 else None
+        return None
     return round(((current - baseline) / baseline) * 100.0, 1)
+
+
+def _rate_display(current: int, baseline: int, delta: int) -> str:
+    if baseline <= 0:
+        if current <= 0:
+            return "n/a"
+        if delta > 0:
+            return f"+{delta} states (new)"
+        return f"{current} states (new)"
+    rate = _rate_increase(current, baseline)
+    if rate is None:
+        return "n/a"
+    sign = "+" if rate > 0 else ""
+    return f"{sign}{rate}%"
 
 
 def build_surveillance_summary(
@@ -327,6 +341,7 @@ def build_surveillance_summary(
         alert_states = int(bucket.get("states_alert_count") or 0)
         base_rising = int(base.get("states_rising_count") or 0)
         base_alert = int(base.get("states_alert_count") or 0)
+        rising_delta = rising_states - base_rising
         row = {
             "name": name,
             "target_key": bucket.get("target_key"),
@@ -334,9 +349,10 @@ def build_surveillance_summary(
             "states_alert": alert_states,
             "sites_rising": int(bucket.get("sites_rising") or 0),
             "sites_alert": int(bucket.get("sites_alert") or 0),
-            "states_rising_delta": rising_states - base_rising,
+            "states_rising_delta": rising_delta,
             "states_alert_delta": alert_states - base_alert,
             "rising_rate_pct": _rate_increase(rising_states, base_rising),
+            "rising_rate_display": _rate_display(rising_states, base_rising, rising_delta),
             "alert_rate_pct": _rate_increase(alert_states, base_alert),
             "trend": "rising"
             if rising_states > 0
@@ -366,7 +382,7 @@ def build_surveillance_summary(
         "pathogens": pathogen_rows,
         "rising_pathogens": rising_rows,
         "signature": "|".join(
-            f"{row['name']}:{row['states_rising']}:{row.get('rising_rate_pct')}"
+            f"{row['name']}:{row['states_rising']}:{row.get('rising_rate_display')}"
             for row in rising_rows[:12]
         ),
     }

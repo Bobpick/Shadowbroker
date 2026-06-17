@@ -566,6 +566,7 @@ export interface WastewaterSurveillancePathogen {
   states_rising_delta?: number;
   states_alert_delta?: number;
   rising_rate_pct?: number | null;
+  rising_rate_display?: string;
   alert_rate_pct?: number | null;
   trend?: 'rising' | 'stable' | 'falling';
 }

@@ -34,10 +34,11 @@ function BiohazardIcon({ size = 28, className = '' }: { size?: number; className
   );
 }
 
-function formatRate(value?: number | null): string {
-  if (value == null || Number.isNaN(value)) return 'n/a';
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(1)}%`;
+function formatRate(display?: string, pct?: number | null): string {
+  if (display) return display;
+  if (pct == null || Number.isNaN(pct)) return 'n/a';
+  const sign = pct > 0 ? '+' : '';
+  return `${sign}${pct.toFixed(1)}%`;
 }
 
 export function WastewaterSurveillanceBeacon({ enabled, surveillance }: Props) {
@@ -195,7 +196,7 @@ export function WastewaterSurveillanceBeacon({ enabled, surveillance }: Props) {
                       <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-lime-400/90">
                         <span>States rising: <span className="text-white">{pathogen.states_rising}</span></span>
                         <span>States elevated: <span className="text-white">{pathogen.states_alert}</span></span>
-                        <span>Rate: <span className="text-white">{formatRate(pathogen.rising_rate_pct)}</span></span>
+                        <span>Rate: <span className="text-white">{formatRate(pathogen.rising_rate_display, pathogen.rising_rate_pct)}</span></span>
                         <span>Δ states: <span className="text-white">{pathogen.states_rising_delta ?? 0}</span></span>
                       </div>
                     </div>
