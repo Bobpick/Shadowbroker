@@ -28,7 +28,7 @@ from services.fetchers.wastewater_trends import (
     save_daily_snapshot,
     _snapshot_dir,
 )
-from services.network_utils import fetch_with_curl
+from services.network_utils import UpstreamCircuitBreakerError, fetch_with_curl
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,51 @@ _BATCH_WORKERS = int(os.environ.get("WASTEWATER_BATCH_WORKERS", "8"))
 _plants_cache: list[dict] = []
 _plants_cache_ts: float = 0
 _PLANTS_CACHE_TTL = 86400  # 24 hours
+_PLANTS_TIMEOUT_S = int(os.environ.get("WASTEWATER_PLANTS_TIMEOUT_S", "60"))
+
+
+def _plants_disk_cache_path() -> Path:
+    raw = os.environ.get("WASTEWATER_PLANTS_CACHE_PATH", "").strip()
+    if raw:
+        return Path(raw)
+    return Path(__file__).resolve().parents[2] / "data" / "wastewater_plants_cache.json"
+
+
+def _plants_seed_path() -> Path:
+    return Path(__file__).resolve().parent / "wastewater_plants_seed.json"
+
+
+def _load_plants_payload(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        plants = payload.get("plants") if isinstance(payload, dict) else payload
+        if isinstance(plants, list):
+            return [p for p in plants if isinstance(p, dict)]
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.debug("WastewaterSCAN: could not read plants from %s: %s", path, exc)
+    return []
+
+
+def _save_plants_disk_cache(plants: list[dict]) -> None:
+    if not plants:
+        return
+    path = _plants_disk_cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"plants": plants}), encoding="utf-8")
+    except OSError as exc:
+        logger.debug("WastewaterSCAN: could not write plants cache to %s: %s", path, exc)
+
+
+def _fallback_plants() -> list[dict]:
+    for path in (_plants_disk_cache_path(), _plants_seed_path()):
+        plants = _load_plants_payload(path)
+        if plants:
+            logger.info("WastewaterSCAN: using %s plant locations from %s", len(plants), path.name)
+            return plants
+    return []
 
 # Friendly display labels for known targets — unknown targets use their raw key.
 _TARGET_DISPLAY: dict[str, str] = {
@@ -133,15 +178,30 @@ def _fetch_plants() -> list[dict]:
         return _plants_cache
 
     url = f"{_GCS_BASE}/plants.json"
-    resp = fetch_with_curl(url, timeout=30)
+    try:
+        resp = fetch_with_curl(url, timeout=_PLANTS_TIMEOUT_S)
+    except (UpstreamCircuitBreakerError, Exception) as exc:
+        logger.warning("WastewaterSCAN plants fetch error: %s", exc)
+        if _plants_cache:
+            return _plants_cache
+        return _fallback_plants()
+
     if resp.status_code != 200:
         logger.warning("WastewaterSCAN plants fetch failed: HTTP %s", resp.status_code)
-        return _plants_cache
+        if _plants_cache:
+            return _plants_cache
+        return _fallback_plants()
 
     data = resp.json()
     plants = data.get("plants", [])
+    if not plants:
+        if _plants_cache:
+            return _plants_cache
+        return _fallback_plants()
+
     _plants_cache = plants
     _plants_cache_ts = time.time()
+    _save_plants_disk_cache(plants)
     logger.info("WastewaterSCAN: cached %s plant locations", len(plants))
     return plants
 

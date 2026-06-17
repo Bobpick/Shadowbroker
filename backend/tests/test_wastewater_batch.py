@@ -1,6 +1,6 @@
 """Wastewater rotating batch selection tests."""
 
-from services.fetchers.wastewater import select_batch_ids
+from services.fetchers.wastewater import _fallback_plants, select_batch_ids
 
 
 def _plant_map(ids: list[str], with_data: set[str] | None = None) -> dict[str, dict]:
@@ -29,6 +29,12 @@ def test_select_batch_rotates_after_backlog_cleared():
 
     assert batch == ["b", "c"]
     assert cursor == 3
+
+
+def test_fallback_plants_seed_loads_when_network_unavailable():
+    plants = _fallback_plants()
+    assert len(plants) >= 100
+    assert plants[0].get("point", {}).get("coordinates")
 
 
 def test_select_batch_wraps_cursor():
