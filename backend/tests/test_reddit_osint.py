@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from services.fetchers.reddit_osint import (
     parse_reddit_listing,
+    parse_reddit_rss,
     prune_reddit_posts,
     reddit_max_age_days,
 )
@@ -50,3 +51,21 @@ def test_prune_reddit_posts_drops_old_entries():
 
 def test_reddit_max_age_days_default():
     assert reddit_max_age_days() >= 1
+
+
+def test_parse_reddit_rss_geoparses_titles():
+    atom = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <title>Missile strike reported near Kyiv amid escalation</title>
+        <link href="https://www.reddit.com/r/Russia/comments/abc/test/" />
+        <updated>2026-06-17T12:00:00+00:00</updated>
+        <author><name>/u/example_user</name></author>
+        <summary>Multiple sources reporting increased activity near Kharkiv.</summary>
+      </entry>
+    </feed>
+    """
+    posts = parse_reddit_rss(atom, "Russia")
+    assert len(posts) == 1
+    assert posts[0]["subreddit"] == "Russia"
+    assert posts[0]["coords"] is not None
