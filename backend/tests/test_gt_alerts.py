@@ -43,8 +43,8 @@ def test_parse_heatmap_filters_invalid_coords() -> None:
 def test_region_label_formats_coordinates() -> None:
     from analytics.gt_alerts import _region_label
 
-    assert "48.00" in _region_label("48.00,31.17")
-    assert _region_label("ukraine") == "ukraine"
+    assert "48.0" in _region_label("48.00,31.17")
+    assert _region_label("ukraine") == "Ukraine"
 
 
 def test_top_gt_alerts_disabled(monkeypatch) -> None:

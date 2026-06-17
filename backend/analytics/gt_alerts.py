@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from analytics.integration import get_gt_engine
+from analytics.region_geo import diversify_alerts_by_distance, theater_label
 from analytics.settings import get_gt_settings
 
 
@@ -32,19 +33,7 @@ def _valid_coords(coords: Any) -> tuple[float, float] | None:
 
 
 def _region_label(region: str) -> str:
-    text = str(region or "").strip()
-    if not text:
-        return "unknown"
-    if "," in text:
-        parts = [piece.strip() for piece in text.split(",") if piece.strip()]
-        if len(parts) >= 2:
-            try:
-                lat = float(parts[0])
-                lng = float(parts[-1])
-                return f"{lat:.2f}°, {lng:.2f}°"
-            except ValueError:
-                pass
-    return text.replace("_", " ")
+    return theater_label(region) or "unknown"
 
 
 def parse_heatmap_alerts(
@@ -96,7 +85,8 @@ def parse_heatmap_alerts(
         ),
         reverse=True,
     )
-    return rows[: max(1, limit)], len(rows)
+    diversified = diversify_alerts_by_distance(rows, limit=max(1, limit))
+    return diversified, len(rows)
 
 
 def top_gt_alerts(*, limit: int = 8) -> dict[str, Any]:

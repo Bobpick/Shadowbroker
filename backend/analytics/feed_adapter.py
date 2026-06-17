@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
+from analytics.region_geo import resolve_region_from_coords, theater_centroid
+
 _DOMAIN_CONFLICT = "conflict"
 _DOMAIN_UNREST = "unrest"
 _DOMAIN_FINANCIAL = "financial"
@@ -102,7 +104,7 @@ def _region_from_record(record: dict[str, Any], *, text: str = "") -> str:
         try:
             lat = float(coords[0])
             lng = float(coords[1])
-            return f"{lat:.2f},{lng:.2f}"
+            return resolve_region_from_coords(lat, lng)
         except (TypeError, ValueError):
             pass
     return "global"
@@ -147,6 +149,11 @@ def normalize_feed_item(record: dict[str, Any], *, source_type: str = "generic")
             lng = float(coords[1])
         except (TypeError, ValueError):
             lat = lng = None
+
+    if lat is None or lng is None:
+        centroid = theater_centroid(region)
+        if centroid is not None:
+            lat, lng = centroid
 
     return {
         "id": record.get("id") or record.get("link"),

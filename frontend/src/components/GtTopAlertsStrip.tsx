@@ -92,6 +92,9 @@ export default function GtTopAlertsStrip({
               <div className="flex items-center gap-1">
                 <span className="truncate text-[10px] font-mono font-bold uppercase text-amber-100">
                   {alert.regionLabel}
+                  {alert.nearbyCount && alert.nearbyCount > 1
+                    ? ` (+${alert.nearbyCount - 1})`
+                    : ''}
                 </span>
                 {alert.ignition && (
                   <span className="shrink-0 border border-orange-700/50 px-1 text-[8px] font-mono text-orange-300">

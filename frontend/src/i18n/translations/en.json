@@ -224,7 +224,7 @@
     "empty": "No plottable regions yet — need geotagged intel (Telegram/GDELT/news).",
     "ignition": "IGNITE",
     "line": "risk {risk} · conflict {conflict}",
-    "hint": "500 = max tracked regions, not individual events. Click to fly there."
+    "hint": "Alerts are spread by theater (~100 mi); (+N) = nearby regions merged. Click to fly there."
   },
   "gtRisk": {
     "popupTitle": "STRATEGIC RISK",

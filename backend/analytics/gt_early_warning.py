@@ -13,6 +13,7 @@ from typing import Any, DefaultDict
 import networkx as nx
 import numpy as np
 
+from analytics.region_geo import theater_centroid
 from analytics.settings import GTAnalyticsSettings, get_gt_settings
 
 logger = logging.getLogger(__name__)
@@ -486,6 +487,9 @@ class GT_EarlyWarning:
 
         for region, state in items:
             coords = state.coords
+            if (not coords or len(coords) < 2) and theater_centroid(region):
+                clat, clng = theater_centroid(region)  # type: ignore[misc]
+                coords = [clat, clng]
             geometry: dict[str, Any]
             if coords and len(coords) >= 2:
                 geometry = {"type": "Point", "coordinates": [float(coords[1]), float(coords[0])]}
