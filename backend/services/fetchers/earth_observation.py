@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import time
 import heapq
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from services.network_utils import (
     external_curl_fallback_enabled,
@@ -30,6 +30,34 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Earthquakes (USGS)
 # ---------------------------------------------------------------------------
+def _parse_usgs_earthquake_feature(feature: dict) -> dict | None:
+    """Normalize a USGS GeoJSON feature into the dashboard earthquake shape."""
+    try:
+        props = feature.get("properties") or {}
+        coords = (feature.get("geometry") or {}).get("coordinates") or []
+        if len(coords) < 3:
+            return None
+        lng, lat, depth = coords[0], coords[1], coords[2]
+        time_ms = props.get("time")
+        time_iso = None
+        if isinstance(time_ms, (int, float)):
+            time_iso = datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc).isoformat()
+        return {
+            "id": feature.get("id"),
+            "mag": props.get("mag"),
+            "lat": lat,
+            "lng": lng,
+            "depth_km": depth,
+            "place": props.get("place") or "Unknown location",
+            "time": time_iso,
+            "time_ms": time_ms,
+            "url": props.get("url"),
+            "updated_ms": props.get("updated"),
+        }
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
 @with_retry(max_retries=1, base_delay=1)
 def fetch_earthquakes():
     from services.fetchers._store import is_any_active
@@ -42,18 +70,11 @@ def fetch_earthquakes():
         response = fetch_with_curl(url, timeout=10)
         if response.status_code == 200:
             features = response.json().get("features", [])
-            for f in features[:50]:
-                mag = f["properties"]["mag"]
-                lng, lat, depth = f["geometry"]["coordinates"]
-                quakes.append(
-                    {
-                        "id": f["id"],
-                        "mag": mag,
-                        "lat": lat,
-                        "lng": lng,
-                        "place": f["properties"]["place"],
-                    }
-                )
+            for feature in features[:50]:
+                parsed = _parse_usgs_earthquake_feature(feature)
+                if parsed is not None:
+                    quakes.append(parsed)
+            quakes.sort(key=lambda q: q.get("time_ms") or 0, reverse=True)
     except (ConnectionError, TimeoutError, OSError, ValueError, KeyError, TypeError) as e:
         logger.error(f"Error fetching earthquakes: {e}")
     with _data_lock:

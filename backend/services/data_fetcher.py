@@ -1154,9 +1154,19 @@ def start_scheduler():
         misfire_grace_time=3600,
     )
 
-    # WastewaterSCAN pathogen surveillance — daily at 12:00 UTC (samples update ~daily)
+    # WastewaterSCAN — rotating batches every 3 min (full cycle ~15–20 min at 36/batch).
     _scheduler.add_job(
         lambda: _run_task_with_health(fetch_wastewater, "fetch_wastewater"),
+        "interval",
+        minutes=3,
+        id="wastewater_batch",
+        max_instances=1,
+        misfire_grace_time=120,
+    )
+
+    # WastewaterSCAN — daily snapshot refresh at 12:00 UTC (samples update ~daily)
+    _scheduler.add_job(
+        lambda: _run_task_with_health(fetch_wastewater, "fetch_wastewater_daily"),
         "cron",
         hour=12,
         minute=0,

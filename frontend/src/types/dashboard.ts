@@ -217,6 +217,12 @@ export interface Earthquake {
   lng: number;
   place: string;
   title?: string;
+  /** UTC origin time from USGS (ISO-8601). */
+  time?: string;
+  /** Hypocenter depth in kilometers. */
+  depth_km?: number | null;
+  /** USGS event detail page. */
+  url?: string;
 }
 
 // ─── GPS JAMMING ────────────────────────────────────────────────────────────
@@ -524,6 +530,13 @@ export interface WastewaterPathogen {
   normalized: number;
   activity: string;
   alert: boolean;
+  trend?: 'rising' | 'stable' | 'falling';
+  history?: Array<{
+    date: string;
+    activity: string;
+    alert?: boolean;
+    normalized?: number;
+  }>;
 }
 
 export interface WastewaterPlant {
@@ -539,7 +552,43 @@ export interface WastewaterPlant {
   pathogens: WastewaterPathogen[];
   alert_count: number;
   collection_date: string;
+  sample_age_days?: number | null;
   source: string;
+}
+
+export interface WastewaterSurveillancePathogen {
+  name: string;
+  target_key?: string;
+  states_rising: number;
+  states_alert: number;
+  sites_rising: number;
+  sites_alert: number;
+  states_rising_delta?: number;
+  states_alert_delta?: number;
+  rising_rate_pct?: number | null;
+  alert_rate_pct?: number | null;
+  trend?: 'rising' | 'stable' | 'falling';
+}
+
+export interface WastewaterSurveillanceSummary {
+  updated_at?: string | null;
+  baseline_date?: string | null;
+  baseline_lookback_days?: number;
+  marker?: { lat: number; lng: number };
+  plants_monitored?: number;
+  plants_active?: number;
+  pathogens_tracked?: number;
+  pathogens_rising?: number;
+  signature?: string;
+  fetch_progress?: {
+    with_data?: number;
+    total?: number;
+    batch_fetched?: number;
+    batch_size?: number;
+    cursor?: number;
+  };
+  pathogens?: WastewaterSurveillancePathogen[];
+  rising_pathogens?: WastewaterSurveillancePathogen[];
 }
 
 export interface FishingEvent {
@@ -910,6 +959,7 @@ export interface DashboardData {
 
   // WastewaterSCAN pathogen surveillance
   wastewater?: WastewaterPlant[];
+  wastewater_surveillance?: WastewaterSurveillanceSummary;
 
   // CrowdThreat — crowdsourced threat intelligence
   crowdthreat?: CrowdThreatItem[];

@@ -184,6 +184,7 @@ import { ShipPopup } from '@/components/MaplibreViewer/popups/ShipPopup';
 import { SigintPopup } from '@/components/MaplibreViewer/popups/SigintPopup';
 import { CorrelationPopup } from '@/components/MaplibreViewer/popups/CorrelationPopup';
 import { WastewaterPopup } from '@/components/MaplibreViewer/popups/WastewaterPopup';
+import { WastewaterSurveillanceBeacon } from '@/components/map/WastewaterSurveillanceBeacon';
 import { MilitaryBasePopup } from '@/components/MaplibreViewer/popups/MilitaryBasePopup';
 import { RegionDossierPanel } from '@/components/MaplibreViewer/popups/RegionDossierPanel';
 import { GtRiskPopup } from '@/components/MaplibreViewer/popups/GtRiskPopup';
@@ -336,6 +337,7 @@ const MAP_EXTRA_DATA_KEYS = [
   'viirs_change_nodes',
   'volcanoes',
   'wastewater',
+  'wastewater_surveillance',
   'weather_alerts',
 ] as const satisfies readonly (keyof DashboardData)[];
 
@@ -4480,6 +4482,13 @@ const MaplibreViewer = ({
           />
         ) : null}
 
+        {activeLayers.wastewater && !isMapInteracting ? (
+          <WastewaterSurveillanceBeacon
+            enabled={activeLayers.wastewater}
+            surveillance={data?.wastewater_surveillance}
+          />
+        ) : null}
+
         {/* Satellite positions — mission-type icons */}
         {/* satellites: data pushed imperatively */}
         <Source id="satellites" type="geojson" data={EMPTY_FC}>
@@ -5631,6 +5640,18 @@ const MaplibreViewer = ({
             if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
             const mag = eq?.mag ?? Number(extra.mag);
             const place = eq?.place || String(extra.place || selectedEntity.name || 'Unknown location');
+            const time =
+              (typeof eq?.time === 'string' && eq.time) ||
+              (typeof extra.time === 'string' ? extra.time : undefined);
+            const depthKm =
+              typeof eq?.depth_km === 'number'
+                ? eq.depth_km
+                : typeof extra.depth_km === 'number'
+                  ? extra.depth_km
+                  : null;
+            const usgsUrl =
+              (typeof eq?.url === 'string' && eq.url) ||
+              (typeof extra.url === 'string' ? extra.url : undefined);
             const accent = mag >= 6 ? '#ef4444' : mag >= 4.5 ? '#f97316' : '#eab308';
             return (
               <Popup
@@ -5655,6 +5676,18 @@ const MaplibreViewer = ({
                       {lat.toFixed(3)}, {lng.toFixed(3)}
                     </span>
                   </div>
+                  <div className="map-popup-row">
+                    Time:{' '}
+                    <span className="text-white">
+                      {time ? formatEventTimestamp(time, { style: 'full' }) : 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="map-popup-row">
+                    Depth:{' '}
+                    <span className="text-white font-mono">
+                      {depthKm != null && Number.isFinite(depthKm) ? `${depthKm.toFixed(1)} km` : 'Unknown'}
+                    </span>
+                  </div>
                   {oracleIntel?.found && (
                     <div className="mt-2 pt-2 border-t border-yellow-500/20">
                       <div className="text-[10px] font-mono text-yellow-500/80 tracking-wider mb-1">REGION INTEL</div>
@@ -5670,8 +5703,18 @@ const MaplibreViewer = ({
                       </div>
                     </div>
                   )}
-                  <div className="mt-1.5 text-[9px] tracking-wider" style={{ color: `${accent}99` }}>
-                    SEISMIC — USGS
+                  <div className="mt-1.5 flex items-center justify-between gap-2 text-[9px] tracking-wider" style={{ color: `${accent}99` }}>
+                    <span>SEISMIC — USGS</span>
+                    {usgsUrl ? (
+                      <a
+                        href={usgsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-cyan-400 hover:text-cyan-200 underline underline-offset-2"
+                      >
+                        USGS REPORT ↗
+                      </a>
+                    ) : null}
                   </div>
                 </div>
               </Popup>

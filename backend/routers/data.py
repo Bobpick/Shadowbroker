@@ -795,6 +795,7 @@ async def live_data_slow(
         "firms_fires", "datacenters", "military_bases", "power_plants", "viirs_change_nodes",
         "scanners", "weather_alerts", "ukraine_alerts", "air_quality", "volcanoes",
         "fishing_activity", "psk_reporter", "correlations", "uap_sightings", "wastewater",
+        "wastewater_surveillance",
         "crowdthreat", "threat_level", "trending_markets", "road_corridor_trends",
         "malware_threats", "cyber_threats", "scm_suppliers", "telegram_osint", "gt_risk",
     )
@@ -836,6 +837,19 @@ async def live_data_slow(
         "correlations": (d.get("correlations") or []) if active_layers.get("correlations", True) else [],
         "uap_sightings": (d.get("uap_sightings") or []) if active_layers.get("uap_sightings", True) else [],
         "wastewater": (d.get("wastewater") or []) if active_layers.get("wastewater", True) else [],
+        "wastewater_surveillance": (
+            d.get("wastewater_surveillance")
+            if active_layers.get("wastewater", True)
+            else {
+                "updated_at": None,
+                "baseline_date": None,
+                "marker": {"lat": 39.8283, "lng": -98.5795},
+                "pathogens": [],
+                "rising_pathogens": [],
+                "pathogens_rising": 0,
+                "signature": "",
+            }
+        ),
         "crowdthreat": (d.get("crowdthreat") or []) if active_layers.get("crowdthreat", True) else [],
         "road_corridor_trends": (
             d.get("road_corridor_trends") or {"updated_at": None, "corridors": []}

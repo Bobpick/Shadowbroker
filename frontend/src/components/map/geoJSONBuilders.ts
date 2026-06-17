@@ -174,6 +174,9 @@ export function buildEarthquakesGeoJSON(earthquakes?: Earthquake[]): FC {
             lng: eq.lng,
             mag: eq.mag,
             place: eq.place,
+            time: eq.time,
+            depth_km: eq.depth_km,
+            url: eq.url,
           },
           geometry: { type: 'Point' as const, coordinates: [eq.lng, eq.lat] },
         };

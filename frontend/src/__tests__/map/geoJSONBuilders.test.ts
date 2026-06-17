@@ -95,6 +95,25 @@ describe('buildEarthquakesGeoJSON', () => {
     const result = buildEarthquakesGeoJSON(earthquakes);
     expect(result!.features[0].properties?.title).toBe('Big One');
   });
+
+  it('passes through origin time, depth, and USGS url', () => {
+    const earthquakes: Earthquake[] = [
+      {
+        id: 'eq1',
+        mag: 3.2,
+        lat: 40.374,
+        lng: -125.136,
+        place: '72 km W of Petrolia, CA',
+        time: '2026-06-16T12:00:00Z',
+        depth_km: 12.5,
+        url: 'https://earthquake.usgs.gov/earthquakes/eventpage/us7000abc',
+      },
+    ];
+    const result = buildEarthquakesGeoJSON(earthquakes);
+    expect(result!.features[0].properties?.time).toBe('2026-06-16T12:00:00Z');
+    expect(result!.features[0].properties?.depth_km).toBe(12.5);
+    expect(result!.features[0].properties?.url).toContain('us7000abc');
+  });
 });
 
 // ─── GPS Jamming ────────────────────────────────────────────────────────────
