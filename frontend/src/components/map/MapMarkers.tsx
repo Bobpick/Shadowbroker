@@ -475,6 +475,107 @@ export function ThreatMarkers({
   );
 }
 
+function OsintPostCountBadge({ count }: { count: number }) {
+  if (count <= 1) return null;
+  return (
+    <span
+      style={{
+        position: 'absolute',
+        top: -5,
+        right: -6,
+        minWidth: 14,
+        height: 14,
+        padding: '0 3px',
+        borderRadius: 7,
+        background: '#0f172a',
+        border: '1.5px solid rgba(255,255,255,0.35)',
+        color: '#f8fafc',
+        fontFamily: 'monospace',
+        fontSize: 9,
+        fontWeight: 700,
+        lineHeight: '11px',
+        textAlign: 'center',
+        pointerEvents: 'none',
+      }}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
+/** Red broadcast disc — circle + radio waves (not a plain dot). */
+function TelegramOsintPin({ size }: { size: number }) {
+  const iconSize = Math.max(10, Math.round(size * 0.68));
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: '#ef4444',
+        border: '2.5px solid #fca5a5',
+        boxShadow: '0 0 14px rgba(239, 68, 68, 0.75)',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <svg
+        width={iconSize}
+        height={iconSize}
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="2.25" fill="#fff" />
+        <path
+          d="M12 5a7 7 0 0 1 0 14M12 8a4 4 0 0 1 0 8"
+          stroke="#fff"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+    </div>
+  );
+}
+
+/** Orange rounded square with “r” — visually distinct from Telegram circles. */
+function RedditOsintPin({ size, adversarial }: { size: number; adversarial: boolean }) {
+  const fontSize = Math.max(11, Math.round(size * 0.58));
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: size,
+        height: size,
+        borderRadius: Math.max(5, Math.round(size * 0.28)),
+        background: adversarial
+          ? 'linear-gradient(145deg, #ea580c 0%, #c2410c 100%)'
+          : 'linear-gradient(145deg, #ff5722 0%, #ff4500 100%)',
+        border: `2px solid ${adversarial ? '#fdba74' : '#ffccbc'}`,
+        boxShadow: adversarial
+          ? '0 0 14px rgba(234, 88, 12, 0.85)'
+          : '0 0 12px rgba(255, 69, 0, 0.75)',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: '#fff',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        fontWeight: 800,
+        fontSize,
+        lineHeight: 1,
+        letterSpacing: '-0.05em',
+        textTransform: 'lowercase',
+      }}
+    >
+      r
+    </div>
+  );
+}
+
 // -- Telegram OSINT pins (HTML, above threat alert boxes) --
 interface TelegramOsintMarkersProps {
   features: GeoJSON.Feature[];
@@ -514,16 +615,11 @@ export function TelegramOsintMarkers({ features, onEntityClick }: TelegramOsintM
           >
             <div
               title={`Telegram OSINT${postCount > 1 ? ` (${postCount} posts)` : ''}`}
-              style={{
-                width: size,
-                height: size,
-                borderRadius: '50%',
-                background: '#ef4444',
-                border: '2.5px solid #fca5a5',
-                boxShadow: '0 0 14px rgba(239, 68, 68, 0.75)',
-                cursor: 'pointer',
-              }}
-            />
+              style={{ position: 'relative' }}
+            >
+              <TelegramOsintPin size={size} />
+              <OsintPostCountBadge count={postCount} />
+            </div>
           </Marker>
         );
       })}
@@ -550,7 +646,7 @@ export function RedditOsintMarkers({ features, onEntityClick }: RedditOsintMarke
         if (!id) return null;
         const postCount = Number(props.post_count || 1);
         const adversarial = props.narrative_profile === 'adversarial';
-        const size = postCount > 1 ? Math.min(28, 14 + Math.log2(postCount) * 4) : 14;
+        const size = postCount > 1 ? Math.min(30, 18 + Math.log2(postCount) * 4) : 18;
 
         return (
           <Marker
@@ -571,16 +667,11 @@ export function RedditOsintMarkers({ features, onEntityClick }: RedditOsintMarke
           >
             <div
               title={`Reddit OSINT${postCount > 1 ? ` (${postCount} posts)` : ''}`}
-              style={{
-                width: size,
-                height: size,
-                borderRadius: '50%',
-                background: adversarial ? '#ea580c' : '#ff4500',
-                border: '2px solid #fed7aa',
-                boxShadow: '0 0 12px rgba(255, 69, 0, 0.7)',
-                cursor: 'pointer',
-              }}
-            />
+              style={{ position: 'relative' }}
+            >
+              <RedditOsintPin size={size} adversarial={adversarial} />
+              <OsintPostCountBadge count={postCount} />
+            </div>
           </Marker>
         );
       })}
