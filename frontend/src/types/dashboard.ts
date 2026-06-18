@@ -803,6 +803,11 @@ export interface SpaceWeather {
 
 // ─── WEATHER (RAINVIEWER RADAR + OPEN-METEO DOSSIER) ────────────────────────
 
+export interface WeatherRadarFrame {
+  time?: number;
+  path?: string;
+}
+
 export interface WeatherRadarMeta {
   time?: number;
   path?: string;
@@ -810,7 +815,11 @@ export interface WeatherRadarMeta {
   nowcast_time?: number;
   nowcast_path?: string;
   generated?: number;
+  past_frames?: WeatherRadarFrame[];
+  nowcast_frames?: WeatherRadarFrame[];
 }
+
+export type WeatherRadarMode = 'past' | 'nowcast';
 
 export interface PointWeatherCurrent {
   time?: string;
@@ -1519,6 +1528,8 @@ export interface MaplibreViewerProps {
   gibsDate: string;
   gibsOpacity: number;
   weatherForecastOffset?: number;
+  weatherRadarMode?: WeatherRadarMode;
+  weatherRadarFrameIndex?: number;
   sentinelDate?: string;
   sentinelOpacity?: number;
   sentinelPreset?: string;

@@ -941,6 +941,12 @@ class ShadowBrokerClient:
 
     # ── Reports & Summaries ───────────────────────────────────────
 
+    async def get_point_weather(self, lat: float, lng: float) -> dict:
+        """Open-Meteo point weather + optical window for a coordinate."""
+        path = f"/api/weather/point?lat={lat}&lng={lng}"
+        response = await self._get(path)
+        return response.json()
+
     async def get_report(self) -> dict:
         """Generate a full intelligence report from current telemetry."""
         r = await self._get("/api/ai/report")

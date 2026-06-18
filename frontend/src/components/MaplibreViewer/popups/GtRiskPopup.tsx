@@ -7,6 +7,8 @@ import { useTranslation } from '@/i18n';
 import { API_BASE } from '@/lib/api';
 import { formatEventTimestamp } from '@/lib/eventDateTime';
 import { formatGtRegionLabel } from '@/lib/gtAlerts';
+import { CollectionPlannerBadge } from '@/components/CollectionPlannerBadge';
+import { buildCollectionPlannerFromGtContext } from '@/lib/collectionPlanner';
 import {
   consolidateCostlySignals,
   formatConsolidatedSources,
@@ -94,8 +96,23 @@ export function GtRiskPopup({
   const resolvedInterpretation = interpretation || dossier?.interpretation || '';
   const resolvedWeatherNoise =
     weatherNoise ?? dossier?.weather_context?.weather_noise ?? 0;
-  const resolvedCollectionBadge =
-    collectionBadge || dossier?.weather_context?.collection_badge || '';
+  const collectionPlanner = buildCollectionPlannerFromGtContext(
+    dossier?.weather_context ??
+      (collectionBadge
+        ? {
+            collection_badge: collectionBadge,
+            optical_status:
+              collectionBadge.includes('SAR') || collectionBadge.toLowerCase().includes('poor')
+                ? 'poor'
+                : collectionBadge.toLowerCase().includes('clear')
+                  ? 'good'
+                  : 'fair',
+            collection_recommendation:
+              collectionBadge.includes('SAR') ? 'sar_recommended' : 'optical_limited',
+            optical_summary: collectionBadge,
+          }
+        : undefined),
+  );
   const consolidatedSignals = consolidateCostlySignals(dossier?.recent_signals || [], 4);
 
   return (
@@ -167,12 +184,9 @@ export function GtRiskPopup({
               {(resolvedWeatherNoise * 100).toFixed(0)}% — {t('gtRisk.weatherNoiseHint')}
             </div>
           )}
-          {resolvedCollectionBadge && (
-            <div className="border-t border-amber-900/40 pt-2 text-[10px] text-cyan-300/90 leading-relaxed">
-              <span className="text-cyan-400 font-bold tracking-wider">
-                {t('gtRisk.collectionPlanner')}
-              </span>{' '}
-              {resolvedCollectionBadge}
+          {collectionPlanner && (
+            <div className="border-t border-amber-900/40 pt-2">
+              <CollectionPlannerBadge badge={collectionPlanner} />
             </div>
           )}
 

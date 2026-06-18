@@ -281,9 +281,10 @@ def fetch_weather():
         if response.status_code == 200:
             data = response.json()
             if "radar" in data and "past" in data["radar"] and data["radar"]["past"]:
-                latest = data["radar"]["past"][-1]
-                nowcast_frames = (data["radar"].get("nowcast") or [])
-                nowcast = nowcast_frames[-1] if nowcast_frames else None
+                past_frames = data["radar"]["past"][-12:]
+                latest = past_frames[-1]
+                nowcast_raw = data["radar"].get("nowcast") or []
+                nowcast = nowcast_raw[-1] if nowcast_raw else None
                 with _data_lock:
                     latest_data["weather"] = {
                         "time": latest.get("time"),
@@ -292,6 +293,16 @@ def fetch_weather():
                         "nowcast_time": nowcast.get("time") if nowcast else None,
                         "nowcast_path": nowcast.get("path") if nowcast else None,
                         "generated": data.get("generated"),
+                        "past_frames": [
+                            {"time": row.get("time"), "path": row.get("path")}
+                            for row in past_frames
+                            if row.get("path")
+                        ],
+                        "nowcast_frames": [
+                            {"time": row.get("time"), "path": row.get("path")}
+                            for row in nowcast_raw
+                            if row.get("path")
+                        ],
                     }
                 _mark_fresh("weather")
     except (ConnectionError, TimeoutError, OSError, ValueError, KeyError, TypeError) as e:

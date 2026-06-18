@@ -24,7 +24,8 @@
     "style": "STYLE",
     "solar": "SOLAR",
     "hoverMap": "Hover over map...",
-    "na": "N/A"
+    "na": "N/A",
+    "weather": "WEATHER"
   },
   "update": {
     "downloadInstaller": "DOWNLOAD INSTALLER",
@@ -177,6 +178,9 @@
     "weatherPrecip": "Precip Forecast",
     "globalWeatherHazards": "Global Hazards",
     "weatherForecast": "Forecast",
+    "radarPast": "Past",
+    "radarNowcast": "Nowcast",
+    "radarLive": "LIVE",
     "volcanoes": "Volcanoes",
     "airQuality": "Air Quality",
     "infrastructure": "Infrastructure",

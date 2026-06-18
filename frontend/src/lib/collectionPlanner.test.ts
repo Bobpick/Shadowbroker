@@ -1,4 +1,4 @@
-import { buildCollectionPlanner } from '@/lib/collectionPlanner';
+import { buildCollectionPlanner, buildCollectionPlannerFromGtContext } from '@/lib/collectionPlanner';
 import type { PointWeather } from '@/types/dashboard';
 
 describe('buildCollectionPlanner', () => {
@@ -17,5 +17,14 @@ describe('buildCollectionPlanner', () => {
 
   it('returns null when weather has an error', () => {
     expect(buildCollectionPlanner({ error: 'unavailable' })).toBeNull();
+  });
+
+  it('builds SAR badge from GT weather context', () => {
+    const badge = buildCollectionPlannerFromGtContext({
+      optical_status: 'poor',
+      collection_recommendation: 'sar_recommended',
+      collection_badge: 'OPTICAL: POOR — SAR RECOMMENDED',
+    });
+    expect(badge?.sarRecommended).toBe(true);
   });
 });

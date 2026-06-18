@@ -1,5 +1,5 @@
 import { opticalWindowColor } from '@/lib/weatherCodes';
-import type { PointWeather, PointWeatherOpticalWindow } from '@/types/dashboard';
+import type { GtWeatherContext, PointWeather, PointWeatherOpticalWindow } from '@/types/dashboard';
 
 export interface CollectionPlannerBadge {
   status: PointWeatherOpticalWindow['status'];
@@ -18,6 +18,51 @@ function poorOpticalHours(hourly: PointWeather['hourly_next_48h']): number {
     else break;
   }
   return streak;
+}
+
+export function buildCollectionPlannerFromGtContext(
+  context?: GtWeatherContext | null,
+): CollectionPlannerBadge | null {
+  if (!context) return null;
+  const status = (context.optical_status as PointWeatherOpticalWindow['status']) ?? 'unknown';
+  const color = opticalWindowColor(status);
+  const recommendation = context.collection_recommendation;
+
+  if (recommendation === 'sar_recommended' || status === 'poor') {
+    const hours =
+      context.poor_optical_hours && context.poor_optical_hours >= 24
+        ? ` (${context.poor_optical_hours}h+ heavy cloud)`
+        : '';
+    return {
+      status: 'poor',
+      headline: 'SAR RECOMMENDED',
+      detail: context.collection_badge || `Optical collection poor${hours}`,
+      color,
+      sarRecommended: true,
+    };
+  }
+
+  if (recommendation === 'optical_limited' || status === 'fair') {
+    return {
+      status: 'fair',
+      headline: 'OPTICAL LIMITED',
+      detail: context.optical_summary || context.collection_badge || 'Check forecast window',
+      color,
+      sarRecommended: false,
+    };
+  }
+
+  if (recommendation === 'optical_ok' || status === 'good') {
+    return {
+      status: 'good',
+      headline: 'OPTICAL CLEAR',
+      detail: context.collection_badge || 'Sentinel-2 / optical collection viable',
+      color,
+      sarRecommended: false,
+    };
+  }
+
+  return null;
 }
 
 export function buildCollectionPlanner(

@@ -58,6 +58,19 @@ def api_region_dossier(
     return get_region_dossier(lat, lng)
 
 
+@router.get("/api/weather/point")
+@limiter.limit("60/minute")
+def api_weather_point(
+    request: Request,
+    lat: float = Query(..., ge=-90, le=90),
+    lng: float = Query(..., ge=-180, le=180),
+):
+    """Lightweight Open-Meteo point weather for map crosshair HUD."""
+    from services.open_meteo import fetch_point_weather
+
+    return fetch_point_weather(lat, lng)
+
+
 @router.get("/api/geocode/search")
 @limiter.limit("30/minute")
 async def api_geocode_search(

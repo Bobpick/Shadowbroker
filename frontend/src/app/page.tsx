@@ -42,6 +42,9 @@ import { API_BASE } from '@/lib/api';
 import { useDataPolling, LAYER_TOGGLE_EVENT } from '@/hooks/useDataPolling';
 import { useBackendStatus, useDataKey, useDataKeys } from '@/hooks/useDataStore';
 import { useReverseGeocode } from '@/hooks/useReverseGeocode';
+import { useCursorWeather } from '@/hooks/useCursorWeather';
+import { opticalWindowColor } from '@/lib/weatherCodes';
+import type { WeatherRadarMode } from '@/types/dashboard';
 import { useRegionDossier } from '@/hooks/useRegionDossier';
 import { useGtDossier } from '@/hooks/useGtDossier';
 import { useAgentActions } from '@/hooks/useAgentActions';
@@ -80,6 +83,7 @@ export default function Dashboard() {
   // Non-map widgets can warm up after this; first paint needs flights, ships, and intel first.
   useDataPolling();
   const { mouseCoords, locationLabel, handleMouseCoords } = useReverseGeocode();
+  const { cursorWeather, cursorWeatherLoading, handleCursorWeather } = useCursorWeather();
   const [selectedEntity, setSelectedEntity] = useState<SelectedEntity | null>(null);
   const [showEntityGraph, setShowEntityGraph] = useState(false);
   useEffect(() => {
@@ -359,6 +363,16 @@ export default function Dashboard() {
   const [sentinelOpacity, setSentinelOpacity] = useState(0.6);
   const [sentinelPreset, setSentinelPreset] = useState('TRUE-COLOR');
   const [weatherForecastOffset, setWeatherForecastOffset] = useState(0);
+  const [weatherRadarMode, setWeatherRadarMode] = useState<WeatherRadarMode>('past');
+  const [weatherRadarFrameIndex, setWeatherRadarFrameIndex] = useState(-1);
+
+  const handleMapMouseCoords = useCallback(
+    (coords: { lat: number; lng: number }) => {
+      handleMouseCoords(coords);
+      handleCursorWeather(coords);
+    },
+    [handleMouseCoords, handleCursorWeather],
+  );
   const [showSentinelInfo, setShowSentinelInfo] = useState(false);
   const prevSentinelRef = useRef(false);
 
@@ -471,10 +485,12 @@ export default function Dashboard() {
             sentinelOpacity={sentinelOpacity}
             sentinelPreset={sentinelPreset}
             weatherForecastOffset={weatherForecastOffset}
+            weatherRadarMode={weatherRadarMode}
+            weatherRadarFrameIndex={weatherRadarFrameIndex}
             isEavesdropping={isEavesdropping}
             onEavesdropClick={setEavesdropLocation}
             onCameraMove={setCameraCenter}
-            onMouseCoords={handleMouseCoords}
+            onMouseCoords={handleMapMouseCoords}
             onRightClick={handleMapRightClick}
             regionDossier={regionDossier}
             regionDossierLoading={regionDossierLoading}
@@ -568,6 +584,10 @@ export default function Dashboard() {
                       setSentinelPreset={setSentinelPreset}
                       weatherForecastOffset={weatherForecastOffset}
                       setWeatherForecastOffset={setWeatherForecastOffset}
+                      weatherRadarMode={weatherRadarMode}
+                      setWeatherRadarMode={setWeatherRadarMode}
+                      weatherRadarFrameIndex={weatherRadarFrameIndex}
+                      setWeatherRadarFrameIndex={setWeatherRadarFrameIndex}
                       onEntityClick={setSelectedEntity}
                       onFlyTo={handleFlyTo}
                       trackedSdr={trackedSdr}
@@ -803,6 +823,41 @@ export default function Dashboard() {
                     </div>
                     <div className="text-[13px] text-[var(--text-secondary)] font-mono truncate max-w-[320px]">
                       {locationLabel || t('controls.hoverMap')}
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="w-px h-6 bg-[var(--border-primary)]" />
+
+                  {/* Terrestrial weather at crosshair */}
+                  <div
+                    className="flex flex-col items-center min-w-[160px] max-w-[220px]"
+                    title={
+                      cursorWeather?.optical_window?.summary ||
+                      cursorWeather?.current?.conditions ||
+                      undefined
+                    }
+                  >
+                    <div className="text-[10px] text-[var(--text-muted)] font-mono tracking-[0.2em]">
+                      {t('controls.weather')}
+                    </div>
+                    <div
+                      className="text-[13px] font-mono font-bold truncate max-w-[220px]"
+                      style={{
+                        color: cursorWeather?.error
+                          ? 'var(--text-muted)'
+                          : opticalWindowColor(cursorWeather?.optical_window?.status),
+                      }}
+                    >
+                      {cursorWeatherLoading
+                        ? '…'
+                        : cursorWeather && !cursorWeather.error
+                          ? `${cursorWeather.current?.conditions ?? '—'}${
+                              cursorWeather.current?.cloud_cover_pct != null
+                                ? ` · ${Math.round(cursorWeather.current.cloud_cover_pct)}%`
+                                : ''
+                            }`
+                          : t('controls.hoverMap')}
                     </div>
                   </div>
 

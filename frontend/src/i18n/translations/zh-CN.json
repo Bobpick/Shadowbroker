@@ -24,6 +24,7 @@
     "style": "样式",
     "solar": "太阳",
     "hoverMap": "悬停地图...",
+    "weather": "天气",
     "na": "无数据"
   },
   "update": {
@@ -177,6 +178,9 @@
     "weatherPrecip": "降水预报",
     "globalWeatherHazards": "全球灾害",
     "weatherForecast": "预报时段",
+    "radarPast": "历史",
+    "radarNowcast": "预报",
+    "radarLive": "实时",
     "volcanoes": "火山",
     "airQuality": "空气质量",
     "infrastructure": "基础设施",

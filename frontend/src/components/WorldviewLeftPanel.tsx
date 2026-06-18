@@ -682,6 +682,10 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   viewBoundsRef,
   weatherForecastOffset = 0,
   setWeatherForecastOffset,
+  weatherRadarMode = 'past',
+  setWeatherRadarMode,
+  weatherRadarFrameIndex = -1,
+  setWeatherRadarFrameIndex,
 }: {
   activeLayers: ActiveLayers;
   setActiveLayers: React.Dispatch<React.SetStateAction<ActiveLayers>>;
@@ -710,6 +714,10 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   viewBoundsRef?: React.RefObject<{ south: number; west: number; north: number; east: number } | null>;
   weatherForecastOffset?: number;
   setWeatherForecastOffset?: (offset: number) => void;
+  weatherRadarMode?: import('@/types/dashboard').WeatherRadarMode;
+  setWeatherRadarMode?: (mode: import('@/types/dashboard').WeatherRadarMode) => void;
+  weatherRadarFrameIndex?: number;
+  setWeatherRadarFrameIndex?: (index: number) => void;
 }) {
   const data = useDataSnapshot() as import('@/types/dashboard').DashboardData;
   const { t } = useTranslation();
@@ -1900,6 +1908,73 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
                                     )}
                                   </div>
                                 </div>
+                                {/* RainViewer radar timeline */}
+                                {layer.id === 'weather_radar' &&
+                                  active &&
+                                  setWeatherRadarMode &&
+                                  setWeatherRadarFrameIndex && (
+                                    <div
+                                      className="ml-7 mt-2 flex flex-col gap-2"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="flex items-center gap-1">
+                                        {(['past', 'nowcast'] as const).map((mode) => (
+                                          <button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() => {
+                                              setWeatherRadarMode(mode);
+                                              setWeatherRadarFrameIndex(-1);
+                                            }}
+                                            className={`text-[10px] font-mono px-1.5 py-0.5 border transition-colors ${
+                                              weatherRadarMode === mode
+                                                ? 'border-cyan-500/50 text-cyan-400 bg-cyan-950/30'
+                                                : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:text-cyan-400'
+                                            }`}
+                                          >
+                                            {mode === 'past'
+                                              ? t('layers.radarPast')
+                                              : t('layers.radarNowcast')}
+                                          </button>
+                                        ))}
+                                      </div>
+                                      {(() => {
+                                        const frames =
+                                          weatherRadarMode === 'nowcast'
+                                            ? data?.weather?.nowcast_frames
+                                            : data?.weather?.past_frames;
+                                        if (!frames?.length) return null;
+                                        const idx =
+                                          weatherRadarFrameIndex < 0
+                                            ? frames.length - 1
+                                            : Math.min(weatherRadarFrameIndex, frames.length - 1);
+                                        const frame = frames[idx];
+                                        const label = frame?.time
+                                          ? new Date(frame.time * 1000).toLocaleTimeString([], {
+                                              hour: '2-digit',
+                                              minute: '2-digit',
+                                            })
+                                          : t('layers.radarLive');
+                                        return (
+                                          <div className="flex items-center gap-2">
+                                            <input
+                                              type="range"
+                                              min={0}
+                                              max={Math.max(0, frames.length - 1)}
+                                              value={idx}
+                                              onChange={(e) =>
+                                                setWeatherRadarFrameIndex(parseInt(e.target.value, 10))
+                                              }
+                                              className="flex-1 h-1 accent-cyan-500 cursor-pointer"
+                                            />
+                                            <span className="text-[10px] text-cyan-400 font-mono whitespace-nowrap">
+                                              {label}
+                                            </span>
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+                                  )}
                                 {/* Open-Meteo forecast time step (shared by cloud + precip overlays) */}
                                 {layer.id === 'weather_precip' &&
                                   setWeatherForecastOffset &&

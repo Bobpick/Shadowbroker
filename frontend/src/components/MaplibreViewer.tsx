@@ -410,6 +410,8 @@ const MaplibreViewer = ({
   gibsDate,
   gibsOpacity,
   weatherForecastOffset = 0,
+  weatherRadarMode = 'past',
+  weatherRadarFrameIndex = -1,
   sentinelDate,
   sentinelOpacity,
   sentinelPreset,
@@ -863,10 +865,26 @@ const MaplibreViewer = ({
   const weatherRadarTiles = useMemo(() => {
     if (!activeLayers.weather_radar) return null;
     const meta = data?.weather;
-    if (!meta?.host || !meta?.path) return null;
+    if (!meta?.host) return null;
     const host = meta.host.replace(/\/$/, '');
-    return `${host}${meta.path}/256/{z}/{x}/{y}/2/1_1.png`;
-  }, [activeLayers.weather_radar, data?.weather]);
+    const frames =
+      weatherRadarMode === 'nowcast' ? meta.nowcast_frames : meta.past_frames;
+    let path = weatherRadarMode === 'nowcast' ? meta.nowcast_path : meta.path;
+    if (frames?.length) {
+      const idx =
+        weatherRadarFrameIndex < 0
+          ? frames.length - 1
+          : Math.min(weatherRadarFrameIndex, frames.length - 1);
+      path = frames[idx]?.path ?? path;
+    }
+    if (!path) return null;
+    return `${host}${path}/256/{z}/{x}/{y}/2/1_1.png`;
+  }, [
+    activeLayers.weather_radar,
+    data?.weather,
+    weatherRadarMode,
+    weatherRadarFrameIndex,
+  ]);
 
   const forecastTimeStep = useMemo(
     () => pickForecastTimeStep(data?.weather_forecast, weatherForecastOffset),
@@ -2099,7 +2117,7 @@ const MaplibreViewer = ({
         {/* RainViewer — global precipitation radar overlay */}
         {weatherRadarTiles && (
           <Source
-            key={`weather-radar-${data?.weather?.time ?? 'live'}`}
+            key={`weather-radar-${weatherRadarMode}-${weatherRadarFrameIndex}-${data?.weather?.time ?? 'live'}`}
             id="weather-radar"
             type="raster"
             tiles={[weatherRadarTiles]}

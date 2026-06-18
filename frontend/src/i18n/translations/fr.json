@@ -24,7 +24,8 @@
     "style": "STYLE",
     "solar": "SOLAIRE",
     "hoverMap": "Survolez la carte...",
-    "na": "N/A"
+    "na": "N/A",
+    "weather": "MÉTÉO"
   },
   "update": {
     "downloadInstaller": "TÉLÉCHARGER L'INSTALLATEUR",
@@ -177,6 +178,9 @@
     "weatherPrecip": "Précipitations (prév.)",
     "globalWeatherHazards": "Risques mondiaux",
     "weatherForecast": "Prévision",
+    "radarPast": "Passé",
+    "radarNowcast": "Prévision radar",
+    "radarLive": "EN DIRECT",
     "volcanoes": "Volcans",
     "airQuality": "Qualité de l'air",
     "infrastructure": "Infrastructure",

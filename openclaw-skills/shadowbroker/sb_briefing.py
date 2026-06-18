@@ -32,6 +32,26 @@ async def format_near_me_digest(
         "",
     ]
 
+    try:
+        point_weather = await sb_client.get_point_weather(lat, lng)
+        if point_weather and not point_weather.get("error"):
+            current = point_weather.get("current") or {}
+            optical = point_weather.get("optical_window") or {}
+            lines.append("🌦️ Conditions (Open-Meteo):")
+            cond = current.get("conditions") or "Unknown"
+            temp = current.get("temperature_c")
+            cloud = current.get("cloud_cover_pct")
+            temp_s = f", {temp:.0f}°C" if isinstance(temp, (int, float)) else ""
+            cloud_s = f", {cloud:.0f}% cloud" if isinstance(cloud, (int, float)) else ""
+            lines.append(f"  • {cond}{temp_s}{cloud_s}")
+            if optical.get("summary"):
+                lines.append(f"  • Optical: {optical['summary']}")
+            if optical.get("status") == "poor":
+                lines.append("  • Collection: SAR recommended — optical likely blind")
+            lines.append("")
+    except Exception:
+        pass
+
     # Military flights
     mil = data.get("military_flights", [])
     if mil:
