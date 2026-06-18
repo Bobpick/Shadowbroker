@@ -1574,8 +1574,8 @@ const MaplibreViewer = ({
     [activeLayers.sar, sarAnomaliesList],
   );
   const sarScenesGeoJSON = useMemo(
-    () => (activeLayers.sar ? buildSarScenesGeoJSON(sarScenesList) : null),
-    [activeLayers.sar, sarScenesList],
+    () => (activeLayers.sar ? buildSarScenesGeoJSON(sarScenesList, sarAoisList) : null),
+    [activeLayers.sar, sarScenesList, sarAoisList],
   );
   const sarAoisGeoJSON = useMemo(
     () => (activeLayers.sar ? buildSarAoisGeoJSON(sarAoisList) : null),
@@ -2033,11 +2033,7 @@ const MaplibreViewer = ({
             // and renders above entity layers. If an entity (flight, ship,
             // SDR receiver, etc.) is also under the cursor, prefer it — the
             // AOI should only win when the user clicks empty space inside it.
-            const nonAoiFeature = e.features.find(
-              (f) =>
-                f.layer?.id !== 'sar-aois-fill' &&
-                f.layer?.id !== 'sar-scenes-footprint-fill',
-            );
+            const nonAoiFeature = e.features.find((f) => f.layer?.id !== 'sar-aois-fill');
             const feature = nonAoiFeature ?? e.features[0];
             const props = feature.properties || {};
 
@@ -3324,29 +3320,9 @@ const MaplibreViewer = ({
           </Source>
         )}
 
-        {/* SAR catalog passes — Sentinel-1 scene footprints + center pins (Mode A) */}
+        {/* SAR catalog passes — Sentinel-1 pins inside operator AOIs (Mode A) */}
         {sarScenesGeoJSON && (
           <Source id="sar-scenes" type="geojson" data={EMPTY_FC}>
-            <Layer
-              id="sar-scenes-footprint-fill"
-              type="fill"
-              filter={['==', ['get', 'type'], 'sar_scene_footprint']}
-              paint={{
-                'fill-color': '#22d3ee',
-                'fill-opacity': 0.07,
-              }}
-            />
-            <Layer
-              id="sar-scenes-footprint-outline"
-              type="line"
-              filter={['==', ['get', 'type'], 'sar_scene_footprint']}
-              paint={{
-                'line-color': '#22d3ee',
-                'line-width': 1,
-                'line-opacity': 0.35,
-                'line-dasharray': [2, 2],
-              }}
-            />
             <Layer
               id="sar-scenes-layer"
               type="circle"
@@ -5625,10 +5601,8 @@ const MaplibreViewer = ({
           (() => {
             const extra = (selectedEntity.extra || {}) as Record<string, unknown>;
             const scene = sarScenesList.find((row) => row.scene_id === selectedEntity.id);
-            const bbox = scene?.bbox;
-            if (!Array.isArray(bbox) || bbox.length < 4) return null;
-            const plotLng = (bbox[0] + bbox[2]) / 2;
-            const plotLat = (bbox[1] + bbox[3]) / 2;
+            const plotLat = Number(extra.pin_lat);
+            const plotLng = Number(extra.pin_lon);
             if (!Number.isFinite(plotLat) || !Number.isFinite(plotLng)) return null;
             const platform = String(scene?.platform || extra.platform || 'Sentinel-1');
             const acquired = String(scene?.time || extra.time || '—');

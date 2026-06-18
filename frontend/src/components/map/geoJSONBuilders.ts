@@ -2065,59 +2065,72 @@ export function buildSarAoisGeoJSON(aois?: SarAoi[]): FC {
   return { type: 'FeatureCollection' as const, features };
 }
 
-/** Sentinel-1 catalog passes (Mode A) — footprint polygons + center pins. */
-export function buildSarScenesGeoJSON(scenes?: SarScene[]): FC {
-  if (!scenes?.length) return null;
-  const features: GeoJSON.Feature[] = [];
+function sarScenePinInsideAoi(
+  aoi: SarAoi,
+  sceneIndex: number,
+  sceneCount: number,
+): [number, number] {
+  const [lat, lon] = aoi.center;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [0, 0];
+  if (sceneCount <= 1) return [lon, lat];
 
+  const radiusKm = Math.min(Math.max(aoi.radius_km || 25, 1) * 0.2, 12);
+  const angle = (sceneIndex / sceneCount) * 2 * Math.PI;
+  const kmPerDegLat = 111.32;
+  const kmPerDegLon = 111.32 * Math.cos((lat * Math.PI) / 180);
+  return [
+    lon + (radiusKm * Math.cos(angle)) / Math.max(0.0001, kmPerDegLon),
+    lat + (radiusKm * Math.sin(angle)) / kmPerDegLat,
+  ];
+}
+
+/** Sentinel-1 catalog passes (Mode A) — pins anchored inside operator AOIs. */
+export function buildSarScenesGeoJSON(scenes?: SarScene[], aois?: SarAoi[]): FC {
+  if (!scenes?.length || !aois?.length) return null;
+
+  const aoiById = new Map(aois.map((aoi) => [aoi.id.toLowerCase(), aoi]));
+  const grouped = new Map<string, SarScene[]>();
   for (const scene of scenes) {
-    const bbox = scene.bbox;
-    if (!Array.isArray(bbox) || bbox.length < 4) continue;
-    const [minLon, minLat, maxLon, maxLat] = bbox;
-    if (![minLon, minLat, maxLon, maxLat].every(Number.isFinite)) continue;
+    const key = (scene.aoi_id || '').toLowerCase();
+    if (!key || !aoiById.has(key)) continue;
+    const bucket = grouped.get(key) ?? [];
+    bucket.push(scene);
+    grouped.set(key, bucket);
+  }
 
-    const centerLon = (minLon + maxLon) / 2;
-    const centerLat = (minLat + maxLat) / 2;
-    const timeLabel = scene.time?.slice(0, 10) || 'pass';
-    const baseProps = {
-      id: scene.scene_id,
-      scene_id: scene.scene_id,
-      platform: scene.platform || 'Sentinel-1',
-      mode: scene.mode || '',
-      level: scene.level || '',
-      time: scene.time || '',
-      aoi_id: scene.aoi_id || '',
-      relative_orbit: scene.relative_orbit ?? 0,
-      flight_direction: scene.flight_direction || '',
-      download_url: scene.download_url || '',
-      provider: scene.provider || '',
-      name: `${scene.platform || 'S1'} · ${timeLabel}`,
-    };
+  const features: GeoJSON.Feature[] = [];
+  for (const [aoiId, bucket] of grouped) {
+    const aoi = aoiById.get(aoiId);
+    if (!aoi) continue;
+    bucket.sort((a, b) => String(b.time).localeCompare(String(a.time)));
 
-    features.push({
-      type: 'Feature' as const,
-      properties: { ...baseProps, type: 'sar_scene_footprint' },
-      geometry: {
-        type: 'Polygon' as const,
-        coordinates: [
-          [
-            [minLon, minLat],
-            [maxLon, minLat],
-            [maxLon, maxLat],
-            [minLon, maxLat],
-            [minLon, minLat],
-          ],
-        ],
-      },
-    });
-
-    features.push({
-      type: 'Feature' as const,
-      properties: { ...baseProps, type: 'sar_scene' },
-      geometry: {
-        type: 'Point' as const,
-        coordinates: [centerLon, centerLat],
-      },
+    bucket.forEach((scene, index) => {
+      const [pinLon, pinLat] = sarScenePinInsideAoi(aoi, index, bucket.length);
+      const timeLabel = scene.time?.slice(0, 10) || 'pass';
+      features.push({
+        type: 'Feature' as const,
+        properties: {
+          id: scene.scene_id,
+          type: 'sar_scene',
+          scene_id: scene.scene_id,
+          platform: scene.platform || 'Sentinel-1',
+          mode: scene.mode || '',
+          level: scene.level || '',
+          time: scene.time || '',
+          aoi_id: scene.aoi_id || '',
+          relative_orbit: scene.relative_orbit ?? 0,
+          flight_direction: scene.flight_direction || '',
+          download_url: scene.download_url || '',
+          provider: scene.provider || '',
+          pin_lat: pinLat,
+          pin_lon: pinLon,
+          name: `${scene.platform || 'S1'} · ${timeLabel}`,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [pinLon, pinLat],
+        },
+      });
     });
   }
 

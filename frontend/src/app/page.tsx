@@ -848,22 +848,17 @@ export default function Dashboard() {
                   <div
                     className="flex flex-col items-center min-w-[160px] max-w-[220px]"
                     title={
-                      cursorWeather?.optical_window?.summary ||
                       [
                         cursorWeather?.current?.conditions,
                         cursorWeather?.current?.temperature_c != null
                           ? formatTemp(cursorWeather.current.temperature_c)
-                          : null,
-                        cursorWeather?.current?.cloud_cover_pct != null
-                          ? `${Math.round(cursorWeather.current.cloud_cover_pct)}% cloud`
                           : null,
                         cursorWeather?.current?.humidity_pct != null
                           ? `${Math.round(cursorWeather.current.humidity_pct)}% RH`
                           : null,
                       ]
                         .filter(Boolean)
-                        .join(' · ') ||
-                      undefined
+                        .join(' · ') || undefined
                     }
                   >
                     <div className="flex items-center gap-2">
@@ -912,10 +907,6 @@ export default function Dashboard() {
                           ? `${cursorWeather.current?.conditions ?? '—'}${
                               cursorWeather.current?.temperature_c != null
                                 ? ` · ${formatTemp(cursorWeather.current.temperature_c)}`
-                                : ''
-                            }${
-                              cursorWeather.current?.cloud_cover_pct != null
-                                ? ` · ${Math.round(cursorWeather.current.cloud_cover_pct)}% cloud`
                                 : ''
                             }${
                               cursorWeather.current?.humidity_pct != null
