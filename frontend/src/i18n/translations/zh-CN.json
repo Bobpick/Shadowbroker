@@ -257,7 +257,10 @@
     "step2": "首次使用：选择模式 A（免费目录）或模式 B（形变/洪水警报）。",
     "step3": "点击 EDIT AOIs → 框选目标区域 → 保存。",
     "step4": "缩放到 AOI — 青色圆点为 Sentinel-1 过境；点击查看时间、轨道和下载链接。",
-    "enableButton": "启用 SAR 图层"
+    "enableButton": "启用 SAR 图层",
+    "filterExcavation": "开挖",
+    "filterWater": "水体",
+    "filterAll": "全部"
   },
   "gtBacktest": {
     "title": "博弈论回测",

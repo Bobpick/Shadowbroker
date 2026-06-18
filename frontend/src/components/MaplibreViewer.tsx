@@ -426,6 +426,7 @@ const MaplibreViewer = ({
   sarAoiDropMode,
   onSarAoiDropped,
   sarAoiListVersion,
+  sarKindFilter = 'excavation',
 }: Omit<MaplibreViewerProps, 'data'>) => {
   const coreData = useDataKeys([
     'tracked_flights',
@@ -1570,8 +1571,11 @@ const MaplibreViewer = ({
   }, [activeLayers.sar, sarAoiListVersion]);
 
   const sarAnomaliesGeoJSON = useMemo(
-    () => (activeLayers.sar ? buildSarAnomaliesGeoJSON(sarAnomaliesList) : null),
-    [activeLayers.sar, sarAnomaliesList],
+    () =>
+      activeLayers.sar
+        ? buildSarAnomaliesGeoJSON(sarAnomaliesList, sarAoisList, sarKindFilter)
+        : null,
+    [activeLayers.sar, sarAnomaliesList, sarAoisList, sarKindFilter],
   );
   const sarScenesGeoJSON = useMemo(
     () => (activeLayers.sar ? buildSarScenesGeoJSON(sarScenesList, sarAoisList) : null),
@@ -3332,10 +3336,10 @@ const MaplibreViewer = ({
                   'interpolate', ['linear'], ['zoom'],
                   2, 3, 6, 5, 10, 7,
                 ],
-                'circle-color': '#22d3ee',
+                'circle-color': '#fde047',
                 'circle-opacity': 0.95,
                 'circle-stroke-width': 1.5,
-                'circle-stroke-color': '#0f172a',
+                'circle-stroke-color': '#422006',
               }}
             />
             <Layer
@@ -5479,19 +5483,22 @@ const MaplibreViewer = ({
         {selectedEntity?.type === 'sar_anomaly' &&
           (() => {
             const extra = (selectedEntity.extra || {}) as Record<string, unknown>;
-            const anomaly = data?.sar_anomalies?.find(
-              (a) => a.anomaly_id === selectedEntity.id,
-            );
+            const anomaly = sarAnomaliesList.find((a) => a.anomaly_id === selectedEntity.id);
             const a = anomaly || extra;
-            const lat = typeof a.lat === 'number' ? a.lat : Number(extra.center_lat);
-            const lng =
-              typeof (a as { lon?: number }).lon === 'number'
-                ? (a as { lon: number }).lon
-                : Number(extra.center_lon);
+            const lat = Number(extra.pin_lat ?? (typeof a.lat === 'number' ? a.lat : extra.center_lat));
+            const lng = Number(
+              extra.pin_lon ??
+                (typeof (a as { lon?: number }).lon === 'number'
+                  ? (a as { lon: number }).lon
+                  : extra.center_lon),
+            );
             if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
             const kind = String(a.kind || extra.kind || 'anomaly');
+            const kindLabel = String(extra.kind_label || '');
             const title = String(a.title || extra.title || `SAR ${kind}`);
-            const summary = String(a.summary || extra.summary || '');
+            const summary = String(
+              kindLabel || a.summary || extra.summary || 'SAR ground-change alert',
+            );
             const solver = String(a.solver || extra.solver || '');
             const constellation = String(
               (a as { source_constellation?: string }).source_constellation ||
@@ -5539,9 +5546,9 @@ const MaplibreViewer = ({
                     </div>
                   )}
                   <div className="map-popup-row text-[11px]">
-                    Kind:{' '}
-                    <span className="text-amber-200 font-mono">
-                      {kind.replace(/_/g, ' ')}
+                    Signal:{' '}
+                    <span className="text-amber-200 leading-snug">
+                      {kindLabel || kind.replace(/_/g, ' ')}
                     </span>
                   </div>
                   {solver && (

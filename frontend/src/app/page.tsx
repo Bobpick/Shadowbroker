@@ -47,6 +47,7 @@ import { useTemperatureUnit } from '@/hooks/useTemperatureUnit';
 import { SAR_GUIDE_EVENT, type SarGuideDetail } from '@/lib/sarGuide';
 import { opticalWindowColor } from '@/lib/weatherCodes';
 import type { WeatherRadarMode } from '@/types/dashboard';
+import { readSarKindFilter, writeSarKindFilter, type SarKindFilter } from '@/lib/sarKinds';
 import { useRegionDossier } from '@/hooks/useRegionDossier';
 import { useGtDossier } from '@/hooks/useGtDossier';
 import { useAgentActions } from '@/hooks/useAgentActions';
@@ -380,6 +381,11 @@ export default function Dashboard() {
   const [weatherForecastOffset, setWeatherForecastOffset] = useState(0);
   const [weatherRadarMode, setWeatherRadarMode] = useState<WeatherRadarMode>('past');
   const [weatherRadarFrameIndex, setWeatherRadarFrameIndex] = useState(-1);
+  const [sarKindFilter, setSarKindFilter] = useState<SarKindFilter>(() => readSarKindFilter());
+  const handleSarKindFilter = useCallback((filter: SarKindFilter) => {
+    writeSarKindFilter(filter);
+    setSarKindFilter(filter);
+  }, []);
 
   const handleMapMouseCoords = useCallback(
     (coords: { lat: number; lng: number }) => {
@@ -502,6 +508,7 @@ export default function Dashboard() {
             weatherForecastOffset={weatherForecastOffset}
             weatherRadarMode={weatherRadarMode}
             weatherRadarFrameIndex={weatherRadarFrameIndex}
+            sarKindFilter={sarKindFilter}
             isEavesdropping={isEavesdropping}
             onEavesdropClick={setEavesdropLocation}
             onCameraMove={setCameraCenter}
@@ -603,6 +610,8 @@ export default function Dashboard() {
                       setWeatherRadarMode={setWeatherRadarMode}
                       weatherRadarFrameIndex={weatherRadarFrameIndex}
                       setWeatherRadarFrameIndex={setWeatherRadarFrameIndex}
+                      sarKindFilter={sarKindFilter}
+                      setSarKindFilter={handleSarKindFilter}
                       onEntityClick={setSelectedEntity}
                       onFlyTo={handleFlyTo}
                       trackedSdr={trackedSdr}

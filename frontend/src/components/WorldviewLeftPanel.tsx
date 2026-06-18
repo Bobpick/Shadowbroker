@@ -687,6 +687,8 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   setWeatherRadarMode,
   weatherRadarFrameIndex = -1,
   setWeatherRadarFrameIndex,
+  sarKindFilter = 'excavation',
+  setSarKindFilter,
 }: {
   activeLayers: ActiveLayers;
   setActiveLayers: React.Dispatch<React.SetStateAction<ActiveLayers>>;
@@ -719,6 +721,8 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   setWeatherRadarMode?: (mode: import('@/types/dashboard').WeatherRadarMode) => void;
   weatherRadarFrameIndex?: number;
   setWeatherRadarFrameIndex?: (index: number) => void;
+  sarKindFilter?: import('@/lib/sarKinds').SarKindFilter;
+  setSarKindFilter?: (filter: import('@/lib/sarKinds').SarKindFilter) => void;
 }) {
   const data = useDataSnapshot() as import('@/types/dashboard').DashboardData;
   const { t } = useTranslation();
@@ -2085,19 +2089,45 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
                                 {active && layer.id === 'road_corridor_trends' && (
                                   <RoadCorridorLayerControls viewBoundsRef={viewBoundsRef} />
                                 )}
-                                {active && layer.id === 'sar' && onOpenSarAoiEditor && (
+                                {active && layer.id === 'sar' && (
                                   <div
-                                    className="ml-7 mt-2 flex items-center gap-2"
+                                    className="ml-7 mt-2 flex flex-col gap-2"
                                     onClick={(e) => e.stopPropagation()}
                                   >
-                                    <button
-                                      type="button"
-                                      onClick={onOpenSarAoiEditor}
-                                      className="flex items-center gap-1.5 text-[9px] font-mono tracking-wide text-cyan-400 hover:text-cyan-200 border border-cyan-500/30 hover:border-cyan-500/50 bg-cyan-500/5 hover:bg-cyan-500/10 px-2.5 py-1 rounded transition"
-                                    >
-                                      <MapPin size={10} />
-                                      EDIT AOIs
-                                    </button>
+                                    {setSarKindFilter && (
+                                      <div className="flex flex-wrap gap-1">
+                                        {(
+                                          [
+                                            ['excavation', t('sarGuide.filterExcavation')],
+                                            ['water', t('sarGuide.filterWater')],
+                                            ['all', t('sarGuide.filterAll')],
+                                          ] as const
+                                        ).map(([mode, label]) => (
+                                          <button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() => setSarKindFilter(mode)}
+                                            className={`text-[9px] font-mono tracking-wide px-2 py-0.5 rounded border transition ${
+                                              sarKindFilter === mode
+                                                ? 'text-amber-200 border-amber-400/60 bg-amber-500/15'
+                                                : 'text-[var(--text-muted)] border-[var(--border-primary)] hover:text-amber-200/90'
+                                            }`}
+                                          >
+                                            {label}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {onOpenSarAoiEditor && (
+                                      <button
+                                        type="button"
+                                        onClick={onOpenSarAoiEditor}
+                                        className="flex items-center gap-1.5 self-start text-[9px] font-mono tracking-wide text-cyan-400 hover:text-cyan-200 border border-cyan-500/30 hover:border-cyan-500/50 bg-cyan-500/5 hover:bg-cyan-500/10 px-2.5 py-1 rounded transition"
+                                      >
+                                        <MapPin size={10} />
+                                        EDIT AOIs
+                                      </button>
+                                    )}
                                   </div>
                                 )}
                                 {/* Sentinel Hub inline controls */}

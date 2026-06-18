@@ -46,6 +46,8 @@ import type {
   SarAoi,
   SarScene,
 } from '@/types/dashboard';
+import { pinInsideAoi, pointInAoi } from '@/lib/sarAoiGeometry';
+import { matchesSarKindFilter, sarKindLabel, type SarKindFilter } from '@/lib/sarKinds';
 import { classifyAircraft } from '@/utils/aircraftClassification';
 import { MISSION_COLORS, MISSION_ICON_MAP } from '@/components/map/icons/SatelliteIcons';
 import { weatherIconId } from '@/components/map/icons/AircraftIcons';
@@ -1974,41 +1976,75 @@ const SAR_KIND_COLORS: Record<string, string> = {
 
 const SAR_DEFAULT_COLOR = '#eab308';
 
-export function buildSarAnomaliesGeoJSON(anomalies?: SarAnomaly[]): FC {
-  if (!anomalies?.length) return null;
-  return {
-    type: 'FeatureCollection' as const,
-    features: anomalies
-      .filter((a) => Number.isFinite(a.lat) && Number.isFinite(a.lon))
-      .map((a) => ({
+export function buildSarAnomaliesGeoJSON(
+  anomalies?: SarAnomaly[],
+  aois?: SarAoi[],
+  kindFilter: SarKindFilter = 'excavation',
+): FC {
+  if (!anomalies?.length || !aois?.length) return null;
+
+  const aoiById = new Map(aois.map((aoi) => [aoi.id.toLowerCase(), aoi]));
+  const grouped = new Map<string, SarAnomaly[]>();
+
+  for (const anomaly of anomalies) {
+    if (!Number.isFinite(anomaly.lat) || !Number.isFinite(anomaly.lon)) continue;
+    if (!matchesSarKindFilter(anomaly.kind, kindFilter)) continue;
+    const key = (anomaly.aoi_id || '').toLowerCase();
+    if (!key || !aoiById.has(key)) continue;
+    const bucket = grouped.get(key) ?? [];
+    bucket.push(anomaly);
+    grouped.set(key, bucket);
+  }
+
+  const features: GeoJSON.Feature[] = [];
+  for (const [aoiId, bucket] of grouped) {
+    const aoi = aoiById.get(aoiId);
+    if (!aoi) continue;
+    const sorted = [...bucket].sort((a, b) => (b.last_seen ?? 0) - (a.last_seen ?? 0)).slice(0, 24);
+
+    sorted.forEach((anomaly, index) => {
+      const inside = pointInAoi(anomaly.lat, anomaly.lon, aoi);
+      const [pinLon, pinLat] = inside
+        ? [anomaly.lon, anomaly.lat]
+        : pinInsideAoi(aoi, index, sorted.length);
+      const kindLabel = sarKindLabel(anomaly.kind);
+
+      features.push({
         type: 'Feature' as const,
         properties: {
-          id: a.anomaly_id,
+          id: anomaly.anomaly_id,
           type: 'sar_anomaly',
-          kind: a.kind,
-          name: a.title || `SAR ${a.kind}`,
-          title: a.title || '',
-          summary: a.summary || '',
-          solver: a.solver || '',
-          source_constellation: a.source_constellation || '',
-          magnitude: a.magnitude ?? 0,
-          magnitude_unit: a.magnitude_unit || '',
-          confidence: a.confidence ?? 0,
-          first_seen: a.first_seen ?? 0,
-          last_seen: a.last_seen ?? 0,
-          aoi_id: a.aoi_id || '',
-          scene_count: a.scene_count ?? 0,
-          category: a.category || 'watchlist',
-          provenance_url: a.provenance_url || '',
-          evidence_hash: a.evidence_hash || '',
-          color: SAR_KIND_COLORS[a.kind] || SAR_DEFAULT_COLOR,
+          kind: anomaly.kind,
+          kind_label: kindLabel,
+          name: anomaly.title || kindLabel,
+          title: anomaly.title || kindLabel,
+          summary: anomaly.summary || kindLabel,
+          solver: anomaly.solver || '',
+          source_constellation: anomaly.source_constellation || '',
+          magnitude: anomaly.magnitude ?? 0,
+          magnitude_unit: anomaly.magnitude_unit || '',
+          confidence: anomaly.confidence ?? 0,
+          first_seen: anomaly.first_seen ?? 0,
+          last_seen: anomaly.last_seen ?? 0,
+          aoi_id: anomaly.aoi_id || '',
+          scene_count: anomaly.scene_count ?? 0,
+          category: anomaly.category || 'watchlist',
+          provenance_url: anomaly.provenance_url || '',
+          evidence_hash: anomaly.evidence_hash || '',
+          pin_lat: pinLat,
+          pin_lon: pinLon,
+          color: SAR_KIND_COLORS[anomaly.kind] || SAR_DEFAULT_COLOR,
         },
         geometry: {
           type: 'Point' as const,
-          coordinates: [a.lon, a.lat],
+          coordinates: [pinLon, pinLat],
         },
-      })),
-  };
+      });
+    });
+  }
+
+  if (features.length === 0) return null;
+  return { type: 'FeatureCollection' as const, features };
 }
 
 /** Draw AOIs as filled circles (approximated with a 64-vertex polygon).  These
@@ -2065,25 +2101,6 @@ export function buildSarAoisGeoJSON(aois?: SarAoi[]): FC {
   return { type: 'FeatureCollection' as const, features };
 }
 
-function sarScenePinInsideAoi(
-  aoi: SarAoi,
-  sceneIndex: number,
-  sceneCount: number,
-): [number, number] {
-  const [lat, lon] = aoi.center;
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [0, 0];
-  if (sceneCount <= 1) return [lon, lat];
-
-  const radiusKm = Math.min(Math.max(aoi.radius_km || 25, 1) * 0.2, 12);
-  const angle = (sceneIndex / sceneCount) * 2 * Math.PI;
-  const kmPerDegLat = 111.32;
-  const kmPerDegLon = 111.32 * Math.cos((lat * Math.PI) / 180);
-  return [
-    lon + (radiusKm * Math.cos(angle)) / Math.max(0.0001, kmPerDegLon),
-    lat + (radiusKm * Math.sin(angle)) / kmPerDegLat,
-  ];
-}
-
 /** Sentinel-1 catalog passes (Mode A) — pins anchored inside operator AOIs. */
 export function buildSarScenesGeoJSON(scenes?: SarScene[], aois?: SarAoi[]): FC {
   if (!scenes?.length || !aois?.length) return null;
@@ -2105,7 +2122,7 @@ export function buildSarScenesGeoJSON(scenes?: SarScene[], aois?: SarAoi[]): FC 
     bucket.sort((a, b) => String(b.time).localeCompare(String(a.time)));
 
     bucket.forEach((scene, index) => {
-      const [pinLon, pinLat] = sarScenePinInsideAoi(aoi, index, bucket.length);
+      const [pinLon, pinLat] = pinInsideAoi(aoi, index, bucket.length);
       const timeLabel = scene.time?.slice(0, 10) || 'pass';
       features.push({
         type: 'Feature' as const,

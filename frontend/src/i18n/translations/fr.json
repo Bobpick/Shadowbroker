@@ -257,7 +257,10 @@
     "step2": "Première fois : Mode A (catalogue gratuit) ou Mode B (alertes déformation/inondation).",
     "step3": "EDIT AOIs → dessiner une zone → enregistrer.",
     "step4": "Zoomez sur votre AOI — les points cyan sont les passages Sentinel-1 ; cliquez pour l'heure, l'orbite et le téléchargement.",
-    "enableButton": "ACTIVER COUCHE SAR"
+    "enableButton": "ACTIVER COUCHE SAR",
+    "filterExcavation": "EXCAVATION",
+    "filterWater": "EAU",
+    "filterAll": "TOUS"
   },
   "gtBacktest": {
     "title": "Backtest théorie des jeux",

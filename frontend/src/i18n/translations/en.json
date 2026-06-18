@@ -257,8 +257,11 @@
     "step1": "Open Layers → Earth Observation → SAR and turn it ON.",
     "step2": "First time only: pick Mode A (free pass catalog) or Mode B (deformation + flood alerts).",
     "step3": "Tap EDIT AOIs → draw a box over your area of interest → save.",
-    "step4": "Zoom to your AOI — cyan dots are Sentinel-1 passes; click one for time, orbit, and download.",
-    "enableButton": "ENABLE SAR LAYER"
+    "step4": "Zoom to your AOI — yellow dots are Sentinel-1 passes; orange/green are excavation signals inside the circle.",
+    "enableButton": "ENABLE SAR LAYER",
+    "filterExcavation": "EXCAVATION",
+    "filterWater": "WATER",
+    "filterAll": "ALL SIGNALS"
   },
   "gtBacktest": {
     "title": "Game Theory Backtest",

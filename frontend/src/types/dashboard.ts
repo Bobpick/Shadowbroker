@@ -1554,4 +1554,5 @@ export interface MaplibreViewerProps {
   onSarAoiDropped?: (coords: { lat: number; lng: number }) => void;
   /** Incremented when the AOI list is modified — triggers immediate re-fetch. */
   sarAoiListVersion?: number;
+  sarKindFilter?: import('@/lib/sarKinds').SarKindFilter;
 }
