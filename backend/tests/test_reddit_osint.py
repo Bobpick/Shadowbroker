@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 
+from services.fetchers.reddit_multireddit import subreddit_from_link
 from services.fetchers.reddit_osint import (
     parse_reddit_listing,
     parse_reddit_rss,
@@ -51,6 +52,11 @@ def test_prune_reddit_posts_drops_old_entries():
 
 def test_reddit_max_age_days_default():
     assert reddit_max_age_days() >= 1
+
+
+def test_subreddit_from_link_extracts_slug():
+    assert subreddit_from_link("https://www.reddit.com/r/EyesOnIce/comments/abc/title/") == "EyesOnIce"
+    assert subreddit_from_link("https://www.nbcnews.com/politics/example") == ""
 
 
 def test_parse_reddit_rss_geoparses_titles():

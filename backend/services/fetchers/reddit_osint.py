@@ -11,6 +11,12 @@ from typing import Any
 import feedparser
 
 from services.fetchers._store import _data_lock, _mark_fresh, is_any_active, latest_data
+from services.fetchers.reddit_multireddit import (
+    configured_multireddits,
+    fetch_multireddit_posts,
+    resolve_multireddit_subs,
+    subreddit_from_link,
+)
 from services.fetchers.telegram_osint import _resolve_telegram_coords, _score_risk
 from services.network_utils import fetch_with_curl, outbound_user_agent
 from services.telegram_translate import apply_reddit_posts_translations
@@ -115,9 +121,24 @@ def reddit_osint_enabled() -> bool:
 
 def _configured_subreddits() -> list[str]:
     raw = str(os.environ.get("REDDIT_OSINT_SUBREDDITS", "")).strip()
+    multireddits = configured_multireddits()
+    subs: list[str] = []
     if raw:
-        return [part.strip().lstrip("r/") for part in raw.split(",") if part.strip()]
-    return list(_DEFAULT_SUBREDDITS)
+        subs = [part.strip().lstrip("r/") for part in raw.split(",") if part.strip()]
+    elif multireddits:
+        subs = []
+    else:
+        subs = list(_DEFAULT_SUBREDDITS)
+
+    seen = {sub.lower() for sub in subs}
+    for multi_path in multireddits:
+        for sub in resolve_multireddit_subs(multi_path):
+            key = sub.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            subs.append(sub)
+    return subs
 
 
 def _narrative_profile(subreddit: str) -> str:
@@ -225,8 +246,9 @@ def parse_reddit_rss(payload: str, subreddit: str) -> list[dict[str, Any]]:
         elif hasattr(entry, "authors") and entry.authors:
             author_name = str(entry.authors[0].get("name", "")).strip().lstrip("/u/")
 
+        sub = subreddit_from_link(link) or subreddit
         post = _normalize_reddit_post(
-            subreddit=subreddit,
+            subreddit=sub,
             title=title,
             body=summary,
             link=link,
@@ -258,7 +280,7 @@ def parse_reddit_listing(payload: dict[str, Any], subreddit: str) -> list[dict[s
 
         permalink = str(data.get("permalink") or "").strip()
         link = f"https://www.reddit.com{permalink}" if permalink.startswith("/") else permalink
-        sub = str(data.get("subreddit") or subreddit or "").strip()
+        sub = str(data.get("subreddit") or subreddit or "").strip() or subreddit_from_link(link)
         post = _normalize_reddit_post(
             subreddit=sub,
             title=title,
@@ -330,6 +352,28 @@ def fetch_reddit_osint() -> dict[str, Any]:
     incoming: list[dict[str, Any]] = []
     limit = max(5, min(25, int(os.environ.get("REDDIT_OSINT_POST_LIMIT", "15"))))
 
+    for multi_path in configured_multireddits():
+        try:
+            for row in fetch_multireddit_posts(multi_path, limit=limit):
+                sub = str(row.get("subreddit") or "").strip() or multi_path.split("/", 1)[-1]
+                post = _normalize_reddit_post(
+                    subreddit=sub,
+                    title=str(row.get("title") or ""),
+                    body=str(row.get("body") or ""),
+                    link=str(row.get("link") or ""),
+                    published=str(row.get("published") or "") or _utcnow().isoformat(),
+                )
+                if not post:
+                    continue
+                link = _post_link(post)
+                if not link or link in known_links:
+                    continue
+                known_links.add(link)
+                incoming.append(post)
+        except Exception as exc:
+            logger.warning("Reddit multireddit %s fetch failed: %s", multi_path, exc)
+        time.sleep(0.35)
+
     for subreddit in _configured_subreddits():
         try:
             parsed = _fetch_subreddit_posts(subreddit, limit=limit, headers=headers)
@@ -355,6 +399,7 @@ def fetch_reddit_osint() -> dict[str, Any]:
         "adversarial_count": adversarial,
         "timestamp": _utcnow().isoformat(),
         "subreddits": _configured_subreddits(),
+        "multireddits": configured_multireddits(),
         "last_fetch_new": added,
         "max_age_days": reddit_max_age_days(),
     }

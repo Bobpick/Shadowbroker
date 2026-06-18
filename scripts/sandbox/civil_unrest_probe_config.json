@@ -1,0 +1,116 @@
+{
+  "keywords": {
+    "mobilization": [
+      "protest scheduled",
+      "direct action",
+      "day of action",
+      "general strike",
+      "mass rally",
+      "protest mobil",
+      "blockade",
+      "sit-in",
+      "sit in",
+      "occupation",
+      "demonstration",
+      "rally at",
+      "meet at",
+      "gather at",
+      "march to",
+      "picketing"
+    ],
+    "organizations": [
+      "dsa",
+      "democratic socialists",
+      "antifa",
+      "antifascist",
+      "anti-fascist",
+      "melting ice",
+      "extinction rebellion",
+      "xr ",
+      "sunrise movement",
+      "black bloc",
+      "indivisible",
+      "palestine action"
+    ],
+    "tactics": [
+      "civil disobedience",
+      "mutual aid",
+      "counter-protest",
+      "counter protest",
+      "direct action training",
+      "action briefing",
+      "security culture"
+    ]
+  },
+  "source_name_patterns": [
+    "greenandpleasant",
+    "eyesonice",
+    "eyesoniceoregon",
+    "eyesonicebaltimore",
+    "eyesonice_protest",
+    "nj50501",
+    "political_revolution",
+    "demsocialists",
+    "democraticsocialism",
+    "dsa",
+    "antifa",
+    "directaction",
+    "direct_action",
+    "melting",
+    "anarch",
+    "climate",
+    "protest",
+    "strike",
+    "action",
+    "mobiliz"
+  ],
+  "telegram_channels": [
+    "dsausa",
+    "PortlandDSA",
+    "nycDSA",
+    "ChicagoDSA",
+    "leftcoastriseup",
+    "climatestrike"
+  ],
+  "reddit_multireddits": [
+    "bobpick/protests"
+  ],
+  "reddit_subreddits": [
+    "NJ50501",
+    "GreenAndPleasant",
+    "Political_Revolution",
+    "demsocialists",
+    "EyesOnIce",
+    "eyesoniceoregon",
+    "EyesOnICEBaltimore",
+    "oregon",
+    "DemocraticSocialism",
+    "dsa",
+    "Anarchism",
+    "EyesOnICE_Protest",
+    "directaction",
+    "Antiwar"
+  ],
+  "reddit_search_queries": [
+    "protest scheduled"
+  ],
+  "reddit_search_subreddits": [
+    "NJ50501",
+    "GreenAndPleasant",
+    "Political_Revolution",
+    "demsocialists",
+    "EyesOnIce",
+    "eyesoniceoregon",
+    "EyesOnICEBaltimore",
+    "oregon",
+    "DemocraticSocialism",
+    "dsa",
+    "EyesOnICE_Protest"
+  ],
+  "fetch": {
+    "reddit_post_limit": 15,
+    "telegram_bootstrap_posts": 12,
+    "request_timeout_sec": 20,
+    "delay_between_sources_sec": 4
+  }
+}
