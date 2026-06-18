@@ -256,7 +256,7 @@
     "step1": "Ouvrir Couches → Observation terrestre → SAR et activer.",
     "step2": "Première fois : Mode A (catalogue gratuit) ou Mode B (alertes déformation/inondation).",
     "step3": "EDIT AOIs → dessiner une zone → enregistrer.",
-    "step4": "Les passages SAR apparaissent sur la carte ; cliquer les marqueurs pour les métadonnées.",
+    "step4": "Zoomez sur votre AOI — les points cyan sont les passages Sentinel-1 ; cliquez pour l'heure, l'orbite et le téléchargement.",
     "enableButton": "ACTIVER COUCHE SAR"
   },
   "gtBacktest": {

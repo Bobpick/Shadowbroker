@@ -44,6 +44,7 @@ import type {
   CrowdThreatItem,
   SarAnomaly,
   SarAoi,
+  SarScene,
 } from '@/types/dashboard';
 import { classifyAircraft } from '@/utils/aircraftClassification';
 import { MISSION_COLORS, MISSION_ICON_MAP } from '@/components/map/icons/SatelliteIcons';
@@ -2060,6 +2061,66 @@ export function buildSarAoisGeoJSON(aois?: SarAoi[]): FC {
       },
     });
   }
+  if (features.length === 0) return null;
+  return { type: 'FeatureCollection' as const, features };
+}
+
+/** Sentinel-1 catalog passes (Mode A) — footprint polygons + center pins. */
+export function buildSarScenesGeoJSON(scenes?: SarScene[]): FC {
+  if (!scenes?.length) return null;
+  const features: GeoJSON.Feature[] = [];
+
+  for (const scene of scenes) {
+    const bbox = scene.bbox;
+    if (!Array.isArray(bbox) || bbox.length < 4) continue;
+    const [minLon, minLat, maxLon, maxLat] = bbox;
+    if (![minLon, minLat, maxLon, maxLat].every(Number.isFinite)) continue;
+
+    const centerLon = (minLon + maxLon) / 2;
+    const centerLat = (minLat + maxLat) / 2;
+    const timeLabel = scene.time?.slice(0, 10) || 'pass';
+    const baseProps = {
+      id: scene.scene_id,
+      scene_id: scene.scene_id,
+      platform: scene.platform || 'Sentinel-1',
+      mode: scene.mode || '',
+      level: scene.level || '',
+      time: scene.time || '',
+      aoi_id: scene.aoi_id || '',
+      relative_orbit: scene.relative_orbit ?? 0,
+      flight_direction: scene.flight_direction || '',
+      download_url: scene.download_url || '',
+      provider: scene.provider || '',
+      name: `${scene.platform || 'S1'} · ${timeLabel}`,
+    };
+
+    features.push({
+      type: 'Feature' as const,
+      properties: { ...baseProps, type: 'sar_scene_footprint' },
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [
+            [minLon, minLat],
+            [maxLon, minLat],
+            [maxLon, maxLat],
+            [minLon, maxLat],
+            [minLon, minLat],
+          ],
+        ],
+      },
+    });
+
+    features.push({
+      type: 'Feature' as const,
+      properties: { ...baseProps, type: 'sar_scene' },
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [centerLon, centerLat],
+      },
+    });
+  }
+
   if (features.length === 0) return null;
   return { type: 'FeatureCollection' as const, features };
 }
