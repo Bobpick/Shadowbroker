@@ -280,12 +280,18 @@ def fetch_weather():
         response = fetch_with_curl(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            if "radar" in data and "past" in data["radar"]:
-                latest_time = data["radar"]["past"][-1]["time"]
+            if "radar" in data and "past" in data["radar"] and data["radar"]["past"]:
+                latest = data["radar"]["past"][-1]
+                nowcast_frames = (data["radar"].get("nowcast") or [])
+                nowcast = nowcast_frames[-1] if nowcast_frames else None
                 with _data_lock:
                     latest_data["weather"] = {
-                        "time": latest_time,
+                        "time": latest.get("time"),
+                        "path": latest.get("path"),
                         "host": data.get("host", "https://tilecache.rainviewer.com"),
+                        "nowcast_time": nowcast.get("time") if nowcast else None,
+                        "nowcast_path": nowcast.get("path") if nowcast else None,
+                        "generated": data.get("generated"),
                     }
                 _mark_fresh("weather")
     except (ConnectionError, TimeoutError, OSError, ValueError, KeyError, TypeError) as e:

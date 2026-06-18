@@ -35,6 +35,7 @@ export const DEFAULT_ACTIVE_LAYERS: ActiveLayers = {
   firms: false,
   ukraine_alerts: true,
   weather_alerts: true,
+  weather_radar: false,
   volcanoes: true,
   air_quality: true,
   // Infrastructure — military bases + internet outages only

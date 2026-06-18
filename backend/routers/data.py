@@ -821,7 +821,7 @@ async def live_data_slow(
         "stocks": d.get("stocks", {}),
         "financial_source": d.get("financial_source", ""),
         "oil": d.get("oil", {}),
-        "weather": d.get("weather"),
+        "weather": d.get("weather") if active_layers.get("weather_radar", True) else None,
         "traffic": d.get("traffic", []),
         "earthquakes": (d.get("earthquakes") or []) if active_layers.get("earthquakes", True) else [],
         "frontlines": d.get("frontlines") if active_layers.get("ukraine_frontline", True) else None,

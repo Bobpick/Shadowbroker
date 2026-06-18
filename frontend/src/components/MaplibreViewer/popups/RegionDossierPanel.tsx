@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import ExternalImage from '@/components/ExternalImage';
+import { opticalWindowColor } from '@/lib/weatherCodes';
+import type { PointWeather } from '@/types/dashboard';
 
 export interface Sentinel2Data {
   found: boolean;
@@ -16,6 +18,7 @@ export interface Sentinel2Data {
 
 export interface RegionDossierPanelProps {
   sentinel2: Sentinel2Data;
+  weather?: PointWeather | null;
   lat: number;
   lng: number;
   onClose: () => void;
@@ -54,7 +57,7 @@ const ACTION_BTN: React.CSSProperties = {
   fontWeight: 'bold',
 };
 
-export function RegionDossierPanel({ sentinel2: s2, lat, lng, onClose }: RegionDossierPanelProps) {
+export function RegionDossierPanel({ sentinel2: s2, weather, lat, lng, onClose }: RegionDossierPanelProps) {
   const scenes = s2.scenes?.length ? s2.scenes : [s2];
   const [idx, setIdx] = useState(0);
   const scene = scenes[idx] || s2;
@@ -211,12 +214,50 @@ export function RegionDossierPanel({ sentinel2: s2, lat, lng, onClose }: RegionD
 
               <span style={{ color: '#86efac' }}>
                 {scene.cloud_cover != null
-                  ? `${scene.cloud_cover?.toFixed(0)}% cloud`
+                  ? `${scene.cloud_cover?.toFixed(0)}% scene cloud`
                   : scene.fallback
                     ? 'fallback imagery'
-                    : 'cloud unknown'}
+                    : 'scene cloud unknown'}
               </span>
             </div>
+
+            {weather && !weather.error && (
+              <div
+                style={{
+                  padding: '8px 16px',
+                  fontSize: 11,
+                  fontFamily: 'monospace',
+                  borderBottom: '1px solid rgba(20,83,45,0.4)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 4,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ color: '#86efac' }}>
+                    NOW: {weather.current?.conditions ?? '—'}
+                    {weather.current?.temperature_c != null
+                      ? ` · ${weather.current.temperature_c.toFixed(0)}°C`
+                      : ''}
+                  </span>
+                  <span style={{ color: '#86efac' }}>
+                    SKY: {weather.current?.cloud_cover_pct != null
+                      ? `${weather.current.cloud_cover_pct.toFixed(0)}% cloud`
+                      : '—'}
+                  </span>
+                </div>
+                {weather.optical_window?.summary && (
+                  <div
+                    style={{
+                      color: opticalWindowColor(weather.optical_window.status),
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    OPTICAL: {weather.optical_window.summary.toUpperCase()}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Image */}
             {imgUrl ? (

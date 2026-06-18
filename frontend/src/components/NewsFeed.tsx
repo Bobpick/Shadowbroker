@@ -8,7 +8,13 @@ import { usePredictionMarketsOptIn } from '@/hooks/usePredictionMarketsOptIn';
 import React, { useEffect, useRef, useCallback } from 'react';
 import WikiImage from '@/components/WikiImage';
 import { fetchWikipediaSummary } from '@/lib/wikimediaClient';
-import type { SelectedEntity, RegionDossier, FimiData } from "@/types/dashboard";
+import type {
+  SelectedEntity,
+  RegionDossier,
+  FimiData,
+  PointWeatherDaily,
+  PointWeatherHourly,
+} from "@/types/dashboard";
 import { useDataKeys } from '@/hooks/useDataStore';
 import { API_BASE } from '@/lib/api';
 import { compareEventTimestampsDesc, formatEventTimestamp } from '@/lib/eventDateTime';
@@ -530,6 +536,92 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                         )}
 
                         {/* Sentinel-2 imagery now shown as map popup — see MaplibreViewer */}
+
+                        {d.weather && !d.weather.error && (
+                            <>
+                                <div className="text-[11px] text-cyan-500 tracking-widest font-bold border-b border-cyan-900/50 pb-1 mt-2">
+                                    WEATHER &amp; FORECAST
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                    <div className="flex justify-between">
+                                        <span className="text-[var(--text-muted)]">NOW</span>
+                                        <span className="text-cyan-300 font-bold text-right max-w-[200px]">
+                                            {d.weather.current?.conditions ?? '—'}
+                                            {d.weather.current?.temperature_c != null
+                                                ? ` · ${d.weather.current.temperature_c.toFixed(0)}°C`
+                                                : ''}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-[var(--text-muted)]">CLOUD COVER</span>
+                                        <span className="text-cyan-200 font-bold">
+                                            {d.weather.current?.cloud_cover_pct != null
+                                                ? `${d.weather.current.cloud_cover_pct.toFixed(0)}%`
+                                                : '—'}
+                                        </span>
+                                    </div>
+                                    {d.weather.current?.wind_speed_kmh != null && (
+                                        <div className="flex justify-between">
+                                            <span className="text-[var(--text-muted)]">WIND</span>
+                                            <span className="text-cyan-200">
+                                                {Math.round(d.weather.current.wind_speed_kmh)} km/h
+                                                {d.weather.current.wind_direction_deg != null
+                                                    ? ` @ ${Math.round(d.weather.current.wind_direction_deg)}°`
+                                                    : ''}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {d.weather.optical_window?.summary && (
+                                        <div className="p-2 bg-black/60 border border-cyan-800/50 text-[11px] text-cyan-200/90 leading-relaxed">
+                                            <span className="text-cyan-400 font-bold">&gt;_ OPTICAL SAT: </span>
+                                            {d.weather.optical_window.summary}
+                                        </div>
+                                    )}
+                                    {(d.weather.hourly_next_48h?.length ?? 0) > 0 && (
+                                        <div className="flex flex-wrap gap-1 pt-1">
+                                            {d.weather.hourly_next_48h.slice(0, 12).map((row: PointWeatherHourly) => (
+                                                <span
+                                                    key={row.time}
+                                                    className="text-[9px] font-mono border border-cyan-900/40 bg-cyan-950/20 px-1 py-0.5 text-cyan-300/90"
+                                                    title={row.conditions}
+                                                >
+                                                    {row.time.slice(11, 16)}:{' '}
+                                                    {row.cloud_cover_pct != null
+                                                        ? `${Math.round(row.cloud_cover_pct)}%`
+                                                        : '—'}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {(d.weather.daily_7d?.length ?? 0) > 0 && (
+                                        <div className="space-y-0.5 pt-1">
+                                            {d.weather.daily_7d.map((day: PointWeatherDaily) => (
+                                                <div
+                                                    key={day.date}
+                                                    className="flex justify-between text-[10px] text-cyan-200/85"
+                                                >
+                                                    <span className="text-[var(--text-muted)]">
+                                                        {day.date.slice(5)}
+                                                    </span>
+                                                    <span>
+                                                        {day.conditions}
+                                                        {day.temp_max_c != null && day.temp_min_c != null
+                                                            ? ` · ${day.temp_min_c.toFixed(0)}–${day.temp_max_c.toFixed(0)}°C`
+                                                            : ''}
+                                                        {day.cloud_mean_pct != null
+                                                            ? ` · ${Math.round(day.cloud_mean_pct)}% cloud`
+                                                            : ''}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="text-[9px] text-[var(--text-muted)] tracking-wider">
+                                        Source: {d.weather.source ?? 'Open-Meteo'}
+                                    </div>
+                                </div>
+                            </>
+                        )}
 
                         {(gtDossierLoading || gtDossier?.enabled) && (
                             <>

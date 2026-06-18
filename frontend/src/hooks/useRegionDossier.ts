@@ -123,6 +123,7 @@ function dossierFromBackend(
     local: raw.local ?? null,
     error: raw.error as string | undefined,
     warning: raw.warning as string | undefined,
+    weather: raw.weather,
     sentinel2,
   } as RegionDossier;
 }

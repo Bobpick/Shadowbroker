@@ -787,12 +787,71 @@ export interface SpaceWeather {
   events: SpaceWeatherEvent[];
 }
 
-// ─── WEATHER (RAINVIEWER) ───────────────────────────────────────────────────
+// ─── WEATHER (RAINVIEWER RADAR + OPEN-METEO DOSSIER) ────────────────────────
 
-export interface Weather {
-  time: number;
-  host: string;
+export interface WeatherRadarMeta {
+  time?: number;
+  path?: string;
+  host?: string;
+  nowcast_time?: number;
+  nowcast_path?: string;
+  generated?: number;
 }
+
+export interface PointWeatherCurrent {
+  time?: string;
+  temperature_c?: number;
+  humidity_pct?: number;
+  precipitation_mm?: number;
+  cloud_cover_pct?: number;
+  wind_speed_kmh?: number;
+  wind_direction_deg?: number;
+  visibility_m?: number;
+  weather_code?: number;
+  conditions?: string;
+}
+
+export interface PointWeatherHourly {
+  time: string;
+  cloud_cover_pct?: number;
+  precip_prob_pct?: number;
+  precip_mm?: number;
+  weather_code?: number;
+  conditions?: string;
+}
+
+export interface PointWeatherDaily {
+  date: string;
+  temp_max_c?: number;
+  temp_min_c?: number;
+  precip_mm?: number;
+  cloud_mean_pct?: number;
+  wind_max_kmh?: number;
+  weather_code?: number;
+  conditions?: string;
+}
+
+export interface PointWeatherOpticalWindow {
+  status?: 'good' | 'fair' | 'poor' | 'unknown';
+  summary?: string;
+  cloud_now_pct?: number;
+  best_window_start?: string | null;
+  best_window_end?: string | null;
+}
+
+export interface PointWeather {
+  source?: string;
+  fetched_at?: string;
+  timezone?: string;
+  current?: PointWeatherCurrent;
+  hourly_next_48h?: PointWeatherHourly[];
+  daily_7d?: PointWeatherDaily[];
+  optical_window?: PointWeatherOpticalWindow;
+  error?: string;
+}
+
+/** RainViewer radar tile metadata from slow-tier poll */
+export interface Weather extends WeatherRadarMeta {}
 
 // ─── AIRPORTS ───────────────────────────────────────────────────────────────
 
@@ -1363,6 +1422,7 @@ export interface ActiveLayers {
   sigint_aprs: boolean;
   ukraine_alerts: boolean;
   weather_alerts: boolean;
+  weather_radar: boolean;
   air_quality: boolean;
   volcanoes: boolean;
   fishing_activity: boolean;

@@ -342,6 +342,7 @@ const MAP_EXTRA_DATA_KEYS = [
   'wastewater',
   'wastewater_surveillance',
   'weather_alerts',
+  'weather',
 ] as const satisfies readonly (keyof DashboardData)[];
 
 const VIIRS_TILE_TEMPLATES = [
@@ -850,6 +851,14 @@ const MaplibreViewer = ({
     () => (activeLayers.weather_alerts ? buildWeatherAlertLabelsGeoJSON(data?.weather_alerts) : null),
     [activeLayers.weather_alerts, data?.weather_alerts],
   );
+
+  const weatherRadarTiles = useMemo(() => {
+    if (!activeLayers.weather_radar) return null;
+    const meta = data?.weather;
+    if (!meta?.host || !meta?.path) return null;
+    const host = meta.host.replace(/\/$/, '');
+    return `${host}${meta.path}/256/{z}/{x}/{y}/2/1_1.png`;
+  }, [activeLayers.weather_radar, data?.weather]);
 
   // Sentinel Hub — tile URL (only built when layer is active + credentials are set)
   const sentinelTileUrl = useMemo(() => {
@@ -1995,6 +2004,28 @@ const MaplibreViewer = ({
               beforeId="imagery-ceiling"
               paint={{
                 'raster-opacity': 1,
+                'raster-fade-duration': 300,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* RainViewer — global precipitation radar overlay */}
+        {weatherRadarTiles && (
+          <Source
+            key={`weather-radar-${data?.weather?.time ?? 'live'}`}
+            id="weather-radar"
+            type="raster"
+            tiles={[weatherRadarTiles]}
+            tileSize={256}
+            maxzoom={7}
+          >
+            <Layer
+              id="weather-radar-layer"
+              type="raster"
+              beforeId="imagery-ceiling"
+              paint={{
+                'raster-opacity': 0.58,
                 'raster-fade-duration': 300,
               }}
             />
@@ -6463,6 +6494,7 @@ const MaplibreViewer = ({
           regionDossier?.sentinel2 && (
             <RegionDossierPanel
               sentinel2={regionDossier.sentinel2}
+              weather={regionDossier.weather}
               lat={selectedEntity.extra.lat}
               lng={selectedEntity.extra.lng}
               onClose={() => onEntityClick(null)}

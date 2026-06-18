@@ -359,6 +359,7 @@ active_layers: dict[str, bool] = {
     "sigint_meshtastic": True,
     "sigint_aprs": True,
     "weather_alerts": True,
+    "weather_radar": True,
     "air_quality": True,
     "volcanoes": True,
     "fishing_activity": True,
