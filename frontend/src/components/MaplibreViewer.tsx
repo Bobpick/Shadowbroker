@@ -6029,6 +6029,8 @@ const MaplibreViewer = ({
               conflict={Number(props.conflict ?? 0)}
               contagion={Number(props.contagion ?? 0)}
               interpretation={String(props.interpretation || '')}
+              weatherNoise={Number(props.weather_noise ?? 0)}
+              collectionBadge={String(props.collection_badge || '')}
               lat={lat}
               lng={lng}
               onClose={() => onEntityClick?.(null)}

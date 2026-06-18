@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import ExternalImage from '@/components/ExternalImage';
+import { CollectionPlannerBadge } from '@/components/CollectionPlannerBadge';
+import { buildCollectionPlanner } from '@/lib/collectionPlanner';
 import { opticalWindowColor } from '@/lib/weatherCodes';
 import type { PointWeather } from '@/types/dashboard';
 
@@ -63,6 +65,7 @@ export function RegionDossierPanel({ sentinel2: s2, weather, lat, lng, onClose }
   const scene = scenes[idx] || s2;
   const imgUrl = scene.fullres_url || scene.thumbnail_url;
   const hasMultiple = scenes.length > 1;
+  const collectionPlanner = buildCollectionPlanner(weather);
 
   return (
     <div
@@ -254,6 +257,11 @@ export function RegionDossierPanel({ sentinel2: s2, weather, lat, lng, onClose }
                     }}
                   >
                     OPTICAL: {weather.optical_window.summary.toUpperCase()}
+                  </div>
+                )}
+                {collectionPlanner && (
+                  <div style={{ marginTop: 6 }}>
+                    <CollectionPlannerBadge badge={collectionPlanner} />
                   </div>
                 )}
               </div>

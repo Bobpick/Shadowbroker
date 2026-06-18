@@ -241,7 +241,10 @@
     "costlySignals": "SIGNAUX COÛTEUX",
     "loadingSignals": "Chargement des correspondances…",
     "noSignals": "Aucun signal coûteux récent pour cette région dans Telegram/GDELT/news.",
-    "unknownSource": "source inconnue"
+    "unknownSource": "source inconnue",
+    "weatherNoise": "BRUIT MÉTÉO",
+    "weatherNoiseHint": "orages — confirmer les signaux coûteux.",
+    "collectionPlanner": "COLLECTE"
   },
   "gtBacktest": {
     "title": "Backtest théorie des jeux",

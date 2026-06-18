@@ -18,6 +18,8 @@ import type {
 import { useDataKeys } from '@/hooks/useDataStore';
 import { API_BASE } from '@/lib/api';
 import { compareEventTimestampsDesc, formatEventTimestamp } from '@/lib/eventDateTime';
+import { CollectionPlannerBadge } from '@/components/CollectionPlannerBadge';
+import { buildCollectionPlanner } from '@/lib/collectionPlanner';
 import { consolidateCostlySignals, formatConsolidatedSources } from '@/lib/gtSignals';
 import { lookupShodanHost } from '@/lib/shodanClient';
 import type { ShodanHost } from '@/types/shodan';
@@ -577,6 +579,10 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                                             {d.weather.optical_window.summary}
                                         </div>
                                     )}
+                                    {(() => {
+                                        const planner = buildCollectionPlanner(d.weather);
+                                        return planner ? <CollectionPlannerBadge badge={planner} /> : null;
+                                    })()}
                                     {(d.weather.hourly_next_48h?.length ?? 0) > 0 && (
                                         <div className="flex flex-wrap gap-1 pt-1">
                                             {d.weather.hourly_next_48h.slice(0, 12).map((row: PointWeatherHourly) => (

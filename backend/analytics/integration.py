@@ -72,6 +72,13 @@ def _persist_gt_snapshot(
     except Exception:
         logger.exception("GT micro rolling capture failed")
 
+    try:
+        from analytics.gt_weather_modifier import enrich_heatmap_with_weather
+
+        heatmap = enrich_heatmap_with_weather(heatmap)
+    except Exception:
+        logger.exception("GT weather enrichment failed")
+
     clusters = engine.compute_herding_clusters()
     from analytics.gt_alerts import parse_heatmap_alerts
 

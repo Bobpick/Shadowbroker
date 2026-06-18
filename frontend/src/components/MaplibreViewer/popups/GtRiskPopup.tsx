@@ -21,6 +21,8 @@ export interface GtRiskPopupProps {
   conflict?: number;
   contagion?: number;
   interpretation?: string;
+  weatherNoise?: number;
+  collectionBadge?: string;
   lat: number;
   lng: number;
   onClose: () => void;
@@ -64,6 +66,8 @@ export function GtRiskPopup({
   conflict,
   contagion,
   interpretation,
+  weatherNoise,
+  collectionBadge,
   lat,
   lng,
   onClose,
@@ -88,6 +92,10 @@ export function GtRiskPopup({
   }, [region, lat, lng]);
 
   const resolvedInterpretation = interpretation || dossier?.interpretation || '';
+  const resolvedWeatherNoise =
+    weatherNoise ?? dossier?.weather_context?.weather_noise ?? 0;
+  const resolvedCollectionBadge =
+    collectionBadge || dossier?.weather_context?.collection_badge || '';
   const consolidatedSignals = consolidateCostlySignals(dossier?.recent_signals || [], 4);
 
   return (
@@ -150,6 +158,22 @@ export function GtRiskPopup({
               <span className="text-amber-400 font-bold">&gt;_ </span>
               {resolvedInterpretation}
             </p>
+          )}
+          {resolvedWeatherNoise >= 0.25 && (
+            <div className="border-t border-amber-900/40 pt-2 text-[10px] text-orange-300/90 leading-relaxed">
+              <span className="text-orange-400 font-bold tracking-wider">
+                {t('gtRisk.weatherNoise')}
+              </span>{' '}
+              {(resolvedWeatherNoise * 100).toFixed(0)}% — {t('gtRisk.weatherNoiseHint')}
+            </div>
+          )}
+          {resolvedCollectionBadge && (
+            <div className="border-t border-amber-900/40 pt-2 text-[10px] text-cyan-300/90 leading-relaxed">
+              <span className="text-cyan-400 font-bold tracking-wider">
+                {t('gtRisk.collectionPlanner')}
+              </span>{' '}
+              {resolvedCollectionBadge}
+            </div>
           )}
 
           <div className="border-t border-amber-900/40 pt-2">

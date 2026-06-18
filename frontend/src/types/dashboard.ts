@@ -1266,6 +1266,19 @@ export interface GtRollingReport {
   message?: string;
 }
 
+export interface GtWeatherContext {
+  weather_noise?: number;
+  storm_severity?: number;
+  optical_status?: string;
+  optical_summary?: string;
+  collection_recommendation?: string;
+  collection_badge?: string;
+  poor_optical_hours?: number;
+  gt_note?: string;
+  conditions?: string;
+  cloud_cover_pct?: number;
+}
+
 export interface GtDossier {
   enabled?: boolean;
   region: string;
@@ -1275,6 +1288,7 @@ export interface GtDossier {
     unrest?: number;
     conflict?: number;
   };
+  weather_context?: GtWeatherContext;
   recent_signals?: GtDossierSignalEntry[];
   contagion_risk?: number;
   interpretation?: string;

@@ -13,6 +13,10 @@ from typing import Any, DefaultDict
 import networkx as nx
 import numpy as np
 
+from analytics.gt_weather_modifier import (
+    weather_context_for_region,
+    weather_evidence_multiplier,
+)
 from analytics.region_geo import theater_centroid
 from analytics.settings import GTAnalyticsSettings, get_gt_settings
 
@@ -351,6 +355,10 @@ class GT_EarlyWarning:
             self.settings.evidence_cap,
         )
 
+        coord_list = coords if isinstance(coords, (list, tuple)) else None
+        weather_ctx = weather_context_for_region(region, list(coord_list) if coord_list else None)
+        evidence_strength *= weather_evidence_multiplier(weather_ctx)
+
         posteriors: dict[str, float] = {}
         deviation = 0.0
         for domain in domains_touched:
@@ -400,6 +408,10 @@ class GT_EarlyWarning:
             deviation,
         )
 
+        interpretation = self._interpret_risk(composite)
+        if weather_ctx.get("gt_note"):
+            interpretation = f"{interpretation} {weather_ctx['gt_note']}"
+
         return {
             "region": region,
             "domains": sorted(domains_touched),
@@ -408,7 +420,9 @@ class GT_EarlyWarning:
             "signals": signals,
             "deviation_score": deviation,
             "contagion_potential": self._get_contagion_score(region),
-            "interpretation": self._interpret_risk(composite),
+            "interpretation": interpretation,
+            "weather_noise": weather_ctx.get("weather_noise", 0.0),
+            "weather_context": weather_ctx,
         }
 
     def _interpret_risk(self, risk: float) -> str:
@@ -523,6 +537,11 @@ class GT_EarlyWarning:
             recent = list(self._history.get(region_key, [])[-10:])
 
         composite = self.composite_risk(region_key)
+        weather_ctx = weather_context_for_region(region_key, state.coords)
+        interpretation = self._interpret_risk(composite)
+        if weather_ctx.get("gt_note"):
+            interpretation = f"{interpretation} {weather_ctx['gt_note']}"
+
         return {
             "region": region_key,
             "current_risk": round(composite, 4),
@@ -530,6 +549,7 @@ class GT_EarlyWarning:
                 domain: round(float(state.priors.get(domain, self._base_prior)), 4)
                 for domain in _DOMAINS
             },
+            "weather_context": weather_ctx,
             "recent_signals": [
                 {
                     "timestamp": entry.timestamp,
@@ -544,7 +564,7 @@ class GT_EarlyWarning:
             ],
             "contagion_risk": round(self._get_contagion_score(region_key), 4),
             "herding_clusters": self.compute_herding_clusters()[:5],
-            "interpretation": self._interpret_risk(composite),
+            "interpretation": interpretation,
             "scenarios": self._build_scenarios(region_key, composite),
         }
 

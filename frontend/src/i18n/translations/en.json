@@ -242,7 +242,10 @@
     "costlySignals": "COSTLY SIGNALS",
     "loadingSignals": "Loading feed matches…",
     "noSignals": "No costly-signal text matched in recent Telegram/GDELT/news for this region. Scores can rise from domain priors or nearby contagion.",
-    "unknownSource": "unknown source"
+    "unknownSource": "unknown source",
+    "weatherNoise": "WEATHER NOISE",
+    "weatherNoiseHint": "storms may inflate unrest/conflict chatter — confirm costly signals.",
+    "collectionPlanner": "COLLECTION"
   },
   "gtBacktest": {
     "title": "Game Theory Backtest",

@@ -241,7 +241,10 @@
     "costlySignals": "成本信号",
     "loadingSignals": "正在加载情报匹配…",
     "noSignals": "该区域最近在 Telegram/GDELT/新闻中未匹配到成本信号文本。",
-    "unknownSource": "未知来源"
+    "unknownSource": "未知来源",
+    "weatherNoise": "天气噪声",
+    "weatherNoiseHint": "风暴可能放大动荡/冲突信号，需确认代价信号。",
+    "collectionPlanner": "采集建议"
   },
   "gtBacktest": {
     "title": "博弈论回测",
