@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import ExternalImage from '@/components/ExternalImage';
 import { CollectionPlannerBadge } from '@/components/CollectionPlannerBadge';
 import { buildCollectionPlanner } from '@/lib/collectionPlanner';
+import { useTemperatureUnit } from '@/hooks/useTemperatureUnit';
 import { opticalWindowColor } from '@/lib/weatherCodes';
 import type { PointWeather } from '@/types/dashboard';
 
@@ -60,6 +61,7 @@ const ACTION_BTN: React.CSSProperties = {
 };
 
 export function RegionDossierPanel({ sentinel2: s2, weather, lat, lng, onClose }: RegionDossierPanelProps) {
+  const { formatTemp } = useTemperatureUnit();
   const scenes = s2.scenes?.length ? s2.scenes : [s2];
   const [idx, setIdx] = useState(0);
   const scene = scenes[idx] || s2;
@@ -240,7 +242,7 @@ export function RegionDossierPanel({ sentinel2: s2, weather, lat, lng, onClose }
                   <span style={{ color: '#86efac' }}>
                     NOW: {weather.current?.conditions ?? '—'}
                     {weather.current?.temperature_c != null
-                      ? ` · ${weather.current.temperature_c.toFixed(0)}°C`
+                      ? ` · ${formatTemp(weather.current.temperature_c)}`
                       : ''}
                   </span>
                   <span style={{ color: '#86efac' }}>
@@ -261,7 +263,7 @@ export function RegionDossierPanel({ sentinel2: s2, weather, lat, lng, onClose }
                 )}
                 {collectionPlanner && (
                   <div style={{ marginTop: 6 }}>
-                    <CollectionPlannerBadge badge={collectionPlanner} />
+                    <CollectionPlannerBadge badge={collectionPlanner} lat={lat} lng={lng} />
                   </div>
                 )}
               </div>

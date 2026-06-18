@@ -43,6 +43,8 @@ import { useDataPolling, LAYER_TOGGLE_EVENT } from '@/hooks/useDataPolling';
 import { useBackendStatus, useDataKey, useDataKeys } from '@/hooks/useDataStore';
 import { useReverseGeocode } from '@/hooks/useReverseGeocode';
 import { useCursorWeather } from '@/hooks/useCursorWeather';
+import { useTemperatureUnit } from '@/hooks/useTemperatureUnit';
+import { SAR_GUIDE_EVENT, type SarGuideDetail } from '@/lib/sarGuide';
 import { opticalWindowColor } from '@/lib/weatherCodes';
 import type { WeatherRadarMode } from '@/types/dashboard';
 import { useRegionDossier } from '@/hooks/useRegionDossier';
@@ -84,6 +86,7 @@ export default function Dashboard() {
   useDataPolling();
   const { mouseCoords, locationLabel, handleMouseCoords } = useReverseGeocode();
   const { cursorWeather, cursorWeatherLoading, handleCursorWeather } = useCursorWeather();
+  const { unit: tempUnit, setUnit: setTempUnit, formatTemp } = useTemperatureUnit();
   const [selectedEntity, setSelectedEntity] = useState<SelectedEntity | null>(null);
   const [showEntityGraph, setShowEntityGraph] = useState(false);
   useEffect(() => {
@@ -177,6 +180,18 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => subscribeMeshTerminalOpen(openInfonet), [openInfonet]);
+
+  useEffect(() => {
+    const onSarGuide = (event: Event) => {
+      const detail = (event as CustomEvent<SarGuideDetail>).detail;
+      setLeftOpen(true);
+      if (detail?.lat != null && detail?.lng != null) {
+        setSarAoiDroppedCoords({ lat: detail.lat, lng: detail.lng });
+      }
+    };
+    window.addEventListener(SAR_GUIDE_EVENT, onSarGuide);
+    return () => window.removeEventListener(SAR_GUIDE_EVENT, onSarGuide);
+  }, []);
 
   const toggleInfonet = useCallback(() => {
     setInfonetOpen((prev) => {
@@ -838,8 +853,37 @@ export default function Dashboard() {
                       undefined
                     }
                   >
-                    <div className="text-[10px] text-[var(--text-muted)] font-mono tracking-[0.2em]">
-                      {t('controls.weather')}
+                    <div className="flex items-center gap-2">
+                      <div className="text-[10px] text-[var(--text-muted)] font-mono tracking-[0.2em]">
+                        {t('controls.weather')}
+                      </div>
+                      <div className="flex items-center gap-0.5 text-[9px] font-mono">
+                        <button
+                          type="button"
+                          onClick={() => setTempUnit('C')}
+                          className={
+                            tempUnit === 'C'
+                              ? 'text-cyan-400 font-bold'
+                              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                          }
+                          aria-pressed={tempUnit === 'C'}
+                        >
+                          °C
+                        </button>
+                        <span className="text-[var(--text-muted)]">/</span>
+                        <button
+                          type="button"
+                          onClick={() => setTempUnit('F')}
+                          className={
+                            tempUnit === 'F'
+                              ? 'text-cyan-400 font-bold'
+                              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                          }
+                          aria-pressed={tempUnit === 'F'}
+                        >
+                          °F
+                        </button>
+                      </div>
                     </div>
                     <div
                       className="text-[13px] font-mono font-bold truncate max-w-[220px]"
@@ -853,6 +897,10 @@ export default function Dashboard() {
                         ? '…'
                         : cursorWeather && !cursorWeather.error
                           ? `${cursorWeather.current?.conditions ?? '—'}${
+                              cursorWeather.current?.temperature_c != null
+                                ? ` · ${formatTemp(cursorWeather.current.temperature_c)}`
+                                : ''
+                            }${
                               cursorWeather.current?.cloud_cover_pct != null
                                 ? ` · ${Math.round(cursorWeather.current.cloud_cover_pct)}%`
                                 : ''

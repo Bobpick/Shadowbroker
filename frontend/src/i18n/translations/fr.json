@@ -250,6 +250,15 @@
     "weatherNoiseHint": "orages — confirmer les signaux coûteux.",
     "collectionPlanner": "COLLECTE"
   },
+  "sarGuide": {
+    "howToUse": "UTILISER LE SAR",
+    "intro": "Quand l'optique est aveugle, Sentinel-1 SAR voit à travers les nuages.",
+    "step1": "Ouvrir Couches → Observation terrestre → SAR et activer.",
+    "step2": "Première fois : Mode A (catalogue gratuit) ou Mode B (alertes déformation/inondation).",
+    "step3": "EDIT AOIs → dessiner une zone → enregistrer.",
+    "step4": "Les passages SAR apparaissent sur la carte ; cliquer les marqueurs pour les métadonnées.",
+    "enableButton": "ACTIVER COUCHE SAR"
+  },
   "gtBacktest": {
     "title": "Backtest théorie des jeux",
     "layerOff": "Désactivé — activez la carte de risque stratégique dans Couches.",

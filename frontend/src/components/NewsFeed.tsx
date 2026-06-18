@@ -19,6 +19,7 @@ import { useDataKeys } from '@/hooks/useDataStore';
 import { API_BASE } from '@/lib/api';
 import { compareEventTimestampsDesc, formatEventTimestamp } from '@/lib/eventDateTime';
 import { CollectionPlannerBadge } from '@/components/CollectionPlannerBadge';
+import { useTemperatureUnit } from '@/hooks/useTemperatureUnit';
 import { buildCollectionPlanner } from '@/lib/collectionPlanner';
 import { consolidateCostlySignals, formatConsolidatedSources } from '@/lib/gtSignals';
 import { lookupShodanHost } from '@/lib/shodanClient';
@@ -322,6 +323,7 @@ function EmissionsEstimateBlock({ flight }: { flight: any }) {
 }
 
 function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gtDossier, gtDossierLoading, onArticleClick, onExpandEntityGraph }: { selectedEntity?: SelectedEntity | null, regionDossier?: RegionDossier | null, regionDossierLoading?: boolean, gtDossier?: import('@/types/dashboard').GtDossier | null, gtDossierLoading?: boolean, onArticleClick?: (idx: number, lat?: number, lng?: number, title?: string) => void, onExpandEntityGraph?: () => void }) {
+    const { formatTemp, formatTempRange } = useTemperatureUnit();
     const data = useDataKeys([
       'news', 'fimi', 'commercial_flights', 'private_flights', 'private_jets',
       'military_flights', 'tracked_flights', 'ships', 'gdelt', 'liveuamap',
@@ -550,7 +552,7 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                                         <span className="text-cyan-300 font-bold text-right max-w-[200px]">
                                             {d.weather.current?.conditions ?? '—'}
                                             {d.weather.current?.temperature_c != null
-                                                ? ` · ${d.weather.current.temperature_c.toFixed(0)}°C`
+                                                ? ` · ${formatTemp(d.weather.current.temperature_c)}`
                                                 : ''}
                                         </span>
                                     </div>
@@ -581,7 +583,9 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                                     )}
                                     {(() => {
                                         const planner = buildCollectionPlanner(d.weather);
-                                        return planner ? <CollectionPlannerBadge badge={planner} /> : null;
+                                        return planner ? (
+                                            <CollectionPlannerBadge badge={planner} lat={d.lat} lng={d.lng} />
+                                        ) : null;
                                     })()}
                                     {(d.weather.hourly_next_48h?.length ?? 0) > 0 && (
                                         <div className="flex flex-wrap gap-1 pt-1">
@@ -612,7 +616,7 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                                                     <span>
                                                         {day.conditions}
                                                         {day.temp_max_c != null && day.temp_min_c != null
-                                                            ? ` · ${day.temp_min_c.toFixed(0)}–${day.temp_max_c.toFixed(0)}°C`
+                                                            ? ` · ${formatTempRange(day.temp_min_c, day.temp_max_c)}`
                                                             : ''}
                                                         {day.cloud_mean_pct != null
                                                             ? ` · ${Math.round(day.cloud_mean_pct)}% cloud`

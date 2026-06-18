@@ -60,6 +60,7 @@ import SarModeChooserModal from './SarModeChooserModal';
 import KiwiSdrConsentDialog from './ui/KiwiSdrConsentDialog';
 import { extractGtAlerts } from '@/lib/gtAlerts';
 import { OPEN_METEO_FORECAST_STEPS } from '@/lib/openMeteoMap';
+import { SAR_GUIDE_EVENT, type SarGuideDetail } from '@/lib/sarGuide';
 
 function relativeTime(iso: string | undefined): string {
   if (!iso) return '';
@@ -746,6 +747,23 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   });
   const [sarModalOpen, setSarModalOpen] = useState(false);
   const [sarPendingEnable, setSarPendingEnable] = useState(false);
+
+  useEffect(() => {
+    const onSarGuide = (event: Event) => {
+      const detail = (event as CustomEvent<SarGuideDetail>).detail;
+      if (sarChoice === null) {
+        setSarPendingEnable(true);
+        setSarModalOpen(true);
+      } else {
+        setActiveLayers((prev: ActiveLayers) => ({ ...prev, sar: true }));
+      }
+      if (detail?.openAoiEditor && onOpenSarAoiEditor) {
+        window.setTimeout(() => onOpenSarAoiEditor(), 350);
+      }
+    };
+    window.addEventListener(SAR_GUIDE_EVENT, onSarGuide);
+    return () => window.removeEventListener(SAR_GUIDE_EVENT, onSarGuide);
+  }, [sarChoice, setActiveLayers, onOpenSarAoiEditor]);
 
   const [liveuamapModalOpen, setLiveuamapModalOpen] = useState(false);
   const [liveuamapPendingEnable, setLiveuamapPendingEnable] = useState<(() => void) | null>(null);

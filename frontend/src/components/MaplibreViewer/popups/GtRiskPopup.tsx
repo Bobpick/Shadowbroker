@@ -186,7 +186,7 @@ export function GtRiskPopup({
           )}
           {collectionPlanner && (
             <div className="border-t border-amber-900/40 pt-2">
-              <CollectionPlannerBadge badge={collectionPlanner} />
+              <CollectionPlannerBadge badge={collectionPlanner} lat={lat} lng={lng} />
             </div>
           )}
 

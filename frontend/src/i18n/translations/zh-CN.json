@@ -250,6 +250,15 @@
     "weatherNoiseHint": "风暴可能放大动荡/冲突信号，需确认代价信号。",
     "collectionPlanner": "采集建议"
   },
+  "sarGuide": {
+    "howToUse": "如何使用 SAR",
+    "intro": "光学卫星被云遮挡时，Sentinel-1 SAR 仍可穿透云层成像。",
+    "step1": "打开图层 → 地球观测 → SAR 并开启。",
+    "step2": "首次使用：选择模式 A（免费目录）或模式 B（形变/洪水警报）。",
+    "step3": "点击 EDIT AOIs → 框选目标区域 → 保存。",
+    "step4": "SAR 过境点显示在地图上；点击标记查看场景元数据。",
+    "enableButton": "启用 SAR 图层"
+  },
   "gtBacktest": {
     "title": "博弈论回测",
     "layerOff": "已关闭 — 请在数据图层中启用战略风险热力图。",
