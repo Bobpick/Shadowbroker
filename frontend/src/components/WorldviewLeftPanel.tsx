@@ -1371,7 +1371,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
         {
           id: 'gt_risk',
           name: t('layers.strategicRisk'),
-          source: 'GT Early Warning',
+          source: 'Game Theory Early Warning',
           count:
             extractGtAlerts(data?.gt_risk).plottedRegions ||
             data?.gt_risk?.meta?.plotted_regions ||

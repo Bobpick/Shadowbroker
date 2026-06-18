@@ -212,7 +212,7 @@
     "strategicRisk": "Carte de risque stratégique"
   },
   "gtHud": {
-    "title": "ANALYTIQUE GT",
+    "title": "ANALYTIQUE THÉORIE DES JEUX",
     "dragHint": "glisser pour déplacer",
     "collapse": "Réduire le panneau",
     "expand": "Développer le panneau"
@@ -239,9 +239,10 @@
     "unknownSource": "source inconnue"
   },
   "gtBacktest": {
-    "title": "Backtest GT",
+    "title": "Backtest théorie des jeux",
     "layerOff": "Désactivé — activez la carte de risque stratégique dans Couches.",
-    "disabled": "Analytique GT désactivée (GT_ANALYTICS_ENABLED=true).",
+    "disabled": "Analytique théorie des jeux désactivée sur le serveur (GT_ANALYTICS_ENABLED=true).",
+    "unavailable": "API backtest indisponible — les alertes live restent actives.",
     "loading": "Validation historique en cours…",
     "refresh": "Actualiser le backtest",
     "accuracy": "PRÉCISION",
@@ -270,7 +271,7 @@
     "microWindow": "Moy. glissante {days} j · ignition Δ ≥ {delta}",
     "microIgnitions": "{count} ignition(s)",
     "microAlerted3d": "{count} au-dessus du seuil (moy. 3j)",
-    "microEmpty": "Lecture quotidienne en cours — mis à jour à chaque ingest GT.",
+    "microEmpty": "Lecture quotidienne en cours — mis à jour à chaque ingest théorie des jeux.",
     "microRegionLine": "{region}: spot {spot} · 3j {avg} · Δ {delta}",
     "microIgnitionBadge": "IGNITION"
   },

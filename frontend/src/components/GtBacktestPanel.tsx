@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Minus, Plus, Radar, RefreshCw, XCircle } from 'lucide-react';
 import { API_BASE } from '@/lib/api';
+import { useDataKey } from '@/hooks/useDataStore';
 import { useTranslation } from '@/i18n';
 import type { GtBacktestReport, GtMicroRollingReport, GtRollingReport } from '@/types/dashboard';
 
@@ -18,8 +19,33 @@ function pct(value: number | undefined): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+type GtEnabledReport = { enabled?: boolean } | null;
+
+function reportPending(report: GtEnabledReport, loading: boolean): boolean {
+  return report == null && loading;
+}
+
+function reportUnavailable(
+  report: GtEnabledReport,
+  loading: boolean,
+  liveEnabled: boolean,
+): boolean {
+  return report == null && !loading && liveEnabled;
+}
+
+function serverAnalyticsOff(
+  report: GtEnabledReport,
+  loading: boolean,
+  liveEnabled: boolean,
+): boolean {
+  if (report != null && report.enabled === false) return true;
+  return report == null && !loading && !liveEnabled;
+}
+
 export default function GtBacktestPanel({ layerEnabled = false, embedded = false }: Props) {
   const { t } = useTranslation();
+  const gtRisk = useDataKey('gt_risk');
+  const liveGtEnabled = gtRisk?.enabled === true;
   const [isMinimized, setIsMinimized] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('operational');
   const [benchmark, setBenchmark] = useState<GtBacktestReport | null>(null);
@@ -111,6 +137,28 @@ export default function GtBacktestPanel({ layerEnabled = false, embedded = false
   const microRegions = micro?.ignitions?.length
     ? micro.ignitions
     : (micro?.top_regions || []).slice(0, 4);
+  const benchmarkPending = reportPending(benchmark, loadingBenchmark);
+  const benchmarkOff = serverAnalyticsOff(benchmark, loadingBenchmark, liveGtEnabled);
+  const benchmarkFetchFailed = reportUnavailable(
+    benchmark,
+    loadingBenchmark,
+    liveGtEnabled,
+  );
+  const operationalPending =
+    rolling == null &&
+    micro == null &&
+    (loadingRolling || loadingMicro);
+  const operationalOff =
+    rolling != null &&
+    micro != null &&
+    rolling.enabled === false &&
+    micro.enabled === false;
+  const operationalFetchFailed =
+    rolling == null &&
+    micro == null &&
+    !loadingRolling &&
+    !loadingMicro &&
+    liveGtEnabled;
 
   const shellClass = embedded
     ? 'pointer-events-auto flex-shrink-0 border-b border-amber-800/30 bg-black/70'
@@ -192,15 +240,23 @@ export default function GtBacktestPanel({ layerEnabled = false, embedded = false
               </div>
 
               {activeTab === 'benchmark' ? (
-                !benchmark?.enabled ? (
-                  <div className="text-[11px] font-mono tracking-wider text-amber-600/70 py-1">
-                    {t('gtBacktest.disabled')}
-                  </div>
-                ) : loadingBenchmark && !benchmark.accuracy ? (
+                benchmarkPending ? (
                   <div className="text-[11px] font-mono tracking-wider text-amber-500/80 py-1">
                     {t('gtBacktest.loading')}
                   </div>
-                ) : (
+                ) : benchmarkOff ? (
+                  <div className="text-[11px] font-mono tracking-wider text-amber-600/70 py-1">
+                    {t('gtBacktest.disabled')}
+                  </div>
+                ) : benchmarkFetchFailed ? (
+                  <div className="text-[11px] font-mono tracking-wider text-amber-500/80 py-1">
+                    {t('gtBacktest.unavailable')}
+                  </div>
+                ) : loadingBenchmark && !benchmark?.accuracy ? (
+                  <div className="text-[11px] font-mono tracking-wider text-amber-500/80 py-1">
+                    {t('gtBacktest.loading')}
+                  </div>
+                ) : benchmark ? (
                   <>
                     <div className="text-[10px] font-mono tracking-wider text-amber-600/60">
                       {t('gtBacktest.benchmarkNote')}
@@ -274,10 +330,18 @@ export default function GtBacktestPanel({ layerEnabled = false, embedded = false
                       </div>
                     )}
                   </>
-                )
-              ) : !rolling?.enabled && !micro?.enabled ? (
+                ) : null
+              ) : operationalPending ? (
+                <div className="text-[11px] font-mono tracking-wider text-amber-500/80 py-1">
+                  {t('gtBacktest.operationalLoading')}
+                </div>
+              ) : operationalOff ? (
                 <div className="text-[11px] font-mono tracking-wider text-amber-600/70 py-1">
                   {t('gtBacktest.disabled')}
+                </div>
+              ) : operationalFetchFailed ? (
+                <div className="text-[11px] font-mono tracking-wider text-amber-500/80 py-1">
+                  {t('gtBacktest.unavailable')}
                 </div>
               ) : (loadingRolling || loadingMicro) && !rolling?.latest && !micro?.regions_tracked ? (
                 <div className="text-[11px] font-mono tracking-wider text-amber-500/80 py-1">

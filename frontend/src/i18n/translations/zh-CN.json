@@ -212,7 +212,7 @@
     "strategicRisk": "战略风险热力图"
   },
   "gtHud": {
-    "title": "GT 分析",
+    "title": "博弈论分析",
     "dragHint": "拖动移动",
     "collapse": "收起面板",
     "expand": "展开面板"
@@ -239,9 +239,10 @@
     "unknownSource": "未知来源"
   },
   "gtBacktest": {
-    "title": "GT 回测",
+    "title": "博弈论回测",
     "layerOff": "已关闭 — 请在数据图层中启用战略风险热力图。",
-    "disabled": "GT 分析未启用（需设置 GT_ANALYTICS_ENABLED=true）。",
+    "disabled": "服务器未启用博弈论分析（需设置 GT_ANALYTICS_ENABLED=true）。",
+    "unavailable": "回测 API 不可用 — 实时博弈论警报仍在运行。",
     "loading": "正在运行历史验证…",
     "refresh": "刷新回测",
     "accuracy": "准确率",
@@ -270,7 +271,7 @@
     "microWindow": "{days}日滚动均值 · 点火 Δ ≥ {delta}",
     "microIgnitions": "{count} 个点火",
     "microAlerted3d": "{count} 个区域 3日均值超阈值",
-    "microEmpty": "正在采集日读数 — 随 GT 摄入更新。",
+    "microEmpty": "正在采集日读数 — 随博弈论数据摄入更新。",
     "microRegionLine": "{region}：即时 {spot} · 3日 {avg} · Δ {delta}",
     "microIgnitionBadge": "点火"
   },
