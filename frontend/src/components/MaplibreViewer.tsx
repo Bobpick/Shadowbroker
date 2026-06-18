@@ -198,6 +198,11 @@ import {
   registerSentinelProtocol,
 } from '@/lib/sentinelHub';
 import {
+  openMeteoSourceUrl,
+  pickForecastTimeStep,
+  registerOpenMeteoProtocol,
+} from '@/lib/openMeteoMap';
+import {
   buildEarthquakesGeoJSON,
   buildJammingGeoJSON,
   buildCorrelationsGeoJSON,
@@ -343,6 +348,8 @@ const MAP_EXTRA_DATA_KEYS = [
   'wastewater_surveillance',
   'weather_alerts',
   'weather',
+  'weather_forecast',
+  'global_weather_hazards',
 ] as const satisfies readonly (keyof DashboardData)[];
 
 const VIIRS_TILE_TEMPLATES = [
@@ -402,6 +409,7 @@ const MaplibreViewer = ({
   measurePoints,
   gibsDate,
   gibsOpacity,
+  weatherForecastOffset = 0,
   sentinelDate,
   sentinelOpacity,
   sentinelPreset,
@@ -860,6 +868,37 @@ const MaplibreViewer = ({
     return `${host}${meta.path}/256/{z}/{x}/{y}/2/1_1.png`;
   }, [activeLayers.weather_radar, data?.weather]);
 
+  const forecastTimeStep = useMemo(
+    () => pickForecastTimeStep(data?.weather_forecast, weatherForecastOffset),
+    [data?.weather_forecast, weatherForecastOffset],
+  );
+
+  const weatherCloudSourceUrl = useMemo(() => {
+    if (!activeLayers.weather_cloud) return null;
+    return openMeteoSourceUrl('cloud_cover', forecastTimeStep);
+  }, [activeLayers.weather_cloud, forecastTimeStep]);
+
+  const weatherPrecipSourceUrl = useMemo(() => {
+    if (!activeLayers.weather_precip) return null;
+    return openMeteoSourceUrl('precipitation', forecastTimeStep);
+  }, [activeLayers.weather_precip, forecastTimeStep]);
+
+  const globalWeatherHazardsGeoJSON = useMemo(
+    () =>
+      activeLayers.global_weather_hazards
+        ? buildWeatherAlertsGeoJSON(data?.global_weather_hazards)
+        : null,
+    [activeLayers.global_weather_hazards, data?.global_weather_hazards],
+  );
+
+  const globalWeatherHazardLabelsGeoJSON = useMemo(
+    () =>
+      activeLayers.global_weather_hazards
+        ? buildWeatherAlertLabelsGeoJSON(data?.global_weather_hazards)
+        : null,
+    [activeLayers.global_weather_hazards, data?.global_weather_hazards],
+  );
+
   // Sentinel Hub — tile URL (only built when layer is active + credentials are set)
   const sentinelTileUrl = useMemo(() => {
     if (!activeLayers.sentinel_hub) return null;
@@ -867,9 +906,10 @@ const MaplibreViewer = ({
     return buildSentinelTileUrl(sentinelPreset || 'TRUE-COLOR', sentinelDate || '');
   }, [activeLayers.sentinel_hub, sentinelPreset, sentinelDate]);
 
-  // Register sentinel:// custom protocol for Process API tile fetching
+  // Register sentinel:// and om:// custom tile protocols
   useEffect(() => {
     registerSentinelProtocol(maplibregl);
+    registerOpenMeteoProtocol(maplibregl);
   }, []);
 
   // Pre-fetch Sentinel Hub token when layer is toggled on
@@ -1733,6 +1773,8 @@ const MaplibreViewer = ({
     ukraineAlertsGeoJSON && 'ukraine-alerts-fill',
     weatherAlertsGeoJSON && 'weather-alerts-fill',
     weatherAlertLabelsGeoJSON && 'weather-alert-icons',
+    globalWeatherHazardsGeoJSON && 'global-weather-hazards-fill',
+    globalWeatherHazardLabelsGeoJSON && 'global-weather-hazard-icons',
     airQualityGeoJSON && 'air-quality-layer',
     volcanoesGeoJSON && 'volcanoes-layer',
     fishingGeoJSON && 'fishing-clusters',
@@ -2004,6 +2046,50 @@ const MaplibreViewer = ({
               beforeId="imagery-ceiling"
               paint={{
                 'raster-opacity': 1,
+                'raster-fade-duration': 300,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Open-Meteo — cloud cover forecast */}
+        {weatherCloudSourceUrl && (
+          <Source
+            key={`open-meteo-cloud-${forecastTimeStep}`}
+            id="open-meteo-cloud"
+            type="raster"
+            url={weatherCloudSourceUrl}
+            tileSize={256}
+            maxzoom={12}
+          >
+            <Layer
+              id="open-meteo-cloud-layer"
+              type="raster"
+              beforeId="imagery-ceiling"
+              paint={{
+                'raster-opacity': 0.52,
+                'raster-fade-duration': 300,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Open-Meteo — precipitation forecast */}
+        {weatherPrecipSourceUrl && (
+          <Source
+            key={`open-meteo-precip-${forecastTimeStep}`}
+            id="open-meteo-precip"
+            type="raster"
+            url={weatherPrecipSourceUrl}
+            tileSize={256}
+            maxzoom={12}
+          >
+            <Layer
+              id="open-meteo-precip-layer"
+              type="raster"
+              beforeId="imagery-ceiling"
+              paint={{
+                'raster-opacity': 0.58,
                 'raster-fade-duration': 300,
               }}
             />
@@ -3497,6 +3583,51 @@ const MaplibreViewer = ({
         <Source id="weather-alert-labels-source" type="geojson" data={(weatherAlertLabelsGeoJSON ?? EMPTY_FC)}>
           <Layer
             id="weather-alert-icons"
+            type="symbol"
+            layout={{
+              'icon-image': ['get', 'iconId'],
+              'icon-size': 1.1,
+              'icon-allow-overlap': true,
+              'icon-anchor': 'bottom',
+              'text-field': ['get', 'event'],
+              'text-font': ['Noto Sans Bold'],
+              'text-size': 11,
+              'text-offset': [0, 0.4],
+              'text-anchor': 'top',
+              'text-allow-overlap': false,
+              'text-max-width': 14,
+            }}
+            paint={{
+              'text-color': ['get', 'color'],
+              'text-halo-color': '#000000',
+              'text-halo-width': 1.5,
+            }}
+          />
+        </Source>
+
+        {/* GDACS — global tropical cyclone / flood / wildfire / drought hazards */}
+        <Source id="global-weather-hazards-source" type="geojson" data={(globalWeatherHazardsGeoJSON ?? EMPTY_FC)}>
+          <Layer
+            id="global-weather-hazards-fill"
+            type="fill"
+            paint={{
+              'fill-color': ['get', 'color'],
+              'fill-opacity': 0.14,
+            }}
+          />
+          <Layer
+            id="global-weather-hazards-outline"
+            type="line"
+            paint={{
+              'line-color': ['get', 'color'],
+              'line-width': 2,
+              'line-opacity': 0.75,
+            }}
+          />
+        </Source>
+        <Source id="global-weather-hazard-labels-source" type="geojson" data={(globalWeatherHazardLabelsGeoJSON ?? EMPTY_FC)}>
+          <Layer
+            id="global-weather-hazard-icons"
             type="symbol"
             layout={{
               'icon-image': ['get', 'iconId'],
@@ -5633,16 +5764,19 @@ const MaplibreViewer = ({
             );
           })()}
 
-        {/* Weather Alert popup */}
+        {/* Weather Alert popup (NOAA/NWS + GDACS) */}
         {selectedEntity?.type === 'weather_alert' &&
           (() => {
-            const alert = data?.weather_alerts?.find((a) => a.id === selectedEntity.id);
+            const alert =
+              data?.weather_alerts?.find((a) => a.id === selectedEntity.id)
+              ?? data?.global_weather_hazards?.find((a) => a.id === selectedEntity.id);
             if (!alert) return null;
             const sevColors: Record<string, string> = { Extreme: '#ef4444', Severe: '#f97316', Moderate: '#eab308', Minor: '#3b82f6' };
-            const accent = sevColors[alert.severity] || '#3b82f6';
+            const accent = sevColors[alert.severity] || (alert.source === 'GDACS' ? '#c026d3' : '#3b82f6');
             const geom = alert.geometry;
             const coords = geom?.type === 'Polygon' ? geom.coordinates?.[0]?.[0] : geom?.type === 'MultiPolygon' ? geom.coordinates?.[0]?.[0]?.[0] : null;
             if (!coords) return null;
+            const sourceLabel = alert.source === 'GDACS' ? 'GDACS' : 'NOAA/NWS';
             return (
               <Popup longitude={coords[0]} latitude={coords[1]} closeButton={false} closeOnClick={false} onClose={() => onEntityClick?.(null)} className="threat-popup" maxWidth="300px">
                 <div className="map-popup bg-[#1a1035] min-w-[220px]" style={{ borderColor: `${accent}66` }}>
@@ -5651,8 +5785,20 @@ const MaplibreViewer = ({
                   </div>
                   <div className="map-popup-row text-white text-[10px] leading-snug">{alert.headline}</div>
                   <div className="map-popup-row">Severity: <span style={{ color: accent }}>{alert.severity}</span></div>
+                  {alert.country && <div className="map-popup-row">Region: <span className="text-white">{alert.country}</span></div>}
                   {alert.expires && <div className="map-popup-row">Expires: <span className="text-white">{new Date(alert.expires).toLocaleString()}</span></div>}
                   <div className="mt-1 text-[9px] text-gray-400 leading-snug max-h-[60px] overflow-hidden">{alert.description}</div>
+                  {alert.report_url ? (
+                    <a
+                      href={alert.report_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-block text-[9px] tracking-wider text-cyan-400 hover:text-cyan-300"
+                    >
+                      VIEW GDACS REPORT →
+                    </a>
+                  ) : null}
+                  <div className="mt-1.5 text-[9px] tracking-wider text-gray-500">WEATHER — {sourceLabel}</div>
                 </div>
               </Popup>
             );

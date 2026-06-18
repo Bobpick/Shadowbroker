@@ -34,6 +34,7 @@ import {
   ToggleLeft,
   ToggleRight,
   Palette,
+  Cloud,
   CloudLightning,
   CloudRain,
   Mountain,
@@ -58,6 +59,7 @@ import { useTranslation } from '@/i18n';
 import SarModeChooserModal from './SarModeChooserModal';
 import KiwiSdrConsentDialog from './ui/KiwiSdrConsentDialog';
 import { extractGtAlerts } from '@/lib/gtAlerts';
+import { OPEN_METEO_FORECAST_STEPS } from '@/lib/openMeteoMap';
 
 function relativeTime(iso: string | undefined): string {
   if (!iso) return '';
@@ -103,6 +105,9 @@ const FRESHNESS_MAP: Record<string, string> = {
   ukraine_alerts: 'ukraine_alerts',
   weather_alerts: 'weather_alerts',
   weather_radar: 'weather',
+  weather_cloud: 'weather_forecast',
+  weather_precip: 'weather_forecast',
+  global_weather_hazards: 'global_weather_hazards',
   air_quality: 'air_quality',
   volcanoes: 'volcanoes',
   fishing_activity: 'fishing_activity',
@@ -675,6 +680,8 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   onMinimizedChange,
   onOpenSarAoiEditor,
   viewBoundsRef,
+  weatherForecastOffset = 0,
+  setWeatherForecastOffset,
 }: {
   activeLayers: ActiveLayers;
   setActiveLayers: React.Dispatch<React.SetStateAction<ActiveLayers>>;
@@ -701,6 +708,8 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   onMinimizedChange?: (minimized: boolean) => void;
   onOpenSarAoiEditor?: () => void;
   viewBoundsRef?: React.RefObject<{ south: number; west: number; north: number; east: number } | null>;
+  weatherForecastOffset?: number;
+  setWeatherForecastOffset?: (offset: number) => void;
 }) {
   const data = useDataSnapshot() as import('@/types/dashboard').DashboardData;
   const { t } = useTranslation();
@@ -1139,6 +1148,27 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
           source: 'RainViewer',
           count: data?.weather?.time ? 1 : 0,
           icon: CloudRain,
+        },
+        {
+          id: 'weather_cloud',
+          name: t('layers.weatherCloud'),
+          source: 'Open-Meteo',
+          count: data?.weather_forecast?.valid_times?.length ? 1 : 0,
+          icon: Cloud,
+        },
+        {
+          id: 'weather_precip',
+          name: t('layers.weatherPrecip'),
+          source: 'Open-Meteo',
+          count: data?.weather_forecast?.valid_times?.length ? 1 : 0,
+          icon: Droplets,
+        },
+        {
+          id: 'global_weather_hazards',
+          name: t('layers.globalWeatherHazards'),
+          source: 'GDACS',
+          count: data?.global_weather_hazards?.length || 0,
+          icon: Globe,
         },
         {
           id: 'volcanoes',
@@ -1870,6 +1900,33 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
                                     )}
                                   </div>
                                 </div>
+                                {/* Open-Meteo forecast time step (shared by cloud + precip overlays) */}
+                                {layer.id === 'weather_precip' &&
+                                  setWeatherForecastOffset &&
+                                  (activeLayers.weather_cloud || activeLayers.weather_precip) && (
+                                    <div
+                                      className="ml-7 mt-2 flex items-center gap-1"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <span className="text-[10px] text-[var(--text-muted)] font-mono mr-1">
+                                        {t('layers.weatherForecast')}
+                                      </span>
+                                      {OPEN_METEO_FORECAST_STEPS.map((step) => (
+                                        <button
+                                          key={step.id}
+                                          type="button"
+                                          onClick={() => setWeatherForecastOffset(step.offset)}
+                                          className={`text-[10px] font-mono px-1.5 py-0.5 border transition-colors ${
+                                            weatherForecastOffset === step.offset
+                                              ? 'border-cyan-500/50 text-cyan-400 bg-cyan-950/30'
+                                              : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:text-cyan-400'
+                                          }`}
+                                        >
+                                          {step.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
                                 {/* GIBS Imagery inline controls */}
                                 {active &&
                                   layer.id === 'gibs_imagery' &&

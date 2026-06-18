@@ -806,7 +806,8 @@ async def live_data_slow(
         "earthquakes", "frontlines", "gdelt", "airports", "kiwisdr", "satnogs_stations",
         "satnogs_observations", "tinygs_satellites", "space_weather", "internet_outages",
         "firms_fires", "datacenters", "military_bases", "power_plants", "viirs_change_nodes",
-        "scanners", "weather_alerts", "ukraine_alerts", "air_quality", "volcanoes",
+        "scanners", "weather_alerts", "global_weather_hazards", "weather_forecast",
+        "ukraine_alerts", "air_quality", "volcanoes",
         "fishing_activity", "psk_reporter", "correlations", "uap_sightings", "wastewater",
         "wastewater_surveillance",
         "crowdthreat", "threat_level", "trending_markets", "road_corridor_trends",
@@ -822,6 +823,9 @@ async def live_data_slow(
         "financial_source": d.get("financial_source", ""),
         "oil": d.get("oil", {}),
         "weather": d.get("weather") if active_layers.get("weather_radar", True) else None,
+        "weather_forecast": d.get("weather_forecast")
+        if active_layers.get("weather_cloud", False) or active_layers.get("weather_precip", False)
+        else None,
         "traffic": d.get("traffic", []),
         "earthquakes": (d.get("earthquakes") or []) if active_layers.get("earthquakes", True) else [],
         "frontlines": d.get("frontlines") if active_layers.get("ukraine_frontline", True) else None,
@@ -843,6 +847,9 @@ async def live_data_slow(
         "viirs_change_nodes": (d.get("viirs_change_nodes") or []) if active_layers.get("viirs_nightlights", True) else [],
         "scanners": (d.get("scanners") or []) if active_layers.get("scanners", True) else [],
         "weather_alerts": d.get("weather_alerts", []) if active_layers.get("weather_alerts", True) else [],
+        "global_weather_hazards": d.get("global_weather_hazards", [])
+        if active_layers.get("global_weather_hazards", True)
+        else [],
         "ukraine_alerts": d.get("ukraine_alerts", []) if active_layers.get("ukraine_alerts", True) else [],
         "air_quality": (d.get("air_quality") or []) if active_layers.get("air_quality", True) else [],
         "volcanoes": (d.get("volcanoes") or []) if active_layers.get("volcanoes", True) else [],

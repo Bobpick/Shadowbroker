@@ -124,6 +124,15 @@ API_REGISTRY = [
         "required": False,
     },
     {
+        "id": "gdacs",
+        "env_key": None,
+        "name": "GDACS",
+        "description": "Global disaster alerts — tropical cyclones, floods, wildfires, and drought. No key required.",
+        "category": "Weather",
+        "url": "https://www.gdacs.org/",
+        "required": False,
+    },
+    {
         "id": "rss_feeds",
         "env_key": None,
         "name": "RSS News Feeds",

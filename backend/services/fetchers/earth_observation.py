@@ -299,6 +299,33 @@ def fetch_weather():
 
 
 # ---------------------------------------------------------------------------
+# Open-Meteo forecast map metadata (cloud / precip spatial tiles)
+# ---------------------------------------------------------------------------
+@with_retry(max_retries=1, base_delay=1)
+def fetch_weather_forecast_meta():
+    """Cache latest Open-Meteo spatial model run for forecast overlay UI."""
+    try:
+        url = "https://map-tiles.open-meteo.com/data_spatial/dwd_icon/latest.json"
+        response = fetch_with_curl(url, timeout=12)
+        if response.status_code != 200:
+            return
+        data = response.json()
+        valid_times = data.get("valid_times") or []
+        with _data_lock:
+            latest_data["weather_forecast"] = {
+                "model": "dwd_icon",
+                "reference_time": data.get("reference_time"),
+                "last_modified_time": data.get("last_modified_time"),
+                "completed": data.get("completed"),
+                "valid_times": valid_times[:48],
+                "variables": ["cloud_cover", "precipitation"],
+            }
+        _mark_fresh("weather_forecast")
+    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError, TypeError) as e:
+        logger.error(f"Error fetching Open-Meteo forecast meta: {e}")
+
+
+# ---------------------------------------------------------------------------
 # NOAA/NWS Severe Weather Alerts
 # ---------------------------------------------------------------------------
 @with_retry(max_retries=1, base_delay=2)
@@ -347,6 +374,24 @@ def fetch_weather_alerts():
         latest_data["weather_alerts"] = alerts
     if alerts:
         _mark_fresh("weather_alerts")
+
+
+# ---------------------------------------------------------------------------
+# GDACS Global Weather / Hydro Hazards
+# ---------------------------------------------------------------------------
+@with_retry(max_retries=1, base_delay=2)
+def fetch_global_weather_hazards():
+    """Fetch GDACS tropical cyclone, flood, wildfire, and drought hazards."""
+    from services.fetchers._store import is_any_active
+    from services.gdacs_weather import fetch_global_weather_hazards as _fetch_gdacs
+
+    if not is_any_active("global_weather_hazards"):
+        return
+    hazards = _fetch_gdacs()
+    with _data_lock:
+        latest_data["global_weather_hazards"] = hazards
+    if hazards:
+        _mark_fresh("global_weather_hazards")
 
 
 # ---------------------------------------------------------------------------

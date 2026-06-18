@@ -480,6 +480,20 @@ export interface WeatherAlert {
   description: string;
   expires: string;
   geometry: GeoJSON.Geometry;
+  source?: string;
+  eventtype?: string;
+  country?: string;
+  alertlevel?: string;
+  report_url?: string;
+}
+
+export interface WeatherForecastMeta {
+  model?: string;
+  reference_time?: string;
+  last_modified_time?: string;
+  completed?: boolean;
+  valid_times?: string[];
+  variables?: string[];
 }
 
 export interface AirQualityStation {
@@ -988,6 +1002,8 @@ export interface DashboardData {
     quotes?: Record<string, { price: number; change_percent: number; up: boolean }>;
   };
   weather?: Weather | null;
+  weather_forecast?: WeatherForecastMeta | null;
+  global_weather_hazards?: WeatherAlert[];
   earthquakes?: Earthquake[];
   frontlines?: FrontlineGeoJSON | null;
   gdelt?: GDELTIncident[];
@@ -1423,6 +1439,9 @@ export interface ActiveLayers {
   ukraine_alerts: boolean;
   weather_alerts: boolean;
   weather_radar: boolean;
+  weather_cloud: boolean;
+  weather_precip: boolean;
+  global_weather_hazards: boolean;
   air_quality: boolean;
   volcanoes: boolean;
   fishing_activity: boolean;
@@ -1485,6 +1504,7 @@ export interface MaplibreViewerProps {
   measurePoints: MeasurePoint[];
   gibsDate: string;
   gibsOpacity: number;
+  weatherForecastOffset?: number;
   sentinelDate?: string;
   sentinelOpacity?: number;
   sentinelPreset?: string;

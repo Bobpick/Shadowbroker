@@ -358,6 +358,7 @@ export default function Dashboard() {
   });
   const [sentinelOpacity, setSentinelOpacity] = useState(0.6);
   const [sentinelPreset, setSentinelPreset] = useState('TRUE-COLOR');
+  const [weatherForecastOffset, setWeatherForecastOffset] = useState(0);
   const [showSentinelInfo, setShowSentinelInfo] = useState(false);
   const prevSentinelRef = useRef(false);
 
@@ -469,6 +470,7 @@ export default function Dashboard() {
             sentinelDate={sentinelDate}
             sentinelOpacity={sentinelOpacity}
             sentinelPreset={sentinelPreset}
+            weatherForecastOffset={weatherForecastOffset}
             isEavesdropping={isEavesdropping}
             onEavesdropClick={setEavesdropLocation}
             onCameraMove={setCameraCenter}
@@ -564,6 +566,8 @@ export default function Dashboard() {
                       setSentinelOpacity={setSentinelOpacity}
                       sentinelPreset={sentinelPreset}
                       setSentinelPreset={setSentinelPreset}
+                      weatherForecastOffset={weatherForecastOffset}
+                      setWeatherForecastOffset={setWeatherForecastOffset}
                       onEntityClick={setSelectedEntity}
                       onFlyTo={handleFlyTo}
                       trackedSdr={trackedSdr}
