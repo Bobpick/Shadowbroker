@@ -233,9 +233,10 @@
     "unknownSource": "unknown source"
   },
   "gtBacktest": {
-    "title": "GT Backtest",
+    "title": "Game Theory Backtest",
     "layerOff": "Off — enable Strategic Risk Heatmap in Data Layers.",
-    "disabled": "GT analytics disabled (set GT_ANALYTICS_ENABLED=true).",
+    "disabled": "Game Theory analytics disabled on server (set GT_ANALYTICS_ENABLED=true).",
+    "unavailable": "Backtest API unavailable — live Game Theory alerts are still active.",
     "loading": "Running historical validation…",
     "refresh": "Refresh backtest",
     "accuracy": "ACCURACY",
@@ -263,7 +264,7 @@
     "microWindow": "{days}-day rolling avg · ignition Δ ≥ {delta}",
     "microIgnitions": "{count} ignition(s)",
     "microAlerted3d": "{count} above threshold on 3d avg",
-    "microEmpty": "Collecting daily readings — refreshes with GT ingest.",
+    "microEmpty": "Collecting daily readings — refreshes with Game Theory ingest.",
     "microRegionLine": "{region}: spot {spot} · 3d {avg} · Δ {delta}",
     "microIgnitionBadge": "IGNITION"
   },

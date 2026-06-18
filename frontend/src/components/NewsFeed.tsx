@@ -539,7 +539,7 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                         {(gtDossierLoading || gtDossier?.enabled) && (
                             <>
                                 <div className="text-[11px] text-amber-500 tracking-widest font-bold border-b border-amber-900/50 pb-1 mt-2">
-                                    STRATEGIC RISK (GT)
+                                    STRATEGIC RISK (GAME THEORY)
                                 </div>
                                 {gtDossierLoading ? (
                                     <div className="text-amber-400/80 text-[11px]">Running game-theoretic analysis...</div>
@@ -575,7 +575,7 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                                         )}
                                         {gtDossier.interpretation && (
                                             <div className="p-2 bg-black/60 border border-amber-800/50 text-[11px] text-amber-200/90 leading-relaxed">
-                                                <span className="text-amber-400 font-bold">&gt;_ GT: </span>
+                                                <span className="text-amber-400 font-bold">&gt;_ GAME THEORY: </span>
                                                 {gtDossier.interpretation}
                                             </div>
                                         )}
