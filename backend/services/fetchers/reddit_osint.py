@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -52,6 +53,26 @@ _ADVERSARIAL_SUBREDDITS = frozenset(
         "communism",
         "antiwar",
     }
+)
+
+_GEOPOLITICAL_SUBREDDITS = frozenset(
+    {
+        "geopolitics",
+        "worldnews",
+        "credibledefense",
+        "lesscredibledefence",
+        "middleeastnews",
+    }
+)
+
+_PROTEST_HINTS = re.compile(
+    r"\b("
+    r"protests?|demonstrat(?:ion|ing)?|rall(?:y|ies)|mobiliz(?:e|ation|ing)?|"
+    r"direct\s+action|vigil|march(?:es|ing)?|sit[\s-]?in|blockade|picket(?:ing)?|"
+    r"general\s+strike|day\s+of\s+action|civil\s+disobedience|"
+    r"counter[\s-]?protests?"
+    r")\b",
+    re.I,
 )
 
 
@@ -141,11 +162,14 @@ def _configured_subreddits() -> list[str]:
     return subs
 
 
-def _narrative_profile(subreddit: str) -> str:
+def _narrative_profile(subreddit: str, *, text: str = "") -> str:
+    haystack = str(text or "").strip()
+    if haystack and _PROTEST_HINTS.search(haystack):
+        return "protest"
     key = str(subreddit or "").strip().lower()
     if key in _ADVERSARIAL_SUBREDDITS:
         return "adversarial"
-    if key in {"geopolitics", "worldnews", "credibledefense", "lesscredibledefence", "middleeastnews"}:
+    if key in _GEOPOLITICAL_SUBREDDITS:
         return "geopolitical"
     return "general"
 
@@ -217,7 +241,7 @@ def _normalize_reddit_post(
         "author": author,
         "reddit_score": int(reddit_score or 0),
         "risk_score": _score_risk(text_for_geo),
-        "narrative_profile": _narrative_profile(sub),
+        "narrative_profile": _narrative_profile(sub, text=text_for_geo),
         "coords": [coords[0], coords[1]] if coords else None,
     }
 

@@ -59,6 +59,30 @@ def test_subreddit_from_link_extracts_slug():
     assert subreddit_from_link("https://www.nbcnews.com/politics/example") == ""
 
 
+def test_narrative_profile_tags_protest_posts():
+    payload = {
+        "data": {
+            "children": [
+                {
+                    "data": {
+                        "title": "Protest scheduled Saturday at Queens ICE facility",
+                        "selftext": "Rally at noon — direct action if agents escalate.",
+                        "permalink": "/r/EyesOnIce/comments/abc/test/",
+                        "created_utc": datetime(2026, 6, 17, 12, 0, tzinfo=timezone.utc).timestamp(),
+                        "subreddit": "EyesOnIce",
+                        "author": "example_user",
+                        "score": 12,
+                    }
+                }
+            ]
+        }
+    }
+
+    posts = parse_reddit_listing(payload, "EyesOnIce")
+    assert len(posts) == 1
+    assert posts[0]["narrative_profile"] == "protest"
+
+
 def test_parse_reddit_rss_geoparses_titles():
     atom = """<?xml version="1.0" encoding="UTF-8"?>
     <feed xmlns="http://www.w3.org/2005/Atom">

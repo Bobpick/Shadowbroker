@@ -344,6 +344,7 @@
     "showTranslation": "SHOW TRANSLATION"
   },
   "reddit": {
+    "disclaimer": "WARNING: Content below is loaded from public Reddit channels. Shadowbroker does not host, verify, or endorse it. What you view is entirely at your own risk and has nothing to do with Shadowbroker.",
     "translatedFrom": "Translated from {lang}",
     "showOriginal": "SHOW ORIGINAL ({lang})",
     "showTranslation": "SHOW TRANSLATION"

@@ -542,8 +542,17 @@ function TelegramOsintPin({ size }: { size: number }) {
 }
 
 /** Orange rounded square with “r” — visually distinct from Telegram circles. */
-function RedditOsintPin({ size, adversarial }: { size: number; adversarial: boolean }) {
+function RedditOsintPin({
+  size,
+  adversarial,
+  protest,
+}: {
+  size: number;
+  adversarial: boolean;
+  protest: boolean;
+}) {
   const fontSize = Math.max(11, Math.round(size * 0.58));
+  const protestStyle = protest && !adversarial;
   return (
     <div
       style={{
@@ -553,11 +562,15 @@ function RedditOsintPin({ size, adversarial }: { size: number; adversarial: bool
         borderRadius: Math.max(5, Math.round(size * 0.28)),
         background: adversarial
           ? 'linear-gradient(145deg, #ea580c 0%, #c2410c 100%)'
-          : 'linear-gradient(145deg, #ff5722 0%, #ff4500 100%)',
-        border: `2px solid ${adversarial ? '#fdba74' : '#ffccbc'}`,
+          : protestStyle
+            ? 'linear-gradient(145deg, #e11d48 0%, #be123c 100%)'
+            : 'linear-gradient(145deg, #ff5722 0%, #ff4500 100%)',
+        border: `2px solid ${adversarial ? '#fdba74' : protestStyle ? '#fda4af' : '#ffccbc'}`,
         boxShadow: adversarial
           ? '0 0 14px rgba(234, 88, 12, 0.85)'
-          : '0 0 12px rgba(255, 69, 0, 0.75)',
+          : protestStyle
+            ? '0 0 12px rgba(225, 29, 72, 0.8)'
+            : '0 0 12px rgba(255, 69, 0, 0.75)',
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
@@ -646,6 +659,7 @@ export function RedditOsintMarkers({ features, onEntityClick }: RedditOsintMarke
         if (!id) return null;
         const postCount = Number(props.post_count || 1);
         const adversarial = props.narrative_profile === 'adversarial';
+        const protest = props.narrative_profile === 'protest';
         const size = postCount > 1 ? Math.min(30, 18 + Math.log2(postCount) * 4) : 18;
 
         return (
@@ -669,7 +683,7 @@ export function RedditOsintMarkers({ features, onEntityClick }: RedditOsintMarke
               title={`Reddit OSINT${postCount > 1 ? ` (${postCount} posts)` : ''}`}
               style={{ position: 'relative' }}
             >
-              <RedditOsintPin size={size} adversarial={adversarial} />
+              <RedditOsintPin size={size} adversarial={adversarial} protest={protest} />
               <OsintPostCountBadge count={postCount} />
             </div>
           </Marker>

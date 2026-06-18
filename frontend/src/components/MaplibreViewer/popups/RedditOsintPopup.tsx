@@ -75,12 +75,14 @@ function postDetail(post: RedditOsintPost, showOriginal: boolean): string | null
 }
 
 function profileLabel(profile?: string): string {
+  if (profile === 'protest') return 'PROTEST';
   if (profile === 'adversarial') return 'ADVERSARIAL NARRATIVE';
   if (profile === 'geopolitical') return 'GEOPOLITICAL';
   return 'GENERAL';
 }
 
 function profileClass(profile?: string): string {
+  if (profile === 'protest') return 'text-rose-200 border-rose-500/40 bg-rose-950/25';
   if (profile === 'adversarial') return 'text-orange-300 border-orange-500/40 bg-orange-950/30';
   if (profile === 'geopolitical') return 'text-amber-200 border-amber-500/30 bg-amber-950/20';
   return 'text-gray-300 border-gray-600/30 bg-gray-900/30';
@@ -139,7 +141,7 @@ function RedditPostCard({ post, locale }: { post: RedditOsintPost; locale: strin
 }
 
 export function RedditOsintPopup({ posts, lat, lng, onClose }: RedditOsintPopupProps) {
-  const { locale } = useTranslation();
+  const { locale, t } = useTranslation();
   const [localizedPosts, setLocalizedPosts] = useState(posts);
 
   useEffect(() => {
@@ -209,6 +211,12 @@ export function RedditOsintPopup({ posts, lat, lng, onClose }: RedditOsintPopupP
           >
             ✕
           </button>
+        </div>
+
+        <div className="mb-2 border border-amber-700/40 bg-black/60 p-2 text-[11px] leading-relaxed text-amber-100/90 relative overflow-hidden">
+          <div className="absolute top-0 left-0 h-full w-[2px] bg-amber-500/80" />
+          <span className="font-bold text-amber-300">&gt;_ SYS.NOTICE: </span>
+          {t('reddit.disclaimer')}
         </div>
 
         <div className="flex max-h-[min(50vh,320px)] flex-col gap-2 overflow-y-auto styled-scrollbar">

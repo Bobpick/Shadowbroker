@@ -343,6 +343,7 @@
     "showTranslation": "AFFICHER LA TRADUCTION"
   },
   "reddit": {
+    "disclaimer": "AVERTISSEMENT : le contenu ci-dessous provient de canaux Reddit publics. Shadowbroker ne l'héberge pas, ne le vérifie pas et ne le cautionne pas. Vous le consultez à vos risques et cela n'a aucun lien avec Shadowbroker.",
     "translatedFrom": "Traduit depuis {lang}",
     "showOriginal": "AFFICHER L'ORIGINAL ({lang})",
     "showTranslation": "AFFICHER LA TRADUCTION"

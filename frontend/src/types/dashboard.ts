@@ -1222,7 +1222,7 @@ export interface RedditOsintPost {
   author?: string;
   reddit_score?: number;
   risk_score?: number;
-  narrative_profile?: 'adversarial' | 'geopolitical' | 'general';
+  narrative_profile?: 'adversarial' | 'geopolitical' | 'protest' | 'general';
   coords?: [number, number] | null;
 }
 
