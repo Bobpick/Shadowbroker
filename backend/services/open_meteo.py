@@ -52,18 +52,21 @@ def weather_code_label(code: int | None) -> str:
     return _WMO_LABELS.get(int(code), f"Code {int(code)}")
 
 
-def _optical_window(hourly: list[dict[str, Any]]) -> dict[str, Any]:
+def _optical_window(
+    hourly: list[dict[str, Any]],
+    current_cloud_pct: float | None = None,
+) -> dict[str, Any]:
     """Assess optical satellite visibility from hourly cloud cover (next 48h)."""
     if not hourly:
         return {
             "status": "unknown",
             "summary": "Forecast unavailable",
-            "cloud_now_pct": None,
+            "cloud_now_pct": current_cloud_pct,
             "best_window_start": None,
             "best_window_end": None,
         }
 
-    now_cloud = hourly[0].get("cloud_cover_pct")
+    now_cloud = current_cloud_pct if current_cloud_pct is not None else hourly[0].get("cloud_cover_pct")
     blocks: list[tuple[str, str, float]] = []
     block_start: str | None = None
     block_end: str | None = None
@@ -203,7 +206,10 @@ def fetch_point_weather(lat: float, lng: float) -> dict[str, Any]:
         },
         "hourly_next_48h": hourly,
         "daily_7d": daily,
-        "optical_window": _optical_window(hourly),
+        "optical_window": _optical_window(
+            hourly,
+            current_raw.get("cloud_cover"),
+        ),
     }
 
     _weather_cache[cache_key] = payload
