@@ -13,6 +13,22 @@ from services.fetchers.retry import with_retry
 from services.oracle_service import enrich_news_items, compute_global_threat_level, detect_breaking_events
 
 
+def _published_ts_from_entry(entry: dict) -> float:
+    """UTC epoch seconds from feedparser's published_parsed, else 0."""
+    pp = entry.get("published_parsed")
+    if not pp:
+        return 0.0
+    try:
+        return float(calendar.timegm(pp))
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+
+
+def _news_feed_sort_key(item: dict) -> tuple[float, int]:
+    """Newest first; risk score breaks ties."""
+    return (float(item.get("published_ts") or 0), int(item.get("risk_score") or 0))
+
+
 def news_fetch_enabled() -> bool:
     """Return True only when the operator explicitly opts into news RSS pulls.
 
@@ -297,6 +313,7 @@ def fetch_news():
                 "title": title,
                 "link": entry.get('link', ''),
                 "published": entry.get('published', ''),
+                "published_ts": _published_ts_from_entry(entry),
                 "source": source_name,
                 "risk_score": risk_score,
                 "coords": [lat, lng] if lat is not None else None
@@ -304,14 +321,23 @@ def fetch_news():
 
     news_items = []
     for key, articles in clusters.items():
-        articles.sort(key=lambda x: (x['risk_score'], source_weights.get(x["source"], 0)), reverse=True)
-        max_risk = articles[0]['risk_score']
+        articles.sort(
+            key=lambda x: (
+                float(x.get("published_ts") or 0),
+                x["risk_score"],
+                source_weights.get(x["source"], 0),
+            ),
+            reverse=True,
+        )
+        max_risk = max(article["risk_score"] for article in articles)
+        cluster_published_ts = max(float(article.get("published_ts") or 0) for article in articles)
 
         top_article = articles[0]
         news_items.append({
             "title": top_article["title"],
             "link": top_article["link"],
             "published": top_article["published"],
+            "published_ts": cluster_published_ts,
             "source": top_article["source"],
             "risk_score": max_risk,
             "coords": top_article["coords"],
@@ -320,7 +346,7 @@ def fetch_news():
             "machine_assessment": None
         })
 
-    news_items.sort(key=lambda x: x['risk_score'], reverse=True)
+    news_items.sort(key=_news_feed_sort_key, reverse=True)
 
     # Oracle enrichment: sentiment, oracle scores, prediction market odds
     try:

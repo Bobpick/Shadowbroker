@@ -11,7 +11,7 @@ import { fetchWikipediaSummary } from '@/lib/wikimediaClient';
 import type { SelectedEntity, RegionDossier, FimiData } from "@/types/dashboard";
 import { useDataKeys } from '@/hooks/useDataStore';
 import { API_BASE } from '@/lib/api';
-import { formatEventTimestamp } from '@/lib/eventDateTime';
+import { compareEventTimestampsDesc, formatEventTimestamp } from '@/lib/eventDateTime';
 import { consolidateCostlySignals, formatConsolidatedSources } from '@/lib/gtSignals';
 import { lookupShodanHost } from '@/lib/shodanClient';
 import type { ShodanHost } from '@/types/shodan';
@@ -342,7 +342,10 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
         }
     }
 
-    const news = data?.news || [];
+    const news = useMemo(
+        () => [...(data?.news || [])].sort((a, b) => compareEventTimestampsDesc(a.published, b.published)),
+        [data?.news],
+    );
     const fimi: FimiData | undefined = data?.fimi;
 
     // Cross-reference: check if a news article title matches any FIMI disinfo keywords
@@ -2051,7 +2054,10 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                                                 exit={{ height: 0, opacity: 0 }}
                                                 className="mt-2 pt-2 border-t border-cyan-500/20 flex flex-col gap-2 overflow-hidden"
                                             >
-                                                {item.articles.slice(1).map((subItem: any, subIdx: number) => (
+                                                {[...item.articles]
+                                                    .slice(1)
+                                                    .sort((a, b) => compareEventTimestampsDesc(a.published, b.published))
+                                                    .map((subItem: any, subIdx: number) => (
                                                     <div key={subIdx} className="flex flex-col gap-0.5 pl-2 border-l border-cyan-500/20">
                                                         <div className="flex items-center justify-between text-[11px] uppercase font-bold">
                                                             <span className="text-white">&gt;_ {subItem.source}</span>

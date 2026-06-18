@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from services.fetchers.news import _resolve_coords
+from services.fetchers.news import _news_feed_sort_key, _resolve_coords
 from services.news_feed_config import DEFAULT_FEEDS, _normalise_feeds
 
 
@@ -163,3 +163,9 @@ class TestFeedConfig:
         urls = {f["url"] for f in feeds}
         assert "https://feeds.bbci.co.uk/news/world/rss.xml" in urls
         assert "https://www.news.cn/english/rss/worldrss.xml" in urls
+
+
+def test_news_feed_sort_key_prefers_newest_published():
+    older = {"published_ts": 1_700_000_000, "risk_score": 10}
+    newer = {"published_ts": 1_800_000_000, "risk_score": 3}
+    assert _news_feed_sort_key(newer) > _news_feed_sort_key(older)
