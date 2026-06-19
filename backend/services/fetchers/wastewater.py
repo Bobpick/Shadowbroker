@@ -138,31 +138,75 @@ def select_batch_ids(
     *,
     cursor: int,
     batch_size: int,
-) -> tuple[list[str], int]:
-    """Pick the next plant IDs to fetch, prioritizing sites without series data."""
+    no_data_ids: set[str] | None = None,
+    unfetched_cursor: int = 0,
+) -> tuple[list[str], int, int]:
+    """Pick the next plant IDs to fetch.
+
+    Unfetched sites are tried first (paginated). Sites that repeatedly return
+    no recent pathogen series are skipped via ``no_data_ids``. Remaining batch
+    slots refresh already-loaded plants so national rollups keep moving.
+    """
     ordered = sorted(all_ids)
     if not ordered:
-        return [], 0
+        return [], 0, 0
 
-    unfetched = [
+    skip = no_data_ids or set()
+    pending = [
         pid
         for pid in ordered
-        if not (plant_map.get(pid) or {}).get("pathogens")
+        if pid not in skip and not (plant_map.get(pid) or {}).get("pathogens")
     ]
-    batch: list[str] = unfetched[:batch_size]
+
+    batch: list[str] = []
+    new_unfetched_cursor = unfetched_cursor
+
+    if pending:
+        start = unfetched_cursor % len(pending)
+        idx = start
+        guard = 0
+        while len(batch) < batch_size and guard < len(pending):
+            pid = pending[idx % len(pending)]
+            if pid not in batch:
+                batch.append(pid)
+            idx += 1
+            guard += 1
+        new_unfetched_cursor = idx % len(pending)
 
     if len(batch) < batch_size:
         index = cursor % len(ordered)
         guard = 0
         while len(batch) < batch_size and guard < len(ordered) * 2:
             pid = ordered[index % len(ordered)]
-            if pid not in batch:
+            if pid not in batch and pid not in skip:
                 batch.append(pid)
             index += 1
             guard += 1
         cursor = index % len(ordered)
 
-    return batch, cursor
+    return batch, cursor, new_unfetched_cursor
+
+
+def _update_batch_failures(
+    state: dict[str, Any],
+    batch_ids: list[str],
+    plant_map: dict[str, dict[str, Any]],
+) -> None:
+    """Track plants that never return a parseable series so we stop wedging on them."""
+    no_data_ids = set(state.get("no_data_ids") or [])
+    failures: dict[str, int] = dict(state.get("fetch_failures") or {})
+
+    for pid in batch_ids:
+        if (plant_map.get(pid) or {}).get("pathogens"):
+            failures.pop(pid, None)
+            no_data_ids.discard(pid)
+            continue
+        failures[pid] = failures.get(pid, 0) + 1
+        if failures[pid] >= 2:
+            no_data_ids.add(pid)
+
+    state["fetch_failures"] = failures
+    state["no_data_ids"] = sorted(no_data_ids)
 
 
 def _snapshot_exists_today() -> bool:
@@ -320,18 +364,24 @@ def fetch_wastewater():
     all_ids = sorted(plant_map.keys())
     state = _load_fetch_state()
     cursor = int(state.get("cursor") or 0)
-    batch_ids, new_cursor = select_batch_ids(
+    unfetched_cursor = int(state.get("unfetched_cursor") or 0)
+    no_data_ids = set(state.get("no_data_ids") or [])
+    batch_ids, new_cursor, new_unfetched_cursor = select_batch_ids(
         all_ids,
         plant_map,
         cursor=cursor,
         batch_size=_BATCH_SIZE,
+        no_data_ids=no_data_ids,
+        unfetched_cursor=unfetched_cursor,
     )
 
     batch_ok = _fetch_plant_batch(batch_ids, plant_map)
+    _update_batch_failures(state, batch_ids, plant_map)
 
     state.update(
         {
             "cursor": new_cursor,
+            "unfetched_cursor": new_unfetched_cursor,
             "last_batch_at": datetime.now(timezone.utc).isoformat(),
             "last_batch_ids": len(batch_ids),
             "last_batch_ok": batch_ok,
@@ -342,7 +392,7 @@ def fetch_wastewater():
     nodes = list(plant_map.values())
     active_nodes = [n for n in nodes if n.get("pathogens")]
 
-    if active_nodes and not _snapshot_exists_today():
+    if active_nodes:
         rollups = build_pathogen_rollups(active_nodes)
         save_daily_snapshot(rollups)
 

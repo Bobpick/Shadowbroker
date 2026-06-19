@@ -296,7 +296,17 @@ def load_baseline_snapshot(*, lookback_days: int = BASELINE_LOOKBACK_DAYS) -> di
         if path.stem <= target_day:
             candidates.append((path.stem, path))
     if not candidates:
-        return None
+        # New deployments may not have a full lookback window yet — compare
+        # against the newest snapshot before today for day-over-day deltas.
+        today = _utcnow().strftime("%Y-%m-%d")
+        recent = [(path.stem, path) for path in directory.glob("*.json") if path.stem < today]
+        if not recent:
+            return None
+        recent.sort(key=lambda item: item[0], reverse=True)
+        try:
+            return json.loads(recent[0][1].read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
     candidates.sort(key=lambda item: item[0], reverse=True)
     try:
         return json.loads(candidates[0][1].read_text(encoding="utf-8"))

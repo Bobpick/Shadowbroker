@@ -11,9 +11,16 @@ export const SAR_EXCAVATION_KINDS = new Set([
 
 export const SAR_WATER_KINDS = new Set(['surface_water_change', 'flood_extent']);
 
-export function readSarKindFilter(storage: Pick<Storage, 'getItem'> = localStorage): SarKindFilter {
+function defaultStorage(): Storage | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage;
+}
+
+export function readSarKindFilter(storage?: Pick<Storage, 'getItem'> | null): SarKindFilter {
   try {
-    const value = storage.getItem(SAR_KIND_FILTER_STORAGE_KEY);
+    const store = storage ?? defaultStorage();
+    if (!store) return 'excavation';
+    const value = store.getItem(SAR_KIND_FILTER_STORAGE_KEY);
     if (value === 'water' || value === 'all') return value;
   } catch {
     // ignore
@@ -23,10 +30,12 @@ export function readSarKindFilter(storage: Pick<Storage, 'getItem'> = localStora
 
 export function writeSarKindFilter(
   filter: SarKindFilter,
-  storage: Pick<Storage, 'setItem'> = localStorage,
+  storage?: Pick<Storage, 'setItem'> | null,
 ): void {
   try {
-    storage.setItem(SAR_KIND_FILTER_STORAGE_KEY, filter);
+    const store = storage ?? defaultStorage();
+    if (!store) return;
+    store.setItem(SAR_KIND_FILTER_STORAGE_KEY, filter);
   } catch {
     // ignore
   }
