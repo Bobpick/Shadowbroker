@@ -1,6 +1,6 @@
 """Wastewater trend analysis and national rollup tests."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from services.fetchers.wastewater_trends import (
     build_pathogen_rollups,
@@ -25,9 +25,12 @@ def test_compute_pathogen_trend_detects_escalation():
 
 
 def test_parse_plant_series_extracts_trend_and_history():
+    today = datetime.now(timezone.utc).date()
+    early = (today - timedelta(days=14)).isoformat()
+    recent = (today - timedelta(days=2)).isoformat()
     samples = [
         {
-            "collection_date": "2026-05-28",
+            "collection_date": early,
             "targets": {
                 "Rota": {
                     "gc_g_dry_weight": 1000,
@@ -37,7 +40,7 @@ def test_parse_plant_series_extracts_trend_and_history():
             },
         },
         {
-            "collection_date": "2026-06-11",
+            "collection_date": recent,
             "targets": {
                 "Rota": {
                     "gc_g_dry_weight": 5000,

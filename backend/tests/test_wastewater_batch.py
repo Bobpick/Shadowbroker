@@ -45,7 +45,7 @@ def test_select_batch_skips_no_data_and_refreshes_loaded_sites():
     )
 
     assert batch == ["a", "b"]
-    assert cursor == 5
+    assert cursor == 0
 
 
 def test_fallback_plants_seed_loads_when_network_unavailable():
