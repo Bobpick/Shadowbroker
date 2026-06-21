@@ -1,0 +1,10 @@
+# Ethics audit logs contain full document text and prompts — keep private
+session_logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/

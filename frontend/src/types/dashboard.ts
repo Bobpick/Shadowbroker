@@ -524,6 +524,42 @@ export interface WastewaterPathogen {
   normalized: number;
   activity: string;
   alert: boolean;
+  trend?: 'rising' | 'stable' | 'falling';
+  history?: Array<{
+    date: string;
+    activity: string;
+    alert: boolean;
+    normalized: number;
+  }>;
+}
+
+export interface WastewaterSurveillancePathogen {
+  name: string;
+  target_key?: string;
+  states_rising: number;
+  states_alert: number;
+  sites_rising: number;
+  sites_alert: number;
+  states_rising_delta?: number;
+  states_alert_delta?: number;
+  rising_rate_pct?: number | null;
+  rising_rate_display?: string;
+  alert_rate_pct?: number | null;
+  trend?: 'rising' | 'stable' | 'falling';
+}
+
+export interface WastewaterSurveillanceSummary {
+  updated_at?: string | null;
+  baseline_date?: string | null;
+  baseline_lookback_days?: number;
+  marker?: { lat: number; lng: number };
+  plants_monitored?: number;
+  plants_active?: number;
+  pathogens_tracked?: number;
+  pathogens_rising?: number;
+  signature?: string;
+  pathogens?: WastewaterSurveillancePathogen[];
+  rising_pathogens?: WastewaterSurveillancePathogen[];
 }
 
 export interface WastewaterPlant {
@@ -539,6 +575,7 @@ export interface WastewaterPlant {
   pathogens: WastewaterPathogen[];
   alert_count: number;
   collection_date: string;
+  sample_age_days?: number | null;
   source: string;
 }
 
@@ -909,6 +946,7 @@ export interface DashboardData {
 
   // WastewaterSCAN pathogen surveillance
   wastewater?: WastewaterPlant[];
+  wastewater_surveillance?: WastewaterSurveillanceSummary;
 
   // CrowdThreat — crowdsourced threat intelligence
   crowdthreat?: CrowdThreatItem[];

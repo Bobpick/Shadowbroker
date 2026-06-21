@@ -19,6 +19,11 @@ import MeshTerminal from '@/components/MeshTerminal';
 import MeshChat from '@/components/MeshChat';
 import InfonetTerminal from '@/components/InfonetTerminal';
 import { endInfonetTerminalSession } from '@/lib/infonetTerminalSession';
+import {
+  DEFAULT_ACTIVE_LAYERS,
+  loadActiveLayersFromStorage,
+  saveActiveLayersToStorage,
+} from '@/lib/activeLayersStorage';
 import ShodanPanel from '@/components/ShodanPanel';
 import ReconPanel from '@/components/ReconPanel';
 import ScmPanel from '@/components/ScmPanel';
@@ -180,74 +185,19 @@ export default function Dashboard() {
     });
   }, []);
 
-  const [activeLayers, setActiveLayers] = useState<ActiveLayers>({
-    // Aircraft — all ON
-    flights: true,
-    private: true,
-    jets: true,
-    military: true,
-    tracked: true,
-    gps_jamming: true,
-    // Maritime — all ON
-    ships_military: true,
-    ships_cargo: true,
-    ships_civilian: true,
-    ships_passenger: true,
-    ships_tracked_yachts: true,
-    fishing_activity: true,
-    // Space — only satellites
-    satellites: true,
-    gibs_imagery: false,
-    highres_satellite: false,
-    sentinel_hub: false,
-    viirs_nightlights: false,
-    road_corridor_trends: false,
-    malware_c2: false,
-    submarine_cables: false,
-    scm_suppliers: false,
-    cyber_threats: false,
-    telegram_osint: true,
-    // Hazards — no fire, rest ON
-    earthquakes: true,
-    firms: false,
-    ukraine_alerts: true,
-    weather_alerts: true,
-    volcanoes: true,
-    air_quality: true,
-    // Infrastructure — military bases + internet outages only
-    cctv: false,
-    datacenters: false,
-    internet_outages: true,
-    power_plants: false,
-    military_bases: true,
-    trains: false,
-    // SIGINT — all ON except HF digital spots
-    kiwisdr: true,
-    psk_reporter: false,
-    satnogs: true,
-    tinygs: true,
-    scanners: true,
-    sigint_meshtastic: true,
-    sigint_aprs: true,
-    // Overlays
-    ukraine_frontline: true,
-    global_incidents: true,
-    day_night: true,
-    correlations: true,
-    contradictions: true,
-    uap_sightings: true,
-    // Biosurveillance
-    wastewater: true,
-    // CrowdThreat is operator opt-in only.
-    crowdthreat: false,
-    gt_risk: true,
-    // Shodan
-    shodan_overlay: false,
-    // AI Intel
-    ai_intel: true,
-    // SAR (Synthetic Aperture Radar)
-    sar: true,
-  });
+  const [activeLayers, setActiveLayers] = useState<ActiveLayers>(DEFAULT_ACTIVE_LAYERS);
+  const activeLayersHydratedRef = useRef(false);
+
+  useEffect(() => {
+    const saved = loadActiveLayersFromStorage();
+    if (saved) setActiveLayers(saved);
+    activeLayersHydratedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!activeLayersHydratedRef.current) return;
+    saveActiveLayersToStorage(activeLayers);
+  }, [activeLayers]);
   const regionLat =
     selectedEntity?.type === 'region_dossier' ? selectedEntity.extra?.lat : undefined;
   const regionLng =

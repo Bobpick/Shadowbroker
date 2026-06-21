@@ -81,8 +81,15 @@ export function WastewaterPopup({ plant, onClose }: WastewaterPopupProps) {
                 <span className={p.alert ? 'text-red-300 font-semibold' : 'text-gray-300'}>
                   {p.name}
                 </span>
-                <span className={`font-mono ${ACTIVITY_COLORS[p.activity.toLowerCase()] || 'text-gray-400'}`}>
-                  {p.activity.toUpperCase()}
+                <span className="flex items-center gap-1.5">
+                  {p.trend === 'rising' ? (
+                    <span className="text-amber-300 font-bold">↑</span>
+                  ) : p.trend === 'falling' ? (
+                    <span className="text-blue-300 font-bold">↓</span>
+                  ) : null}
+                  <span className={`font-mono ${ACTIVITY_COLORS[p.activity.toLowerCase()] || 'text-gray-400'}`}>
+                    {p.activity.toUpperCase()}
+                  </span>
                 </span>
               </div>
             ))}

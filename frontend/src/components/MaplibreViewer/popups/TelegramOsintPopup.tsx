@@ -5,6 +5,7 @@ import { Popup } from 'react-map-gl/maplibre';
 import { Radio } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import { TELEGRAM_MARKER_OFFSET } from '@/components/map/geoJSONBuilders';
+import { compareEventTimestampsDesc, formatEventTimestamp } from '@/lib/eventDateTime';
 import { buildTelegramMediaProxyUrl } from '@/lib/telegramProxy';
 import type { TelegramOsintPost } from '@/types/dashboard';
 
@@ -13,15 +14,6 @@ export interface TelegramOsintPopupProps {
   lat: number;
   lng: number;
   onClose: () => void;
-}
-
-function formatTime(pubDate?: string) {
-  if (!pubDate) return '';
-  try {
-    return new Date(pubDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
 }
 
 function riskTheme(rs: number) {
@@ -69,6 +61,29 @@ function riskTheme(rs: number) {
   };
 }
 
+const CYRILLIC_RE = /[\u0400-\u04FF]/;
+
+function containsCyrillic(text: string): boolean {
+  return CYRILLIC_RE.test(text);
+}
+
+function sourceLangLabel(post: TelegramOsintPost): string {
+  if (post.source_lang_label) return post.source_lang_label;
+  const code = String(post.source_lang || '').trim().toLowerCase();
+  const labels: Record<string, string> = {
+    uk: 'Ukrainian',
+    ru: 'Russian',
+    en: 'English',
+    ar: 'Arabic',
+    he: 'Hebrew',
+    'zh-cn': 'Chinese',
+    fr: 'French',
+    de: 'German',
+    pl: 'Polish',
+  };
+  return labels[code] || code.toUpperCase();
+}
+
 function hasTranslation(post: TelegramOsintPost): boolean {
   const translated = String(post.title_translated || post.description_translated || '').trim();
   const original = String(post.title || post.description || '').trim();
@@ -76,10 +91,15 @@ function hasTranslation(post: TelegramOsintPost): boolean {
 }
 
 function postHeadline(post: TelegramOsintPost, showOriginal: boolean): string {
-  if (!showOriginal && post.title_translated) {
-    return post.title_translated.trim();
+  const original = String(post.title || post.description || 'Telegram intercept').trim();
+  const translated = String(post.title_translated || post.description_translated || '').trim();
+  if (!showOriginal && translated) {
+    return translated.split('\n', 1)[0].trim();
   }
-  return String(post.title || post.description || 'Telegram intercept').trim();
+  if (!showOriginal && containsCyrillic(original) && translated) {
+    return translated.split('\n', 1)[0].trim();
+  }
+  return original;
 }
 
 function postDetail(post: TelegramOsintPost, showOriginal: boolean): string | null {
@@ -143,7 +163,7 @@ function TelegramPostMedia({ post }: { post: TelegramOsintPost }) {
   );
 }
 
-function TelegramPostCard({ post }: { post: TelegramOsintPost }) {
+function TelegramPostCard({ post, locale }: { post: TelegramOsintPost; locale: string }) {
   const { t } = useTranslation();
   const [showOriginal, setShowOriginal] = useState(false);
   const rs = post.risk_score ?? 1;
@@ -162,7 +182,7 @@ function TelegramPostCard({ post }: { post: TelegramOsintPost }) {
           {isHigh && <span className="text-red-400 mr-1">BREAKING</span>}
           &gt;_ {post.source || 'TELEGRAM'}
         </span>
-        <span>[{formatTime(post.published)}]</span>
+        <span>[{formatEventTimestamp(post.published, { locale, style: 'compact' })}]</span>
       </div>
 
       <h3 className={`text-[12px] leading-tight ${theme.titleClass}`}>{headline}</h3>
@@ -173,7 +193,7 @@ function TelegramPostCard({ post }: { post: TelegramOsintPost }) {
 
       {translated && !showOriginal && post.source_lang ? (
         <p className="text-[10px] text-cyan-700/80 uppercase tracking-wider">
-          {t('telegram.translatedFrom').replace('{lang}', post.source_lang.toUpperCase())}
+          {t('telegram.translatedFrom').replace('{lang}', sourceLangLabel(post))}
         </p>
       ) : null}
 
@@ -189,7 +209,9 @@ function TelegramPostCard({ post }: { post: TelegramOsintPost }) {
             onClick={() => setShowOriginal((prev) => !prev)}
             className="text-[11px] font-mono text-cyan-600 hover:text-cyan-300 transition-colors"
           >
-            {showOriginal ? t('telegram.showTranslation') : t('telegram.showOriginal')}
+            {showOriginal
+              ? t('telegram.showTranslation')
+              : t('telegram.showOriginal').replace('{lang}', sourceLangLabel(post))}
           </button>
         ) : null}
         {post.link ? (
@@ -216,13 +238,8 @@ export function TelegramOsintPopup({ posts, lat, lng, onClose }: TelegramOsintPo
   }, [posts]);
 
   useEffect(() => {
-    const needsLocale = posts.some(
-      (post) =>
-        post.source_lang &&
-        post.source_lang !== locale &&
-        post.translate_to !== locale,
-    );
-    if (!needsLocale) {
+    const needsLocalizedFeed = posts.some((post) => !hasTranslation(post));
+    if (!needsLocalizedFeed) {
       return;
     }
 
@@ -250,15 +267,18 @@ export function TelegramOsintPopup({ posts, lat, lng, onClose }: TelegramOsintPo
 
   const sortedPosts = useMemo(
     () =>
-      [...localizedPosts].sort(
-        (a, b) =>
-          (b.risk_score ?? 0) - (a.risk_score ?? 0) ||
-          String(b.published || '').localeCompare(String(a.published || '')),
-      ),
+      [...localizedPosts].sort((a, b) => {
+        const byDate = compareEventTimestampsDesc(a.published, b.published);
+        if (byDate !== 0) return byDate;
+        return (b.risk_score ?? 0) - (a.risk_score ?? 0);
+      }),
     [localizedPosts],
   );
 
-  const maxRisk = sortedPosts[0]?.risk_score ?? 1;
+  const maxRisk = useMemo(
+    () => localizedPosts.reduce((max, post) => Math.max(max, post.risk_score ?? 0), 0) || 1,
+    [localizedPosts],
+  );
   const header = riskTheme(maxRisk);
 
   return (
@@ -321,7 +341,7 @@ export function TelegramOsintPopup({ posts, lat, lng, onClose }: TelegramOsintPo
 
         <div className="overflow-y-auto styled-scrollbar flex flex-col gap-2 p-3 max-h-[min(420px,55vh)]">
           {sortedPosts.map((post) => (
-            <TelegramPostCard key={post.id} post={post} />
+            <TelegramPostCard key={post.id} post={post} locale={locale} />
           ))}
         </div>
       </div>

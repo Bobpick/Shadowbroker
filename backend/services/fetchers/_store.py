@@ -65,6 +65,7 @@ class DashboardData(TypedDict, total=False):
     correlations: List[Dict[str, Any]]
     uap_sightings: List[Dict[str, Any]]
     wastewater: List[Dict[str, Any]]
+    wastewater_surveillance: Dict[str, Any]
     crowdthreat: List[Dict[str, Any]]
     sar_scenes: List[Dict[str, Any]]
     sar_anomalies: List[Dict[str, Any]]
@@ -121,6 +122,15 @@ latest_data: DashboardData = {
     "correlations": [],
     "uap_sightings": [],
     "wastewater": [],
+    "wastewater_surveillance": {
+        "updated_at": None,
+        "baseline_date": None,
+        "marker": {"lat": 39.8283, "lng": -98.5795},
+        "pathogens": [],
+        "rising_pathogens": [],
+        "pathogens_rising": 0,
+        "signature": "",
+    },
     "crowdthreat": [],
     "sar_scenes": [],
     "sar_anomalies": [],

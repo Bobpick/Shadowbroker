@@ -183,6 +183,7 @@ import { ShipPopup } from '@/components/MaplibreViewer/popups/ShipPopup';
 import { SigintPopup } from '@/components/MaplibreViewer/popups/SigintPopup';
 import { CorrelationPopup } from '@/components/MaplibreViewer/popups/CorrelationPopup';
 import { WastewaterPopup } from '@/components/MaplibreViewer/popups/WastewaterPopup';
+import { WastewaterSurveillanceBeacon } from '@/components/map/WastewaterSurveillanceBeacon';
 import { MilitaryBasePopup } from '@/components/MaplibreViewer/popups/MilitaryBasePopup';
 import { RegionDossierPanel } from '@/components/MaplibreViewer/popups/RegionDossierPanel';
 import { GtRiskPopup } from '@/components/MaplibreViewer/popups/GtRiskPopup';
@@ -335,6 +336,7 @@ const MAP_EXTRA_DATA_KEYS = [
   'viirs_change_nodes',
   'volcanoes',
   'wastewater',
+  'wastewater_surveillance',
   'weather_alerts',
 ] as const satisfies readonly (keyof DashboardData)[];
 
@@ -4608,6 +4610,13 @@ const MaplibreViewer = ({
               </Popup>
             );
           })()}
+
+        {activeLayers.wastewater && !isMapInteracting ? (
+          <WastewaterSurveillanceBeacon
+            enabled={activeLayers.wastewater}
+            surveillance={data?.wastewater_surveillance}
+          />
+        ) : null}
 
         {/* Wastewater plant popup */}
         {selectedEntity?.type === 'wastewater' &&
