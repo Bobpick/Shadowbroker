@@ -4894,6 +4894,13 @@ const MaplibreViewer = ({
             );
           })()}
 
+        {activeLayers.wastewater && !isMapInteracting ? (
+          <WastewaterSurveillanceBeacon
+            enabled={activeLayers.wastewater}
+            surveillance={data?.wastewater_surveillance}
+          />
+        ) : null}
+
         {/* Wastewater plant popup */}
         {selectedEntity?.type === 'wastewater' &&
           (() => {

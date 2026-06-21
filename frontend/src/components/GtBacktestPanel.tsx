@@ -21,6 +21,10 @@ function pct(value: number | undefined): string {
 
 type GtEnabledReport = { enabled?: boolean } | null;
 
+function reportExplicitlyDisabled(report: GtEnabledReport): boolean {
+  return report != null && report.enabled === false;
+}
+
 function reportPending(report: GtEnabledReport, loading: boolean): boolean {
   return report == null && loading;
 }
@@ -38,7 +42,7 @@ function serverAnalyticsOff(
   loading: boolean,
   liveEnabled: boolean,
 ): boolean {
-  if (report != null && report.enabled === false) return true;
+  if (reportExplicitlyDisabled(report)) return true;
   return report == null && !loading && !liveEnabled;
 }
 
