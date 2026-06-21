@@ -19,9 +19,15 @@ import MeshTerminal from '@/components/MeshTerminal';
 import MeshChat from '@/components/MeshChat';
 import InfonetTerminal from '@/components/InfonetTerminal';
 import { endInfonetTerminalSession } from '@/lib/infonetTerminalSession';
+import {
+  DEFAULT_ACTIVE_LAYERS,
+  loadActiveLayersFromStorage,
+  saveActiveLayersToStorage,
+} from '@/lib/activeLayersStorage';
 import ShodanPanel from '@/components/ShodanPanel';
 import ReconPanel from '@/components/ReconPanel';
 import ScmPanel from '@/components/ScmPanel';
+import GtAnalyticsHud from '@/components/GtAnalyticsHud';
 import EntityGraphPanel from '@/components/EntityGraphPanel';
 import { isEntityGraphEligible } from '@/lib/entityGraph';
 import AIIntelPanel from '@/components/AIIntelPanel';
@@ -36,7 +42,14 @@ import { API_BASE } from '@/lib/api';
 import { useDataPolling, LAYER_TOGGLE_EVENT } from '@/hooks/useDataPolling';
 import { useBackendStatus, useDataKey, useDataKeys } from '@/hooks/useDataStore';
 import { useReverseGeocode } from '@/hooks/useReverseGeocode';
+import { useCursorWeather } from '@/hooks/useCursorWeather';
+import { useTemperatureUnit } from '@/hooks/useTemperatureUnit';
+import { SAR_GUIDE_EVENT, type SarGuideDetail } from '@/lib/sarGuide';
+import { opticalWindowColor } from '@/lib/weatherCodes';
+import type { WeatherRadarMode } from '@/types/dashboard';
+import { readSarKindFilter, writeSarKindFilter, type SarKindFilter } from '@/lib/sarKinds';
 import { useRegionDossier } from '@/hooks/useRegionDossier';
+import { useGtDossier } from '@/hooks/useGtDossier';
 import { useAgentActions } from '@/hooks/useAgentActions';
 import { useFeedHealth } from '@/hooks/useFeedHealth';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -73,6 +86,8 @@ export default function Dashboard() {
   // Non-map widgets can warm up after this; first paint needs flights, ships, and intel first.
   useDataPolling();
   const { mouseCoords, locationLabel, handleMouseCoords } = useReverseGeocode();
+  const { cursorWeather, cursorWeatherLoading, handleCursorWeather } = useCursorWeather();
+  const { unit: tempUnit, setUnit: setTempUnit, formatTemp } = useTemperatureUnit();
   const [selectedEntity, setSelectedEntity] = useState<SelectedEntity | null>(null);
   const [showEntityGraph, setShowEntityGraph] = useState(false);
   useEffect(() => {
@@ -167,6 +182,18 @@ export default function Dashboard() {
 
   useEffect(() => subscribeMeshTerminalOpen(openInfonet), [openInfonet]);
 
+  useEffect(() => {
+    const onSarGuide = (event: Event) => {
+      const detail = (event as CustomEvent<SarGuideDetail>).detail;
+      setLeftOpen(true);
+      if (detail?.lat != null && detail?.lng != null) {
+        setSarAoiDroppedCoords({ lat: detail.lat, lng: detail.lng });
+      }
+    };
+    window.addEventListener(SAR_GUIDE_EVENT, onSarGuide);
+    return () => window.removeEventListener(SAR_GUIDE_EVENT, onSarGuide);
+  }, []);
+
   const toggleInfonet = useCallback(() => {
     setInfonetOpen((prev) => {
       if (prev) {
@@ -177,73 +204,29 @@ export default function Dashboard() {
     });
   }, []);
 
-  const [activeLayers, setActiveLayers] = useState<ActiveLayers>({
-    // Aircraft — all ON
-    flights: true,
-    private: true,
-    jets: true,
-    military: true,
-    tracked: true,
-    gps_jamming: true,
-    // Maritime — all ON
-    ships_military: true,
-    ships_cargo: true,
-    ships_civilian: true,
-    ships_passenger: true,
-    ships_tracked_yachts: true,
-    fishing_activity: true,
-    // Space — only satellites
-    satellites: true,
-    gibs_imagery: false,
-    highres_satellite: false,
-    sentinel_hub: false,
-    viirs_nightlights: false,
-    road_corridor_trends: false,
-    malware_c2: false,
-    submarine_cables: false,
-    scm_suppliers: false,
-    cyber_threats: false,
-    telegram_osint: true,
-    // Hazards — no fire, rest ON
-    earthquakes: true,
-    firms: false,
-    ukraine_alerts: true,
-    weather_alerts: true,
-    volcanoes: true,
-    air_quality: true,
-    // Infrastructure — military bases + internet outages only
-    cctv: false,
-    datacenters: false,
-    internet_outages: true,
-    power_plants: false,
-    military_bases: true,
-    trains: false,
-    // SIGINT — all ON except HF digital spots
-    kiwisdr: true,
-    psk_reporter: false,
-    satnogs: true,
-    tinygs: true,
-    scanners: true,
-    sigint_meshtastic: true,
-    sigint_aprs: true,
-    // Overlays
-    ukraine_frontline: true,
-    global_incidents: true,
-    day_night: true,
-    correlations: true,
-    contradictions: true,
-    uap_sightings: true,
-    // Biosurveillance
-    wastewater: true,
-    // CrowdThreat is operator opt-in only.
-    crowdthreat: false,
-    // Shodan
-    shodan_overlay: false,
-    // AI Intel
-    ai_intel: true,
-    // SAR (Synthetic Aperture Radar)
-    sar: true,
-  });
+  const [activeLayers, setActiveLayers] = useState<ActiveLayers>(DEFAULT_ACTIVE_LAYERS);
+  const activeLayersHydratedRef = useRef(false);
+
+  useEffect(() => {
+    const saved = loadActiveLayersFromStorage();
+    if (saved) setActiveLayers(saved);
+    activeLayersHydratedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!activeLayersHydratedRef.current) return;
+    saveActiveLayersToStorage(activeLayers);
+  }, [activeLayers]);
+  const regionLat =
+    selectedEntity?.type === 'region_dossier' ? selectedEntity.extra?.lat : undefined;
+  const regionLng =
+    selectedEntity?.type === 'region_dossier' ? selectedEntity.extra?.lng : undefined;
+  const { gtDossier, gtDossierLoading } = useGtDossier(
+    typeof regionLat === 'number' ? regionLat : undefined,
+    typeof regionLng === 'number' ? regionLng : undefined,
+    regionDossier?.country?.name,
+    activeLayers.gt_risk,
+  );
   const [shodanResults, setShodanResults] = useState<ShodanSearchMatch[]>([]);
   const [, setShodanQueryLabel] = useState('');
   const [shodanStyle, setShodanStyle] = useState<import('@/types/shodan').ShodanStyleConfig>({ shape: 'circle', color: '#16a34a', size: 'md' });
@@ -395,6 +378,22 @@ export default function Dashboard() {
   });
   const [sentinelOpacity, setSentinelOpacity] = useState(0.6);
   const [sentinelPreset, setSentinelPreset] = useState('TRUE-COLOR');
+  const [weatherForecastOffset, setWeatherForecastOffset] = useState(0);
+  const [weatherRadarMode, setWeatherRadarMode] = useState<WeatherRadarMode>('past');
+  const [weatherRadarFrameIndex, setWeatherRadarFrameIndex] = useState(-1);
+  const [sarKindFilter, setSarKindFilter] = useState<SarKindFilter>(() => readSarKindFilter());
+  const handleSarKindFilter = useCallback((filter: SarKindFilter) => {
+    writeSarKindFilter(filter);
+    setSarKindFilter(filter);
+  }, []);
+
+  const handleMapMouseCoords = useCallback(
+    (coords: { lat: number; lng: number }) => {
+      handleMouseCoords(coords);
+      handleCursorWeather(coords);
+    },
+    [handleMouseCoords, handleCursorWeather],
+  );
   const [showSentinelInfo, setShowSentinelInfo] = useState(false);
   const prevSentinelRef = useRef(false);
 
@@ -506,10 +505,14 @@ export default function Dashboard() {
             sentinelDate={sentinelDate}
             sentinelOpacity={sentinelOpacity}
             sentinelPreset={sentinelPreset}
+            weatherForecastOffset={weatherForecastOffset}
+            weatherRadarMode={weatherRadarMode}
+            weatherRadarFrameIndex={weatherRadarFrameIndex}
+            sarKindFilter={sarKindFilter}
             isEavesdropping={isEavesdropping}
             onEavesdropClick={setEavesdropLocation}
             onCameraMove={setCameraCenter}
-            onMouseCoords={handleMouseCoords}
+            onMouseCoords={handleMapMouseCoords}
             onRightClick={handleMapRightClick}
             regionDossier={regionDossier}
             regionDossierLoading={regionDossierLoading}
@@ -601,6 +604,14 @@ export default function Dashboard() {
                       setSentinelOpacity={setSentinelOpacity}
                       sentinelPreset={sentinelPreset}
                       setSentinelPreset={setSentinelPreset}
+                      weatherForecastOffset={weatherForecastOffset}
+                      setWeatherForecastOffset={setWeatherForecastOffset}
+                      weatherRadarMode={weatherRadarMode}
+                      setWeatherRadarMode={setWeatherRadarMode}
+                      weatherRadarFrameIndex={weatherRadarFrameIndex}
+                      setWeatherRadarFrameIndex={setWeatherRadarFrameIndex}
+                      sarKindFilter={sarKindFilter}
+                      setSarKindFilter={handleSarKindFilter}
                       onEntityClick={setSelectedEntity}
                       onFlyTo={handleFlyTo}
                       trackedSdr={trackedSdr}
@@ -776,6 +787,8 @@ export default function Dashboard() {
                     selectedEntity={selectedEntity}
                     regionDossier={regionDossier}
                     regionDossierLoading={regionDossierLoading}
+                    gtDossier={gtDossier}
+                    gtDossierLoading={gtDossierLoading}
                     onExpandEntityGraph={() => {
                       if (isEntityGraphEligible(selectedEntity)) setShowEntityGraph(true);
                     }}
@@ -834,6 +847,82 @@ export default function Dashboard() {
                     </div>
                     <div className="text-[13px] text-[var(--text-secondary)] font-mono truncate max-w-[320px]">
                       {locationLabel || t('controls.hoverMap')}
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="w-px h-6 bg-[var(--border-primary)]" />
+
+                  {/* Terrestrial weather at crosshair */}
+                  <div
+                    className="flex flex-col items-center min-w-[160px] max-w-[220px]"
+                    title={
+                      [
+                        cursorWeather?.current?.conditions,
+                        cursorWeather?.current?.temperature_c != null
+                          ? formatTemp(cursorWeather.current.temperature_c)
+                          : null,
+                        cursorWeather?.current?.humidity_pct != null
+                          ? `${Math.round(cursorWeather.current.humidity_pct)}% RH`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ') || undefined
+                    }
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="text-[10px] text-[var(--text-muted)] font-mono tracking-[0.2em]">
+                        {t('controls.weather')}
+                      </div>
+                      <div className="flex items-center gap-0.5 text-[9px] font-mono">
+                        <button
+                          type="button"
+                          onClick={() => setTempUnit('C')}
+                          className={
+                            tempUnit === 'C'
+                              ? 'text-cyan-400 font-bold'
+                              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                          }
+                          aria-pressed={tempUnit === 'C'}
+                        >
+                          °C
+                        </button>
+                        <span className="text-[var(--text-muted)]">/</span>
+                        <button
+                          type="button"
+                          onClick={() => setTempUnit('F')}
+                          className={
+                            tempUnit === 'F'
+                              ? 'text-cyan-400 font-bold'
+                              : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                          }
+                          aria-pressed={tempUnit === 'F'}
+                        >
+                          °F
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      className="text-[13px] font-mono font-bold truncate max-w-[220px]"
+                      style={{
+                        color: cursorWeather?.error
+                          ? 'var(--text-muted)'
+                          : opticalWindowColor(cursorWeather?.optical_window?.status),
+                      }}
+                    >
+                      {cursorWeatherLoading
+                        ? '…'
+                        : cursorWeather && !cursorWeather.error
+                          ? `${cursorWeather.current?.conditions ?? '—'}${
+                              cursorWeather.current?.temperature_c != null
+                                ? ` · ${formatTemp(cursorWeather.current.temperature_c)}`
+                                : ''
+                            }${
+                              cursorWeather.current?.humidity_pct != null
+                                ? ` · ${Math.round(cursorWeather.current.humidity_pct)}%RH`
+                                : ''
+                            }`
+                          : t('controls.hoverMap')}
                     </div>
                   </div>
 
@@ -906,6 +995,14 @@ export default function Dashboard() {
           >
             {t('nav.restoreUi')}
           </button>
+        )}
+
+        {uiVisible && (
+          <GtAnalyticsHud
+            layerEnabled={activeLayers.gt_risk}
+            onFlyTo={handleFlyTo}
+            onSelectEntity={setSelectedEntity}
+          />
         )}
 
         {/* DYNAMIC SCALE BAR — hidden when fullscreen overlays or locate bar are open */}

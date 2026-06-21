@@ -99,9 +99,24 @@ def _safe_float(val: Any, default: float = 0.0) -> float:
 # into CMR for arbitrary AOIs so we skip it.
 
 OPERA_SHORTNAMES = (
-    ("OPERA_L3_DSWX-S1_V1", "surface_water_change", "OPERA-DSWx-S1", "Sentinel-1 surface water extent"),
-    ("OPERA_L3_DSWX-HLS_V1", "surface_water_change", "OPERA-DSWx-HLS", "HLS surface water extent"),
-    ("OPERA_L3_DIST-ALERT-HLS_V1", "vegetation_disturbance", "OPERA-DIST-ALERT", "Vegetation/land-surface disturbance alert"),
+    (
+        "OPERA_L3_DSWX-S1_V1",
+        "surface_water_change",
+        "OPERA-DSWx-S1",
+        "Surface water / wetness change (flood monitoring — not excavation)",
+    ),
+    (
+        "OPERA_L3_DSWX-HLS_V1",
+        "surface_water_change",
+        "OPERA-DSWx-HLS",
+        "Surface water / wetness change (optical wetness — not excavation)",
+    ),
+    (
+        "OPERA_L3_DIST-ALERT-HLS_V1",
+        "vegetation_disturbance",
+        "OPERA-DIST-ALERT",
+        "Land cleared or disturbed — possible excavation, grading, or construction",
+    ),
 )
 
 

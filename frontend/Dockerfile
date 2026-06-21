@@ -4,7 +4,19 @@ FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+# npm registry can drop long downloads (ECONNRESET); retry with a cached store.
+RUN --mount=type=cache,target=/root/.npm \
+    npm config set fetch-retries 5 \
+    && npm config set fetch-retry-mintimeout 20000 \
+    && npm config set fetch-retry-maxtimeout 120000 \
+    && npm config set maxsockets 3 \
+    && set -e; \
+    for attempt in 1 2 3 4 5; do \
+      npm ci --no-audit --no-fund && exit 0; \
+      echo "npm ci failed (attempt ${attempt}/5), retrying..." >&2; \
+      sleep $((attempt * 15)); \
+    done; \
+    exit 1
 
 FROM base AS builder
 WORKDIR /app

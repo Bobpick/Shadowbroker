@@ -2,6 +2,10 @@
 // Extracted from MaplibreViewer to reduce component size and enable unit testing.
 // Each function takes data arrays + optional helpers and returns a GeoJSON FeatureCollection or null.
 
+import { compareEventTimestampsDesc } from '@/lib/eventDateTime';
+import { filterTelegramPostsWithinRetention } from '@/lib/telegramRetention';
+import { filterRedditPostsWithinRetention } from '@/lib/redditRetention';
+
 import type {
   Earthquake,
   GPSJammingZone,
@@ -40,7 +44,10 @@ import type {
   CrowdThreatItem,
   SarAnomaly,
   SarAoi,
+  SarScene,
 } from '@/types/dashboard';
+import { pinInsideAoi, pointInAoi } from '@/lib/sarAoiGeometry';
+import { matchesSarKindFilter, sarKindLabel, type SarKindFilter } from '@/lib/sarKinds';
 import { classifyAircraft } from '@/utils/aircraftClassification';
 import { MISSION_COLORS, MISSION_ICON_MAP } from '@/components/map/icons/SatelliteIcons';
 import { weatherIconId } from '@/components/map/icons/AircraftIcons';
@@ -171,6 +178,9 @@ export function buildEarthquakesGeoJSON(earthquakes?: Earthquake[]): FC {
             lng: eq.lng,
             mag: eq.mag,
             place: eq.place,
+            time: eq.time,
+            depth_km: eq.depth_km,
+            url: eq.url,
           },
           geometry: { type: 'Point' as const, coordinates: [eq.lng, eq.lat] },
         };
@@ -1126,7 +1136,11 @@ export function buildWeatherAlertsGeoJSON(alerts?: WeatherAlert[]): FC {
         headline: a.headline,
         description: a.description,
         expires: a.expires,
-        color: SEVERITY_COLORS[a.severity] || '#3b82f6',
+        source: a.source || 'NOAA/NWS',
+        eventtype: a.eventtype || '',
+        country: a.country || '',
+        report_url: a.report_url || '',
+        color: SEVERITY_COLORS[a.severity] || (a.source === 'GDACS' ? '#c026d3' : '#3b82f6'),
       },
       geometry: a.geometry,
     })),
@@ -1165,8 +1179,9 @@ export function buildWeatherAlertLabelsGeoJSON(alerts?: WeatherAlert[]): FC {
         event: a.event,
         severity: a.severity,
         headline: a.headline,
+        source: a.source || 'NOAA/NWS',
         iconId: weatherIconId(a.event),
-        color: SEVERITY_COLORS[a.severity] || '#3b82f6',
+        color: SEVERITY_COLORS[a.severity] || (a.source === 'GDACS' ? '#c026d3' : '#3b82f6'),
       },
       geometry: { type: 'Point', coordinates: center },
     });
@@ -1645,13 +1660,14 @@ export function buildTelegramOsintGeoJSON(
       source?: string;
       channel?: string;
       risk_score?: number;
+      published?: string;
       coords?: [number, number] | null;
     }>;
   },
   inView?: InViewFilter,
 ): FC {
-  const posts = payload?.posts;
-  if (!posts?.length) return null;
+  const posts = filterTelegramPostsWithinRetention(payload?.posts ?? []);
+  if (!posts.length) return null;
 
   const clusters = new Map<
     string,
@@ -1689,7 +1705,10 @@ export function buildTelegramOsintGeoJSON(
   return {
     type: 'FeatureCollection' as const,
     features: Array.from(clusters.entries()).map(([key, cluster]) => {
-      const lead = cluster.posts[0];
+      const orderedPosts = [...cluster.posts].sort((a, b) =>
+        compareEventTimestampsDesc(a.published, b.published),
+      );
+      const lead = orderedPosts[0];
       const count = cluster.posts.length;
       return {
         type: 'Feature' as const,
@@ -1704,6 +1723,97 @@ export function buildTelegramOsintGeoJSON(
           link: lead.link || '',
           source: lead.source || '',
           channel: lead.channel || '',
+          risk_score: cluster.maxRisk,
+          post_count: count,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [cluster.lng, cluster.lat],
+        },
+      };
+    }),
+  };
+}
+
+// ─── Reddit OSINT ─────────────────────────────────────────────────────────
+
+export const REDDIT_MARKER_OFFSET: [number, number] = [20, -20];
+
+export function buildRedditOsintGeoJSON(
+  payload?: {
+    posts?: Array<{
+      id: string;
+      title?: string;
+      description?: string;
+      link?: string;
+      source?: string;
+      subreddit?: string;
+      narrative_profile?: string;
+      risk_score?: number;
+      published?: string;
+      coords?: [number, number] | null;
+    }>;
+  },
+  inView?: InViewFilter,
+): FC {
+  const posts = filterRedditPostsWithinRetention(payload?.posts ?? []);
+  if (!posts.length) return null;
+
+  const clusters = new Map<
+    string,
+    {
+      lat: number;
+      lng: number;
+      posts: NonNullable<typeof posts>;
+      maxRisk: number;
+    }
+  >();
+
+  for (const post of posts) {
+    const coords = post.coords;
+    if (!coords || coords.length < 2) continue;
+    const lat = coords[0];
+    const lng = coords[1];
+    if (inView && !inView(lat, lng)) continue;
+    const key = telegramClusterKey(lat, lng);
+    const bucket = clusters.get(key);
+    if (bucket) {
+      bucket.posts.push(post);
+      bucket.maxRisk = Math.max(bucket.maxRisk, post.risk_score ?? 1);
+    } else {
+      clusters.set(key, {
+        lat,
+        lng,
+        posts: [post],
+        maxRisk: post.risk_score ?? 1,
+      });
+    }
+  }
+
+  if (!clusters.size) return null;
+
+  return {
+    type: 'FeatureCollection' as const,
+    features: Array.from(clusters.entries()).map(([key, cluster]) => {
+      const orderedPosts = [...cluster.posts].sort((a, b) =>
+        compareEventTimestampsDesc(a.published, b.published),
+      );
+      const lead = orderedPosts[0];
+      const count = cluster.posts.length;
+      return {
+        type: 'Feature' as const,
+        properties: {
+          id: key,
+          type: 'reddit_osint',
+          name:
+            count > 1
+              ? `Reddit OSINT (${count} posts)`
+              : lead.title || 'Reddit OSINT',
+          description: lead.description || '',
+          link: lead.link || '',
+          source: lead.source || '',
+          subreddit: lead.subreddit || '',
+          narrative_profile: lead.narrative_profile || 'general',
           risk_score: cluster.maxRisk,
           post_count: count,
         },
@@ -1866,41 +1976,75 @@ const SAR_KIND_COLORS: Record<string, string> = {
 
 const SAR_DEFAULT_COLOR = '#eab308';
 
-export function buildSarAnomaliesGeoJSON(anomalies?: SarAnomaly[]): FC {
-  if (!anomalies?.length) return null;
-  return {
-    type: 'FeatureCollection' as const,
-    features: anomalies
-      .filter((a) => Number.isFinite(a.lat) && Number.isFinite(a.lon))
-      .map((a) => ({
+export function buildSarAnomaliesGeoJSON(
+  anomalies?: SarAnomaly[],
+  aois?: SarAoi[],
+  kindFilter: SarKindFilter = 'excavation',
+): FC {
+  if (!anomalies?.length || !aois?.length) return null;
+
+  const aoiById = new Map(aois.map((aoi) => [aoi.id.toLowerCase(), aoi]));
+  const grouped = new Map<string, SarAnomaly[]>();
+
+  for (const anomaly of anomalies) {
+    if (!Number.isFinite(anomaly.lat) || !Number.isFinite(anomaly.lon)) continue;
+    if (!matchesSarKindFilter(anomaly.kind, kindFilter)) continue;
+    const key = (anomaly.aoi_id || '').toLowerCase();
+    if (!key || !aoiById.has(key)) continue;
+    const bucket = grouped.get(key) ?? [];
+    bucket.push(anomaly);
+    grouped.set(key, bucket);
+  }
+
+  const features: GeoJSON.Feature[] = [];
+  for (const [aoiId, bucket] of grouped) {
+    const aoi = aoiById.get(aoiId);
+    if (!aoi) continue;
+    const sorted = [...bucket].sort((a, b) => (b.last_seen ?? 0) - (a.last_seen ?? 0)).slice(0, 24);
+
+    sorted.forEach((anomaly, index) => {
+      const inside = pointInAoi(anomaly.lat, anomaly.lon, aoi);
+      const [pinLon, pinLat] = inside
+        ? [anomaly.lon, anomaly.lat]
+        : pinInsideAoi(aoi, index, sorted.length);
+      const kindLabel = sarKindLabel(anomaly.kind);
+
+      features.push({
         type: 'Feature' as const,
         properties: {
-          id: a.anomaly_id,
+          id: anomaly.anomaly_id,
           type: 'sar_anomaly',
-          kind: a.kind,
-          name: a.title || `SAR ${a.kind}`,
-          title: a.title || '',
-          summary: a.summary || '',
-          solver: a.solver || '',
-          source_constellation: a.source_constellation || '',
-          magnitude: a.magnitude ?? 0,
-          magnitude_unit: a.magnitude_unit || '',
-          confidence: a.confidence ?? 0,
-          first_seen: a.first_seen ?? 0,
-          last_seen: a.last_seen ?? 0,
-          aoi_id: a.aoi_id || '',
-          scene_count: a.scene_count ?? 0,
-          category: a.category || 'watchlist',
-          provenance_url: a.provenance_url || '',
-          evidence_hash: a.evidence_hash || '',
-          color: SAR_KIND_COLORS[a.kind] || SAR_DEFAULT_COLOR,
+          kind: anomaly.kind,
+          kind_label: kindLabel,
+          name: anomaly.title || kindLabel,
+          title: anomaly.title || kindLabel,
+          summary: anomaly.summary || kindLabel,
+          solver: anomaly.solver || '',
+          source_constellation: anomaly.source_constellation || '',
+          magnitude: anomaly.magnitude ?? 0,
+          magnitude_unit: anomaly.magnitude_unit || '',
+          confidence: anomaly.confidence ?? 0,
+          first_seen: anomaly.first_seen ?? 0,
+          last_seen: anomaly.last_seen ?? 0,
+          aoi_id: anomaly.aoi_id || '',
+          scene_count: anomaly.scene_count ?? 0,
+          category: anomaly.category || 'watchlist',
+          provenance_url: anomaly.provenance_url || '',
+          evidence_hash: anomaly.evidence_hash || '',
+          pin_lat: pinLat,
+          pin_lon: pinLon,
+          color: SAR_KIND_COLORS[anomaly.kind] || SAR_DEFAULT_COLOR,
         },
         geometry: {
           type: 'Point' as const,
-          coordinates: [a.lon, a.lat],
+          coordinates: [pinLon, pinLat],
         },
-      })),
-  };
+      });
+    });
+  }
+
+  if (features.length === 0) return null;
+  return { type: 'FeatureCollection' as const, features };
 }
 
 /** Draw AOIs as filled circles (approximated with a 64-vertex polygon).  These
@@ -1956,3 +2100,118 @@ export function buildSarAoisGeoJSON(aois?: SarAoi[]): FC {
   if (features.length === 0) return null;
   return { type: 'FeatureCollection' as const, features };
 }
+
+/** Sentinel-1 catalog passes (Mode A) — pins anchored inside operator AOIs. */
+export function buildSarScenesGeoJSON(scenes?: SarScene[], aois?: SarAoi[]): FC {
+  if (!scenes?.length || !aois?.length) return null;
+
+  const aoiById = new Map(aois.map((aoi) => [aoi.id.toLowerCase(), aoi]));
+  const grouped = new Map<string, SarScene[]>();
+  for (const scene of scenes) {
+    const key = (scene.aoi_id || '').toLowerCase();
+    if (!key || !aoiById.has(key)) continue;
+    const bucket = grouped.get(key) ?? [];
+    bucket.push(scene);
+    grouped.set(key, bucket);
+  }
+
+  const features: GeoJSON.Feature[] = [];
+  for (const [aoiId, bucket] of grouped) {
+    const aoi = aoiById.get(aoiId);
+    if (!aoi) continue;
+    bucket.sort((a, b) => String(b.time).localeCompare(String(a.time)));
+
+    bucket.forEach((scene, index) => {
+      const [pinLon, pinLat] = pinInsideAoi(aoi, index, bucket.length);
+      const timeLabel = scene.time?.slice(0, 10) || 'pass';
+      features.push({
+        type: 'Feature' as const,
+        properties: {
+          id: scene.scene_id,
+          type: 'sar_scene',
+          scene_id: scene.scene_id,
+          platform: scene.platform || 'Sentinel-1',
+          mode: scene.mode || '',
+          level: scene.level || '',
+          time: scene.time || '',
+          aoi_id: scene.aoi_id || '',
+          relative_orbit: scene.relative_orbit ?? 0,
+          flight_direction: scene.flight_direction || '',
+          download_url: scene.download_url || '',
+          provider: scene.provider || '',
+          pin_lat: pinLat,
+          pin_lon: pinLon,
+          name: `${scene.platform || 'S1'} · ${timeLabel}`,
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [pinLon, pinLat],
+        },
+      });
+    });
+  }
+
+  if (features.length === 0) return null;
+  return { type: 'FeatureCollection' as const, features };
+}
+
+// ─── Strategic Risk Analytics (GT early warning) ────────────────────────────
+
+export function buildGtRiskGeoJSON(
+  payload?: {
+    enabled?: boolean;
+    heatmap?: { features?: Array<GTRiskHeatmapFeatureLike> };
+  } | null,
+): FC {
+  const features = payload?.heatmap?.features;
+  if (!features?.length) return null;
+
+  const normalized = features
+    .map((feature, index) => {
+      const coords = feature.geometry?.coordinates;
+      if (!coords || coords.length < 2) return null;
+      const [lng, lat] = coords;
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      if (Math.abs(lat) < 0.001 && Math.abs(lng) < 0.001) return null;
+      const props = feature.properties || {};
+      const region = String(props.region || `region-${index}`);
+      return {
+        type: 'Feature' as const,
+        properties: {
+          ...props,
+          type: 'gt_risk',
+          id: region,
+          name: region,
+          lat,
+          lng,
+          risk: Number(props.risk ?? 0),
+          financial: Number(props.financial ?? 0),
+          unrest: Number(props.unrest ?? 0),
+          conflict: Number(props.conflict ?? 0),
+          contagion: Number(props.contagion ?? 0),
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [lng, lat] as [number, number],
+        },
+      };
+    })
+    .filter(Boolean) as GeoJSON.Feature[];
+
+  if (!normalized.length) return null;
+  return { type: 'FeatureCollection' as const, features: normalized };
+}
+
+type GTRiskHeatmapFeatureLike = {
+  properties?: {
+    region?: string;
+    risk?: number;
+    financial?: number;
+    unrest?: number;
+    conflict?: number;
+    contagion?: number;
+  };
+  geometry?: {
+    coordinates?: [number, number];
+  };
+};

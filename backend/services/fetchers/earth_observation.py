@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import time
 import heapq
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from services.network_utils import (
     external_curl_fallback_enabled,
@@ -30,6 +30,34 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Earthquakes (USGS)
 # ---------------------------------------------------------------------------
+def _parse_usgs_earthquake_feature(feature: dict) -> dict | None:
+    """Normalize a USGS GeoJSON feature into the dashboard earthquake shape."""
+    try:
+        props = feature.get("properties") or {}
+        coords = (feature.get("geometry") or {}).get("coordinates") or []
+        if len(coords) < 3:
+            return None
+        lng, lat, depth = coords[0], coords[1], coords[2]
+        time_ms = props.get("time")
+        time_iso = None
+        if isinstance(time_ms, (int, float)):
+            time_iso = datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc).isoformat()
+        return {
+            "id": feature.get("id"),
+            "mag": props.get("mag"),
+            "lat": lat,
+            "lng": lng,
+            "depth_km": depth,
+            "place": props.get("place") or "Unknown location",
+            "time": time_iso,
+            "time_ms": time_ms,
+            "url": props.get("url"),
+            "updated_ms": props.get("updated"),
+        }
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
 @with_retry(max_retries=1, base_delay=1)
 def fetch_earthquakes():
     from services.fetchers._store import is_any_active
@@ -42,18 +70,11 @@ def fetch_earthquakes():
         response = fetch_with_curl(url, timeout=10)
         if response.status_code == 200:
             features = response.json().get("features", [])
-            for f in features[:50]:
-                mag = f["properties"]["mag"]
-                lng, lat, depth = f["geometry"]["coordinates"]
-                quakes.append(
-                    {
-                        "id": f["id"],
-                        "mag": mag,
-                        "lat": lat,
-                        "lng": lng,
-                        "place": f["properties"]["place"],
-                    }
-                )
+            for feature in features[:50]:
+                parsed = _parse_usgs_earthquake_feature(feature)
+                if parsed is not None:
+                    quakes.append(parsed)
+            quakes.sort(key=lambda q: q.get("time_ms") or 0, reverse=True)
     except (ConnectionError, TimeoutError, OSError, ValueError, KeyError, TypeError) as e:
         logger.error(f"Error fetching earthquakes: {e}")
     with _data_lock:
@@ -259,16 +280,60 @@ def fetch_weather():
         response = fetch_with_curl(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            if "radar" in data and "past" in data["radar"]:
-                latest_time = data["radar"]["past"][-1]["time"]
+            if "radar" in data and "past" in data["radar"] and data["radar"]["past"]:
+                past_frames = data["radar"]["past"][-12:]
+                latest = past_frames[-1]
+                nowcast_raw = data["radar"].get("nowcast") or []
+                nowcast = nowcast_raw[-1] if nowcast_raw else None
                 with _data_lock:
                     latest_data["weather"] = {
-                        "time": latest_time,
+                        "time": latest.get("time"),
+                        "path": latest.get("path"),
                         "host": data.get("host", "https://tilecache.rainviewer.com"),
+                        "nowcast_time": nowcast.get("time") if nowcast else None,
+                        "nowcast_path": nowcast.get("path") if nowcast else None,
+                        "generated": data.get("generated"),
+                        "past_frames": [
+                            {"time": row.get("time"), "path": row.get("path")}
+                            for row in past_frames
+                            if row.get("path")
+                        ],
+                        "nowcast_frames": [
+                            {"time": row.get("time"), "path": row.get("path")}
+                            for row in nowcast_raw
+                            if row.get("path")
+                        ],
                     }
                 _mark_fresh("weather")
     except (ConnectionError, TimeoutError, OSError, ValueError, KeyError, TypeError) as e:
         logger.error(f"Error fetching weather: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Open-Meteo forecast map metadata (cloud / precip spatial tiles)
+# ---------------------------------------------------------------------------
+@with_retry(max_retries=1, base_delay=1)
+def fetch_weather_forecast_meta():
+    """Cache latest Open-Meteo spatial model run for forecast overlay UI."""
+    try:
+        url = "https://map-tiles.open-meteo.com/data_spatial/dwd_icon/latest.json"
+        response = fetch_with_curl(url, timeout=12)
+        if response.status_code != 200:
+            return
+        data = response.json()
+        valid_times = data.get("valid_times") or []
+        with _data_lock:
+            latest_data["weather_forecast"] = {
+                "model": "dwd_icon",
+                "reference_time": data.get("reference_time"),
+                "last_modified_time": data.get("last_modified_time"),
+                "completed": data.get("completed"),
+                "valid_times": valid_times[:48],
+                "variables": ["cloud_cover", "precipitation"],
+            }
+        _mark_fresh("weather_forecast")
+    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError, TypeError) as e:
+        logger.error(f"Error fetching Open-Meteo forecast meta: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +385,24 @@ def fetch_weather_alerts():
         latest_data["weather_alerts"] = alerts
     if alerts:
         _mark_fresh("weather_alerts")
+
+
+# ---------------------------------------------------------------------------
+# GDACS Global Weather / Hydro Hazards
+# ---------------------------------------------------------------------------
+@with_retry(max_retries=1, base_delay=2)
+def fetch_global_weather_hazards():
+    """Fetch GDACS tropical cyclone, flood, wildfire, and drought hazards."""
+    from services.fetchers._store import is_any_active
+    from services.gdacs_weather import fetch_global_weather_hazards as _fetch_gdacs
+
+    if not is_any_active("global_weather_hazards"):
+        return
+    hazards = _fetch_gdacs()
+    with _data_lock:
+        latest_data["global_weather_hazards"] = hazards
+    if hazards:
+        _mark_fresh("global_weather_hazards")
 
 
 # ---------------------------------------------------------------------------

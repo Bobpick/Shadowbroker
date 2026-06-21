@@ -1,0 +1,32 @@
+## KEY EVALUATION DRIVERS
+- "breakthrough performance in thermal protection, ultra-lightweight interconnects, and structural mass reduction for high-speed test articles, range instrumentation, directed-energy test support, and battery/electronics survivability"
+- "directly responsive solution to capability gaps in Army Test and Evaluation" across HSST, AIST, and DET Technical Thrust Areas
+- "mature (TRL 4–6), low-cost, domestically sourced, and scalable" with "12-month prototype effort will deliver integrated demonstrators, test data, and production-ready processes"
+- "supporting Modular Open Systems Approach (MOSA) and Weapon Open Systems Architecture (WOSA) principles"
+- "directly enhances Army test-range lethality, survivability, and affordability"
+
+## REQUIRED FORMAT & STRUCTURE
+- 5-page Solution Brief format shown in excerpt
+- Proprietary Notice required if any data is restricted, with specific sheet numbers called out
+- Required sections per excerpt: Executive Summary, High-Level Solution/Concept, Relevance to Army Test and Evaluation, Unique Technical Aspects & Innovation
+- Title Page must include: Company info, CAGE, UEI, Business Size, POC, Proposed Award Instrument, Proposed NAICS, Proprietary Notice if applicable
+
+## SUBMISSION PROCESS & DEADLINES
+- Submitted to: Army Test and Evaluation (AEA)
+- Solicitation: Army Open Solicitation (AOS) W9128Z-25-S-A002
+- ACG Submission
+- Point of Contact: Robert Pickett, Owner/Principal Investigator
+- Contact: (541) 791-6266, rpickett@pat-labs.com
+- No explicit deadline mentioned in excerpt
+
+## CRITICAL MUST-HAVES / DISQUALIFIERS / RED LINES
+- Must include Proprietary Notice if any data is restricted, using exact wording: "This Solution Brief includes data that shall not be disclosed outside the Government... [full text as shown]"
+- Must specify Proposed Award Instrument (Other Transaction preferred or FAR Part 12)
+- Must state NAICS code (541715)
+- Must declare Business Size (Small Business/SDVOSB)
+- Must align with specific Technical Thrust Areas (HSST, AIST, DET)
+- Must address TRL status (4-6) and path to maturity
+- Must be domestically sourced
+- Must be copper-free alternative
+
+## RECOMMENDED FOUNDATION DOCUMENTS

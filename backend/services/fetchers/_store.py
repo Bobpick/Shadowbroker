@@ -65,6 +65,7 @@ class DashboardData(TypedDict, total=False):
     correlations: List[Dict[str, Any]]
     uap_sightings: List[Dict[str, Any]]
     wastewater: List[Dict[str, Any]]
+    wastewater_surveillance: Dict[str, Any]
     crowdthreat: List[Dict[str, Any]]
     sar_scenes: List[Dict[str, Any]]
     sar_anomalies: List[Dict[str, Any]]
@@ -74,6 +75,8 @@ class DashboardData(TypedDict, total=False):
     cyber_threats: Dict[str, Any]
     scm_suppliers: Dict[str, Any]
     telegram_osint: Dict[str, Any]
+    reddit_osint: Dict[str, Any]
+    gt_risk: Dict[str, Any]
 
 
 # In-memory store
@@ -106,6 +109,8 @@ latest_data: DashboardData = {
     "meshtastic_map_nodes": [],
     "meshtastic_map_fetched_at": None,
     "weather_alerts": [],
+    "global_weather_hazards": [],
+    "weather_forecast": None,
     "air_quality": [],
     "volcanoes": [],
     "fishing_activity": [],
@@ -120,6 +125,15 @@ latest_data: DashboardData = {
     "correlations": [],
     "uap_sightings": [],
     "wastewater": [],
+    "wastewater_surveillance": {
+        "updated_at": None,
+        "baseline_date": None,
+        "marker": {"lat": 39.8283, "lng": -98.5795},
+        "pathogens": [],
+        "rising_pathogens": [],
+        "pathogens_rising": 0,
+        "signature": "",
+    },
     "crowdthreat": [],
     "sar_scenes": [],
     "sar_anomalies": [],
@@ -129,6 +143,14 @@ latest_data: DashboardData = {
     "cyber_threats": {"threats": [], "stats": {}},
     "scm_suppliers": {"suppliers": [], "total": 0, "critical_count": 0},
     "telegram_osint": {"posts": [], "total": 0, "geolocated": 0, "timestamp": None},
+    "reddit_osint": {"posts": [], "total": 0, "geolocated": 0, "timestamp": None},
+    "gt_risk": {
+        "enabled": False,
+        "heatmap": {"type": "FeatureCollection", "features": []},
+        "clusters": [],
+        "processed": 0,
+        "timestamp": None,
+    },
 }
 
 # Per-source freshness timestamps
@@ -339,6 +361,10 @@ active_layers: dict[str, bool] = {
     "sigint_meshtastic": True,
     "sigint_aprs": True,
     "weather_alerts": True,
+    "weather_radar": True,
+    "weather_cloud": False,
+    "weather_precip": False,
+    "global_weather_hazards": True,
     "air_quality": True,
     "volcanoes": True,
     "fishing_activity": True,
@@ -361,6 +387,8 @@ active_layers: dict[str, bool] = {
     "scm_suppliers": False,
     "cyber_threats": False,
     "telegram_osint": True,
+    "reddit_osint": True,
+    "gt_risk": False,
 }
 
 

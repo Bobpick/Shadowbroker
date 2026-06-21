@@ -217,6 +217,12 @@ export interface Earthquake {
   lng: number;
   place: string;
   title?: string;
+  /** UTC origin time from USGS (ISO-8601). */
+  time?: string;
+  /** Hypocenter depth in kilometers. */
+  depth_km?: number | null;
+  /** USGS event detail page. */
+  url?: string;
 }
 
 // ─── GPS JAMMING ────────────────────────────────────────────────────────────
@@ -474,6 +480,20 @@ export interface WeatherAlert {
   description: string;
   expires: string;
   geometry: GeoJSON.Geometry;
+  source?: string;
+  eventtype?: string;
+  country?: string;
+  alertlevel?: string;
+  report_url?: string;
+}
+
+export interface WeatherForecastMeta {
+  model?: string;
+  reference_time?: string;
+  last_modified_time?: string;
+  completed?: boolean;
+  valid_times?: string[];
+  variables?: string[];
 }
 
 export interface AirQualityStation {
@@ -524,6 +544,13 @@ export interface WastewaterPathogen {
   normalized: number;
   activity: string;
   alert: boolean;
+  trend?: 'rising' | 'stable' | 'falling';
+  history?: Array<{
+    date: string;
+    activity: string;
+    alert?: boolean;
+    normalized?: number;
+  }>;
 }
 
 export interface WastewaterPlant {
@@ -539,7 +566,44 @@ export interface WastewaterPlant {
   pathogens: WastewaterPathogen[];
   alert_count: number;
   collection_date: string;
+  sample_age_days?: number | null;
   source: string;
+}
+
+export interface WastewaterSurveillancePathogen {
+  name: string;
+  target_key?: string;
+  states_rising: number;
+  states_alert: number;
+  sites_rising: number;
+  sites_alert: number;
+  states_rising_delta?: number;
+  states_alert_delta?: number;
+  rising_rate_pct?: number | null;
+  rising_rate_display?: string;
+  alert_rate_pct?: number | null;
+  trend?: 'rising' | 'stable' | 'falling';
+}
+
+export interface WastewaterSurveillanceSummary {
+  updated_at?: string | null;
+  baseline_date?: string | null;
+  baseline_lookback_days?: number;
+  marker?: { lat: number; lng: number };
+  plants_monitored?: number;
+  plants_active?: number;
+  pathogens_tracked?: number;
+  pathogens_rising?: number;
+  signature?: string;
+  fetch_progress?: {
+    with_data?: number;
+    total?: number;
+    batch_fetched?: number;
+    batch_size?: number;
+    cursor?: number;
+  };
+  pathogens?: WastewaterSurveillancePathogen[];
+  rising_pathogens?: WastewaterSurveillancePathogen[];
 }
 
 export interface FishingEvent {
@@ -621,6 +685,7 @@ export interface NewsArticle {
   source: string;
   link: string;
   pub_date: string;
+  published?: string;
   risk_score: number;
   lat: number;
   lng: number;
@@ -736,12 +801,80 @@ export interface SpaceWeather {
   events: SpaceWeatherEvent[];
 }
 
-// ─── WEATHER (RAINVIEWER) ───────────────────────────────────────────────────
+// ─── WEATHER (RAINVIEWER RADAR + OPEN-METEO DOSSIER) ────────────────────────
 
-export interface Weather {
-  time: number;
-  host: string;
+export interface WeatherRadarFrame {
+  time?: number;
+  path?: string;
 }
+
+export interface WeatherRadarMeta {
+  time?: number;
+  path?: string;
+  host?: string;
+  nowcast_time?: number;
+  nowcast_path?: string;
+  generated?: number;
+  past_frames?: WeatherRadarFrame[];
+  nowcast_frames?: WeatherRadarFrame[];
+}
+
+export type WeatherRadarMode = 'past' | 'nowcast';
+
+export interface PointWeatherCurrent {
+  time?: string;
+  temperature_c?: number;
+  humidity_pct?: number;
+  precipitation_mm?: number;
+  cloud_cover_pct?: number;
+  wind_speed_kmh?: number;
+  wind_direction_deg?: number;
+  visibility_m?: number;
+  weather_code?: number;
+  conditions?: string;
+}
+
+export interface PointWeatherHourly {
+  time: string;
+  cloud_cover_pct?: number;
+  precip_prob_pct?: number;
+  precip_mm?: number;
+  weather_code?: number;
+  conditions?: string;
+}
+
+export interface PointWeatherDaily {
+  date: string;
+  temp_max_c?: number;
+  temp_min_c?: number;
+  precip_mm?: number;
+  cloud_mean_pct?: number;
+  wind_max_kmh?: number;
+  weather_code?: number;
+  conditions?: string;
+}
+
+export interface PointWeatherOpticalWindow {
+  status?: 'good' | 'fair' | 'poor' | 'unknown';
+  summary?: string;
+  cloud_now_pct?: number;
+  best_window_start?: string | null;
+  best_window_end?: string | null;
+}
+
+export interface PointWeather {
+  source?: string;
+  fetched_at?: string;
+  timezone?: string;
+  current?: PointWeatherCurrent;
+  hourly_next_48h?: PointWeatherHourly[];
+  daily_7d?: PointWeatherDaily[];
+  optical_window?: PointWeatherOpticalWindow;
+  error?: string;
+}
+
+/** RainViewer radar tile metadata from slow-tier poll */
+export interface Weather extends WeatherRadarMeta {}
 
 // ─── AIRPORTS ───────────────────────────────────────────────────────────────
 
@@ -878,6 +1011,8 @@ export interface DashboardData {
     quotes?: Record<string, { price: number; change_percent: number; up: boolean }>;
   };
   weather?: Weather | null;
+  weather_forecast?: WeatherForecastMeta | null;
+  global_weather_hazards?: WeatherAlert[];
   earthquakes?: Earthquake[];
   frontlines?: FrontlineGeoJSON | null;
   gdelt?: GDELTIncident[];
@@ -909,6 +1044,7 @@ export interface DashboardData {
 
   // WastewaterSCAN pathogen surveillance
   wastewater?: WastewaterPlant[];
+  wastewater_surveillance?: WastewaterSurveillanceSummary;
 
   // CrowdThreat — crowdsourced threat intelligence
   crowdthreat?: CrowdThreatItem[];
@@ -966,6 +1102,226 @@ export interface DashboardData {
     timestamp?: string | null;
     channels?: string[];
   };
+  reddit_osint?: {
+    posts?: RedditOsintPost[];
+    total?: number;
+    geolocated?: number;
+    adversarial_count?: number;
+    timestamp?: string | null;
+    subreddits?: string[];
+  };
+  gt_risk?: GTRiskPayload;
+}
+
+export interface GTRiskHeatmapFeature {
+  type: 'Feature';
+  properties: {
+    region: string;
+    risk: number;
+    financial?: number;
+    unrest?: number;
+    conflict?: number;
+    contagion?: number;
+    updates?: number;
+    risk_spot?: number;
+    risk_3d_avg?: number;
+    risk_delta?: number;
+    micro_ignition?: boolean;
+  };
+  geometry: {
+    type: 'Point';
+    coordinates: [number, number];
+  };
+}
+
+export interface GTRiskPayload {
+  enabled?: boolean;
+  timestamp?: string | null;
+  processed?: number;
+  meta?: {
+    tracked_regions?: number;
+    engine_regions?: number;
+    plotted_regions?: number;
+    max_regions?: number;
+    base_prior?: number;
+    top_alerts_min_score?: number;
+  };
+  heatmap?: {
+    type: 'FeatureCollection';
+    features: GTRiskHeatmapFeature[];
+  };
+  clusters?: Array<{
+    cluster_id: number;
+    size: number;
+    mean_risk: number;
+    regions?: string[];
+    members?: string[];
+  }>;
+}
+
+export interface GtDossierSignalEntry {
+  timestamp: string;
+  domain: string;
+  signals: Record<string, number>;
+  strength: number;
+  posterior: number;
+  source: string;
+  deviation_score?: number;
+}
+
+export interface GtBacktestCaseResult {
+  case_id: string;
+  name: string;
+  kind: string;
+  correct: boolean;
+  alerted: boolean;
+  peak_domain_risk: number;
+  peak_composite_risk: number;
+  costly_signals: string[];
+}
+
+export interface GtBacktestReport {
+  enabled?: boolean;
+  total_cases: number;
+  correct: number;
+  accuracy: number;
+  confidence_rate: number;
+  wilson_lower_95: number;
+  wilson_upper_95: number;
+  true_positives: number;
+  true_negatives: number;
+  false_positives: number;
+  false_negatives: number;
+  sensitivity: number;
+  specificity: number;
+  alert_threshold: number;
+  target_confidence: number;
+  meets_target: boolean;
+  expanded_suite?: boolean;
+  tuned?: boolean;
+  recommended_alert_threshold?: number;
+  cases?: GtBacktestCaseResult[];
+}
+
+export interface GtRollingWeekScore {
+  week_id: string;
+  frozen_at?: string;
+  alert_threshold: number;
+  total_regions: number;
+  labeled: number;
+  pending: number;
+  alerted: number;
+  correct: number;
+  accuracy: number;
+  confidence_rate: number;
+  wilson_lower_95: number;
+  wilson_upper_95: number;
+  true_positives: number;
+  true_negatives: number;
+  false_positives: number;
+  false_negatives: number;
+  sensitivity: number;
+  specificity: number;
+  scorable: boolean;
+}
+
+export interface GtMicroRegionView {
+  region: string;
+  spot_risk: number;
+  risk_3d_avg: number;
+  risk_delta: number;
+  days_in_window: number;
+  day_scores: number[];
+  alerted_spot: boolean;
+  alerted_3d: boolean;
+  ignition: boolean;
+  financial: number;
+  unrest: number;
+  conflict: number;
+}
+
+export interface GtMicroRollingReport {
+  enabled?: boolean;
+  mode?: string;
+  window_days: number;
+  alert_threshold: number;
+  ignition_delta: number;
+  as_of: string;
+  days_stored: number;
+  regions_tracked: number;
+  ignition_count: number;
+  alerted_3d_count: number;
+  ignitions: GtMicroRegionView[];
+  top_regions: GtMicroRegionView[];
+  note?: string;
+  message?: string;
+}
+
+export interface GtRollingReport {
+  enabled?: boolean;
+  mode?: string;
+  alert_threshold: number;
+  target_confidence: number;
+  weeks_requested: number;
+  weeks_stored: number;
+  weeks_scorable: number;
+  min_labeled_per_week: number;
+  latest: GtRollingWeekScore | null;
+  trend: GtRollingWeekScore[];
+  accuracy_series: { week_id: string; accuracy: number; labeled: number }[];
+  improving_vs_prior: boolean;
+  meets_target: boolean;
+  note?: string;
+  message?: string;
+}
+
+export interface GtWeatherContext {
+  weather_noise?: number;
+  storm_severity?: number;
+  optical_status?: string;
+  optical_summary?: string;
+  collection_recommendation?: string;
+  collection_badge?: string;
+  poor_optical_hours?: number;
+  gt_note?: string;
+  conditions?: string;
+  cloud_cover_pct?: number;
+}
+
+export interface GtDossier {
+  enabled?: boolean;
+  region: string;
+  current_risk: number;
+  domain_risks?: {
+    financial?: number;
+    unrest?: number;
+    conflict?: number;
+  };
+  weather_context?: GtWeatherContext;
+  recent_signals?: GtDossierSignalEntry[];
+  contagion_risk?: number;
+  interpretation?: string;
+  scenarios?: Array<{ name: string; summary: string }>;
+}
+
+export interface RedditOsintPost {
+  id: string;
+  title?: string;
+  description?: string;
+  title_translated?: string;
+  description_translated?: string;
+  source_lang?: string;
+  source_lang_label?: string;
+  translate_to?: string;
+  link?: string;
+  published?: string;
+  source?: string;
+  subreddit?: string;
+  author?: string;
+  reddit_score?: number;
+  risk_score?: number;
+  narrative_profile?: 'adversarial' | 'geopolitical' | 'protest' | 'general';
+  coords?: [number, number] | null;
 }
 
 export interface TelegramOsintPost {
@@ -1105,6 +1461,10 @@ export interface ActiveLayers {
   sigint_aprs: boolean;
   ukraine_alerts: boolean;
   weather_alerts: boolean;
+  weather_radar: boolean;
+  weather_cloud: boolean;
+  weather_precip: boolean;
+  global_weather_hazards: boolean;
   air_quality: boolean;
   volcanoes: boolean;
   fishing_activity: boolean;
@@ -1125,6 +1485,8 @@ export interface ActiveLayers {
   scm_suppliers: boolean;
   cyber_threats: boolean;
   telegram_osint: boolean;
+  reddit_osint: boolean;
+  gt_risk: boolean;
 }
 
 export interface SelectedEntity {
@@ -1165,6 +1527,9 @@ export interface MaplibreViewerProps {
   measurePoints: MeasurePoint[];
   gibsDate: string;
   gibsOpacity: number;
+  weatherForecastOffset?: number;
+  weatherRadarMode?: WeatherRadarMode;
+  weatherRadarFrameIndex?: number;
   sentinelDate?: string;
   sentinelOpacity?: number;
   sentinelPreset?: string;
@@ -1189,4 +1554,5 @@ export interface MaplibreViewerProps {
   onSarAoiDropped?: (coords: { lat: number; lng: number }) => void;
   /** Incremented when the AOI list is modified — triggers immediate re-fetch. */
   sarAoiListVersion?: number;
+  sarKindFilter?: import('@/lib/sarKinds').SarKindFilter;
 }

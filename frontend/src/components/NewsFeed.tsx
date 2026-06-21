@@ -8,21 +8,22 @@ import { usePredictionMarketsOptIn } from '@/hooks/usePredictionMarketsOptIn';
 import React, { useEffect, useRef, useCallback } from 'react';
 import WikiImage from '@/components/WikiImage';
 import { fetchWikipediaSummary } from '@/lib/wikimediaClient';
-import type { SelectedEntity, RegionDossier, FimiData } from "@/types/dashboard";
+import type {
+  SelectedEntity,
+  RegionDossier,
+  FimiData,
+  PointWeatherDaily,
+  PointWeatherHourly,
+} from "@/types/dashboard";
 import { useDataKeys } from '@/hooks/useDataStore';
 import { API_BASE } from '@/lib/api';
+import { compareEventTimestampsDesc, formatEventTimestamp } from '@/lib/eventDateTime';
+import { CollectionPlannerBadge } from '@/components/CollectionPlannerBadge';
+import { useTemperatureUnit } from '@/hooks/useTemperatureUnit';
+import { buildCollectionPlanner } from '@/lib/collectionPlanner';
+import { consolidateCostlySignals, formatConsolidatedSources } from '@/lib/gtSignals';
 import { lookupShodanHost } from '@/lib/shodanClient';
 import type { ShodanHost } from '@/types/shodan';
-
-// Format time from pubish string "Tue, 24 Feb 2026 15:30:00 GMT" to "15:30"
-function formatTime(pubDate: string) {
-    try {
-        const d = new Date(pubDate);
-        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } catch {
-        return "00:00";
-    }
-}
 
 // ICAO type designator → Wikipedia article title
 const AIRCRAFT_WIKI: Record<string, string> = {
@@ -321,7 +322,8 @@ function EmissionsEstimateBlock({ flight }: { flight: any }) {
     );
 }
 
-function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, onArticleClick, onExpandEntityGraph }: { selectedEntity?: SelectedEntity | null, regionDossier?: RegionDossier | null, regionDossierLoading?: boolean, onArticleClick?: (idx: number, lat?: number, lng?: number, title?: string) => void, onExpandEntityGraph?: () => void }) {
+function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gtDossier, gtDossierLoading, onArticleClick, onExpandEntityGraph }: { selectedEntity?: SelectedEntity | null, regionDossier?: RegionDossier | null, regionDossierLoading?: boolean, gtDossier?: import('@/types/dashboard').GtDossier | null, gtDossierLoading?: boolean, onArticleClick?: (idx: number, lat?: number, lng?: number, title?: string) => void, onExpandEntityGraph?: () => void }) {
+    const { formatTemp, formatTempRange } = useTemperatureUnit();
     const data = useDataKeys([
       'news', 'fimi', 'commercial_flights', 'private_flights', 'private_jets',
       'military_flights', 'tracked_flights', 'ships', 'gdelt', 'liveuamap',
@@ -350,7 +352,10 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, on
         }
     }
 
-    const news = data?.news || [];
+    const news = useMemo(
+        () => [...(data?.news || [])].sort((a, b) => compareEventTimestampsDesc(a.published, b.published)),
+        [data?.news],
+    );
     const fimi: FimiData | undefined = data?.fimi;
 
     // Cross-reference: check if a news article title matches any FIMI disinfo keywords
@@ -535,6 +540,179 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, on
                         )}
 
                         {/* Sentinel-2 imagery now shown as map popup — see MaplibreViewer */}
+
+                        {d.weather && !d.weather.error && (
+                            <>
+                                <div className="text-[11px] text-cyan-500 tracking-widest font-bold border-b border-cyan-900/50 pb-1 mt-2">
+                                    WEATHER &amp; FORECAST
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                    <div className="flex justify-between">
+                                        <span className="text-[var(--text-muted)]">NOW</span>
+                                        <span className="text-cyan-300 font-bold text-right max-w-[200px]">
+                                            {d.weather.current?.conditions ?? '—'}
+                                            {d.weather.current?.temperature_c != null
+                                                ? ` · ${formatTemp(d.weather.current.temperature_c)}`
+                                                : ''}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-[var(--text-muted)]">CLOUD COVER</span>
+                                        <span className="text-cyan-200 font-bold">
+                                            {d.weather.current?.cloud_cover_pct != null
+                                                ? `${d.weather.current.cloud_cover_pct.toFixed(0)}%`
+                                                : '—'}
+                                        </span>
+                                    </div>
+                                    {d.weather.current?.wind_speed_kmh != null && (
+                                        <div className="flex justify-between">
+                                            <span className="text-[var(--text-muted)]">WIND</span>
+                                            <span className="text-cyan-200">
+                                                {Math.round(d.weather.current.wind_speed_kmh)} km/h
+                                                {d.weather.current.wind_direction_deg != null
+                                                    ? ` @ ${Math.round(d.weather.current.wind_direction_deg)}°`
+                                                    : ''}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {d.weather.optical_window?.summary && (
+                                        <div className="p-2 bg-black/60 border border-cyan-800/50 text-[11px] text-cyan-200/90 leading-relaxed">
+                                            <span className="text-cyan-400 font-bold">&gt;_ OPTICAL SAT: </span>
+                                            {d.weather.optical_window.summary}
+                                        </div>
+                                    )}
+                                    {(() => {
+                                        const planner = buildCollectionPlanner(d.weather);
+                                        return planner ? (
+                                            <CollectionPlannerBadge badge={planner} lat={d.lat} lng={d.lng} />
+                                        ) : null;
+                                    })()}
+                                    {(d.weather.hourly_next_48h?.length ?? 0) > 0 && (
+                                        <div className="flex flex-wrap gap-1 pt-1">
+                                            {d.weather.hourly_next_48h.slice(0, 12).map((row: PointWeatherHourly) => (
+                                                <span
+                                                    key={row.time}
+                                                    className="text-[9px] font-mono border border-cyan-900/40 bg-cyan-950/20 px-1 py-0.5 text-cyan-300/90"
+                                                    title={row.conditions}
+                                                >
+                                                    {row.time.slice(11, 16)}:{' '}
+                                                    {row.cloud_cover_pct != null
+                                                        ? `${Math.round(row.cloud_cover_pct)}%`
+                                                        : '—'}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {(d.weather.daily_7d?.length ?? 0) > 0 && (
+                                        <div className="space-y-0.5 pt-1">
+                                            {d.weather.daily_7d.map((day: PointWeatherDaily) => (
+                                                <div
+                                                    key={day.date}
+                                                    className="flex justify-between text-[10px] text-cyan-200/85"
+                                                >
+                                                    <span className="text-[var(--text-muted)]">
+                                                        {day.date.slice(5)}
+                                                    </span>
+                                                    <span>
+                                                        {day.conditions}
+                                                        {day.temp_max_c != null && day.temp_min_c != null
+                                                            ? ` · ${formatTempRange(day.temp_min_c, day.temp_max_c)}`
+                                                            : ''}
+                                                        {day.cloud_mean_pct != null
+                                                            ? ` · ${Math.round(day.cloud_mean_pct)}% cloud`
+                                                            : ''}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="text-[9px] text-[var(--text-muted)] tracking-wider">
+                                        Source: {d.weather.source ?? 'Open-Meteo'}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {(gtDossierLoading || gtDossier?.enabled) && (
+                            <>
+                                <div className="text-[11px] text-amber-500 tracking-widest font-bold border-b border-amber-900/50 pb-1 mt-2">
+                                    STRATEGIC RISK (GAME THEORY)
+                                </div>
+                                {gtDossierLoading ? (
+                                    <div className="text-amber-400/80 text-[11px]">Running game-theoretic analysis...</div>
+                                ) : gtDossier ? (
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex justify-between">
+                                            <span className="text-[var(--text-muted)]">POSTERIOR RISK</span>
+                                            <span className="text-amber-300 font-bold">
+                                                {((gtDossier.current_risk ?? 0) * 100).toFixed(1)}%
+                                            </span>
+                                        </div>
+                                        {gtDossier.domain_risks && (
+                                            <div className="grid grid-cols-3 gap-2 text-[10px]">
+                                                <div>
+                                                    <div className="text-[var(--text-muted)]">FIN</div>
+                                                    <div className="text-cyan-300">
+                                                        {((gtDossier.domain_risks.financial ?? 0) * 100).toFixed(0)}%
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[var(--text-muted)]">UNREST</div>
+                                                    <div className="text-orange-300">
+                                                        {((gtDossier.domain_risks.unrest ?? 0) * 100).toFixed(0)}%
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[var(--text-muted)]">CONFLICT</div>
+                                                    <div className="text-red-300">
+                                                        {((gtDossier.domain_risks.conflict ?? 0) * 100).toFixed(0)}%
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {gtDossier.interpretation && (
+                                            <div className="p-2 bg-black/60 border border-amber-800/50 text-[11px] text-amber-200/90 leading-relaxed">
+                                                <span className="text-amber-400 font-bold">&gt;_ GAME THEORY: </span>
+                                                {gtDossier.interpretation}
+                                            </div>
+                                        )}
+                                        {gtDossier.recent_signals && gtDossier.recent_signals.length > 0 && (
+                                            <div className="flex flex-col gap-1">
+                                                <div className="text-[10px] text-[var(--text-muted)] tracking-widest">
+                                                    COSTLY SIGNALS
+                                                </div>
+                                                {consolidateCostlySignals(gtDossier.recent_signals, 3).map((signal) => (
+                                                    <div
+                                                        key={signal.signalKey}
+                                                        className="text-[10px] border-l-2 border-amber-700/60 pl-2 text-[var(--text-secondary)]"
+                                                    >
+                                                        <span className="text-amber-300 uppercase">
+                                                            {signal.label}
+                                                            {signal.count > 1 ? ` x${signal.count}` : ''}
+                                                        </span>
+                                                        {' · '}
+                                                        <span className="text-[var(--text-muted)]">
+                                                            {formatConsolidatedSources(signal.sources, 1) || 'unknown'}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {gtDossier.scenarios && gtDossier.scenarios.length > 0 && (
+                                            <div className="flex flex-col gap-1">
+                                                <div className="text-[10px] text-[var(--text-muted)] tracking-widest">SCENARIOS</div>
+                                                {gtDossier.scenarios.map((scenario) => (
+                                                    <div key={scenario.name} className="text-[10px] text-[var(--text-secondary)]">
+                                                        <span className="text-amber-400 font-bold">{scenario.name}: </span>
+                                                        {scenario.summary}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : null}
+                            </>
+                        )}
                     </div>
                 ) : d?.error ? (
                     <div className="p-4 text-[var(--text-secondary)] text-[12px]">{d.error}</div>
@@ -1569,7 +1747,7 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, on
                                     MKT {marketsCorrelationEnabled ? 'ON' : 'OFF'}
                                 </button>
                             </div>
-                            <span className="flex items-center gap-1 shrink-0"><Clock size={10} /> {data?.last_updated ? formatTime(data.last_updated) : "SCANNING"}</span>
+                            <span className="flex items-center gap-1 shrink-0"><Clock size={10} /> {data?.last_updated ? formatEventTimestamp(data.last_updated) : "SCANNING"}</span>
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -1905,7 +2083,7 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, on
                                             {isBreaking && <span className="text-red-400 mr-1">BREAKING</span>}
                                             &gt;_ {item.source}
                                         </span>
-                                        <span>[{item.published ? formatTime(item.published) : ''}]</span>
+                                        <span>[{item.published ? formatEventTimestamp(item.published) : ''}]</span>
                                     </div>
 
                                     <button
@@ -1978,7 +2156,10 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, on
                                                 exit={{ height: 0, opacity: 0 }}
                                                 className="mt-2 pt-2 border-t border-cyan-500/20 flex flex-col gap-2 overflow-hidden"
                                             >
-                                                {item.articles.slice(1).map((subItem: any, subIdx: number) => (
+                                                {[...item.articles]
+                                                    .slice(1)
+                                                    .sort((a, b) => compareEventTimestampsDesc(a.published, b.published))
+                                                    .map((subItem: any, subIdx: number) => (
                                                     <div key={subIdx} className="flex flex-col gap-0.5 pl-2 border-l border-cyan-500/20">
                                                         <div className="flex items-center justify-between text-[11px] uppercase font-bold">
                                                             <span className="text-white">&gt;_ {subItem.source}</span>

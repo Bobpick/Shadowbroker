@@ -1,6 +1,7 @@
 'use client';
 
 import { API_BASE } from '@/lib/api';
+import { compareEventTimestampsDesc, formatEventTimestamp } from '@/lib/eventDateTime';
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import Map, {
   Source,
@@ -159,9 +160,10 @@ import {
   EarthquakeLabels,
   ThreatMarkers,
   TelegramOsintMarkers,
+  RedditOsintMarkers,
 } from '@/components/map/MapMarkers';
 import type { DashboardData, Flight, KiwiSDR, MaplibreViewerProps, Scanner, Ship, SigintSignal } from '@/types/dashboard';
-import { useDataKeys } from '@/hooks/useDataStore';
+import { mergeData, useDataKeys } from '@/hooks/useDataStore';
 import { useInterpolation } from '@/components/map/hooks/useInterpolation';
 import { useClusterLabels } from '@/components/map/hooks/useClusterLabels';
 import { spreadAlertItems } from '@/utils/alertSpread';
@@ -183,9 +185,12 @@ import { ShipPopup } from '@/components/MaplibreViewer/popups/ShipPopup';
 import { SigintPopup } from '@/components/MaplibreViewer/popups/SigintPopup';
 import { CorrelationPopup } from '@/components/MaplibreViewer/popups/CorrelationPopup';
 import { WastewaterPopup } from '@/components/MaplibreViewer/popups/WastewaterPopup';
+import { WastewaterSurveillanceBeacon } from '@/components/map/WastewaterSurveillanceBeacon';
 import { MilitaryBasePopup } from '@/components/MaplibreViewer/popups/MilitaryBasePopup';
 import { RegionDossierPanel } from '@/components/MaplibreViewer/popups/RegionDossierPanel';
+import { GtRiskPopup } from '@/components/MaplibreViewer/popups/GtRiskPopup';
 import { TelegramOsintPopup } from '@/components/MaplibreViewer/popups/TelegramOsintPopup';
+import { RedditOsintPopup } from '@/components/MaplibreViewer/popups/RedditOsintPopup';
 import {
   buildSentinelTileUrl,
   hasSentinelCredentials,
@@ -193,9 +198,15 @@ import {
   registerSentinelProtocol,
 } from '@/lib/sentinelHub';
 import {
+  openMeteoSourceUrl,
+  pickForecastTimeStep,
+  registerOpenMeteoProtocol,
+} from '@/lib/openMeteoMap';
+import {
   buildEarthquakesGeoJSON,
   buildJammingGeoJSON,
   buildCorrelationsGeoJSON,
+  buildGtRiskGeoJSON,
   buildTinygsGeoJSON,
   buildShodanGeoJSON,
   buildAIIntelGeoJSON,
@@ -213,6 +224,7 @@ import {
   buildWeatherAlertLabelsGeoJSON,
   buildSarAnomaliesGeoJSON,
   buildSarAoisGeoJSON,
+  buildSarScenesGeoJSON,
   type FlightLayerConfig,
 } from '@/components/map/geoJSONBuilders';
 
@@ -306,6 +318,8 @@ const MAP_EXTRA_DATA_KEYS = [
   'crowdthreat',
   'malware_threats',
   'telegram_osint',
+  'reddit_osint',
+  'gt_risk',
   'datacenters',
   'firms_fires',
   'fishing_activity',
@@ -332,7 +346,11 @@ const MAP_EXTRA_DATA_KEYS = [
   'viirs_change_nodes',
   'volcanoes',
   'wastewater',
+  'wastewater_surveillance',
   'weather_alerts',
+  'weather',
+  'weather_forecast',
+  'global_weather_hazards',
 ] as const satisfies readonly (keyof DashboardData)[];
 
 const VIIRS_TILE_TEMPLATES = [
@@ -392,6 +410,9 @@ const MaplibreViewer = ({
   measurePoints,
   gibsDate,
   gibsOpacity,
+  weatherForecastOffset = 0,
+  weatherRadarMode = 'past',
+  weatherRadarFrameIndex = -1,
   sentinelDate,
   sentinelOpacity,
   sentinelPreset,
@@ -405,6 +426,7 @@ const MaplibreViewer = ({
   sarAoiDropMode,
   onSarAoiDropped,
   sarAoiListVersion,
+  sarKindFilter = 'excavation',
 }: Omit<MaplibreViewerProps, 'data'>) => {
   const coreData = useDataKeys([
     'tracked_flights',
@@ -778,6 +800,11 @@ const MaplibreViewer = ({
     [activeLayers.correlations, activeLayers.contradictions, data?.correlations],
   );
 
+  const gtRiskGeoJSON = useMemo(
+    () => (activeLayers.gt_risk ? buildGtRiskGeoJSON(data?.gt_risk) : null),
+    [activeLayers.gt_risk, data?.gt_risk],
+  );
+
   const tinygsGeoJSON = useMemo(
     () => {
       void interpTick;
@@ -837,6 +864,61 @@ const MaplibreViewer = ({
     [activeLayers.weather_alerts, data?.weather_alerts],
   );
 
+  const weatherRadarTiles = useMemo(() => {
+    if (!activeLayers.weather_radar) return null;
+    const meta = data?.weather;
+    if (!meta?.host) return null;
+    const host = meta.host.replace(/\/$/, '');
+    const frames =
+      weatherRadarMode === 'nowcast' ? meta.nowcast_frames : meta.past_frames;
+    let path = weatherRadarMode === 'nowcast' ? meta.nowcast_path : meta.path;
+    if (frames?.length) {
+      const idx =
+        weatherRadarFrameIndex < 0
+          ? frames.length - 1
+          : Math.min(weatherRadarFrameIndex, frames.length - 1);
+      path = frames[idx]?.path ?? path;
+    }
+    if (!path) return null;
+    return `${host}${path}/256/{z}/{x}/{y}/2/1_1.png`;
+  }, [
+    activeLayers.weather_radar,
+    data?.weather,
+    weatherRadarMode,
+    weatherRadarFrameIndex,
+  ]);
+
+  const forecastTimeStep = useMemo(
+    () => pickForecastTimeStep(data?.weather_forecast, weatherForecastOffset),
+    [data?.weather_forecast, weatherForecastOffset],
+  );
+
+  const weatherCloudSourceUrl = useMemo(() => {
+    if (!activeLayers.weather_cloud) return null;
+    return openMeteoSourceUrl('cloud_cover', forecastTimeStep);
+  }, [activeLayers.weather_cloud, forecastTimeStep]);
+
+  const weatherPrecipSourceUrl = useMemo(() => {
+    if (!activeLayers.weather_precip) return null;
+    return openMeteoSourceUrl('precipitation', forecastTimeStep);
+  }, [activeLayers.weather_precip, forecastTimeStep]);
+
+  const globalWeatherHazardsGeoJSON = useMemo(
+    () =>
+      activeLayers.global_weather_hazards
+        ? buildWeatherAlertsGeoJSON(data?.global_weather_hazards)
+        : null,
+    [activeLayers.global_weather_hazards, data?.global_weather_hazards],
+  );
+
+  const globalWeatherHazardLabelsGeoJSON = useMemo(
+    () =>
+      activeLayers.global_weather_hazards
+        ? buildWeatherAlertLabelsGeoJSON(data?.global_weather_hazards)
+        : null,
+    [activeLayers.global_weather_hazards, data?.global_weather_hazards],
+  );
+
   // Sentinel Hub — tile URL (only built when layer is active + credentials are set)
   const sentinelTileUrl = useMemo(() => {
     if (!activeLayers.sentinel_hub) return null;
@@ -844,9 +926,10 @@ const MaplibreViewer = ({
     return buildSentinelTileUrl(sentinelPreset || 'TRUE-COLOR', sentinelDate || '');
   }, [activeLayers.sentinel_hub, sentinelPreset, sentinelDate]);
 
-  // Register sentinel:// custom protocol for Process API tile fetching
+  // Register sentinel:// and om:// custom tile protocols
   useEffect(() => {
     registerSentinelProtocol(maplibregl);
+    registerOpenMeteoProtocol(maplibregl);
   }, []);
 
   // Pre-fetch Sentinel Hub token when layer is toggled on
@@ -1172,6 +1255,9 @@ const MaplibreViewer = ({
   const staticTelegramOsintPosts = activeLayers.telegram_osint
     ? data?.telegram_osint?.posts
     : undefined;
+  const staticRedditOsintPosts = activeLayers.reddit_osint
+    ? data?.reddit_osint?.posts
+    : undefined;
 
   const [submarineCablesGeoJSON, setSubmarineCablesGeoJSON] = useState<GeoJSON.FeatureCollection | null>(null);
   useEffect(() => {
@@ -1286,6 +1372,7 @@ const MaplibreViewer = ({
       crowdthreat: staticCrowdthreat,
       malwareThreats: staticMalwareThreats,
       telegramOsintPosts: staticTelegramOsintPosts,
+      redditOsintPosts: staticRedditOsintPosts,
     },
     [
       staticCctv,
@@ -1311,6 +1398,7 @@ const MaplibreViewer = ({
       staticCrowdthreat,
       staticMalwareThreats,
       staticTelegramOsintPosts,
+      staticRedditOsintPosts,
       mapZoom,
     ],
     {
@@ -1337,6 +1425,7 @@ const MaplibreViewer = ({
         crowdthreat: activeLayers.crowdthreat,
         malware_c2: activeLayers.malware_c2,
         telegram_osint: activeLayers.telegram_osint,
+        reddit_osint: activeLayers.reddit_osint,
       },
     },
     [
@@ -1362,6 +1451,7 @@ const MaplibreViewer = ({
       activeLayers.crowdthreat,
       activeLayers.malware_c2,
       activeLayers.telegram_osint,
+      activeLayers.reddit_osint,
     ],
   );
 
@@ -1399,11 +1489,16 @@ const MaplibreViewer = ({
     crowdthreatGeoJSON,
     malwareGeoJSON,
     telegramOsintGeoJSON,
+    redditOsintGeoJSON,
   } = staticMapLayers;
 
   const telegramOsintGeoJSONPlaced = useMemo(
     () => applyTelegramAlertAvoidance(telegramOsintGeoJSON, data?.news),
     [telegramOsintGeoJSON, data?.news],
+  );
+  const redditOsintGeoJSONPlaced = useMemo(
+    () => applyTelegramAlertAvoidance(redditOsintGeoJSON, data?.news),
+    [redditOsintGeoJSON, data?.news],
   );
 
   // Extract cluster label positions via shared hook
@@ -1426,21 +1521,43 @@ const MaplibreViewer = ({
   const [sarAoisList, setSarAoisList] = useState<
     import('@/types/dashboard').SarAoi[]
   >([]);
+  const [sarScenesList, setSarScenesList] = useState<
+    import('@/types/dashboard').SarScene[]
+  >([]);
+  const [sarAnomaliesList, setSarAnomaliesList] = useState<
+    import('@/types/dashboard').SarAnomaly[]
+  >([]);
   useEffect(() => {
     if (!activeLayers.sar) return;
     let cancelled = false;
     const run = async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/sar/aois`, {
-          credentials: 'include',
-        });
-        if (!res.ok || cancelled) return;
-        const body = await res.json();
-        if (!cancelled && Array.isArray(body?.aois)) {
-          setSarAoisList(body.aois);
+        const [aoiRes, scenesRes, anomaliesRes] = await Promise.all([
+          fetch(`${API_BASE}/api/sar/aois`, { credentials: 'include' }),
+          fetch(`${API_BASE}/api/sar/scenes?limit=500`, { credentials: 'include' }),
+          fetch(`${API_BASE}/api/sar/anomalies?limit=500`, { credentials: 'include' }),
+        ]);
+        if (cancelled) return;
+        if (aoiRes.ok) {
+          const body = await aoiRes.json();
+          if (Array.isArray(body?.aois)) setSarAoisList(body.aois);
+        }
+        if (scenesRes.ok) {
+          const body = await scenesRes.json();
+          if (Array.isArray(body?.scenes)) {
+            setSarScenesList(body.scenes);
+            mergeData({ sar_scenes: body.scenes });
+          }
+        }
+        if (anomaliesRes.ok) {
+          const body = await anomaliesRes.json();
+          if (Array.isArray(body?.anomalies)) {
+            setSarAnomaliesList(body.anomalies);
+            mergeData({ sar_anomalies: body.anomalies });
+          }
         }
       } catch {
-        // ignore — AOIs are a nice-to-have
+        // ignore — SAR catalog is a nice-to-have
       }
     };
     run();
@@ -1454,8 +1571,15 @@ const MaplibreViewer = ({
   }, [activeLayers.sar, sarAoiListVersion]);
 
   const sarAnomaliesGeoJSON = useMemo(
-    () => (activeLayers.sar ? buildSarAnomaliesGeoJSON(data?.sar_anomalies) : null),
-    [activeLayers.sar, data?.sar_anomalies],
+    () =>
+      activeLayers.sar
+        ? buildSarAnomaliesGeoJSON(sarAnomaliesList, sarAoisList, sarKindFilter)
+        : null,
+    [activeLayers.sar, sarAnomaliesList, sarAoisList, sarKindFilter],
+  );
+  const sarScenesGeoJSON = useMemo(
+    () => (activeLayers.sar ? buildSarScenesGeoJSON(sarScenesList, sarAoisList) : null),
+    [activeLayers.sar, sarScenesList, sarAoisList],
   );
   const sarAoisGeoJSON = useMemo(
     () => (activeLayers.sar ? buildSarAoisGeoJSON(sarAoisList) : null),
@@ -1698,6 +1822,8 @@ const MaplibreViewer = ({
     ukraineAlertsGeoJSON && 'ukraine-alerts-fill',
     weatherAlertsGeoJSON && 'weather-alerts-fill',
     weatherAlertLabelsGeoJSON && 'weather-alert-icons',
+    globalWeatherHazardsGeoJSON && 'global-weather-hazards-fill',
+    globalWeatherHazardLabelsGeoJSON && 'global-weather-hazard-icons',
     airQualityGeoJSON && 'air-quality-layer',
     volcanoesGeoJSON && 'volcanoes-layer',
     fishingGeoJSON && 'fishing-clusters',
@@ -1716,6 +1842,7 @@ const MaplibreViewer = ({
     malwareGeoJSON && 'malware-layer',
     submarineCablesGeoJSON && 'submarine-cables-layer',
     sarAnomaliesGeoJSON && 'sar-anomalies-layer',
+    sarScenesGeoJSON && 'sar-scenes-layer',
     sarAoisGeoJSON && 'sar-aois-fill',
     aiIntelGeoJSON && 'ai-intel-clusters',
     aiIntelGeoJSON && 'ai-intel-pin-layer',
@@ -1724,6 +1851,7 @@ const MaplibreViewer = ({
     correlationsGeoJSON && 'corr-infra-fill',
     correlationsGeoJSON && 'corr-contra-fill',
     correlationsGeoJSON && 'corr-analysis-fill',
+    gtRiskGeoJSON && 'gt-risk-heatmap',
   ].filter(Boolean) as string[];
 
   useEffect(() => {
@@ -1789,6 +1917,7 @@ const MaplibreViewer = ({
   useImperativeSource(mapForHook, 'crowdthreat-source', crowdthreatGeoJSON, 100);
   useImperativeSource(mapForHook, 'malware-source', malwareGeoJSON, 100);
   useImperativeSource(mapForHook, 'telegram-osint-source', telegramOsintGeoJSONPlaced, 100);
+  useImperativeSource(mapForHook, 'reddit-osint-source', redditOsintGeoJSONPlaced, 100);
   useImperativeSource(mapForHook, 'submarine-cables-source', submarineCablesGeoJSON, 600);
   useImperativeSource(mapForHook, 'ships', shipsGeoJSON, 75);
   useImperativeSource(mapForHook, 'meshtastic-source', meshtasticGeoJSON, 60);
@@ -1796,6 +1925,7 @@ const MaplibreViewer = ({
   useImperativeSource(mapForHook, 'trains', trainsGeoJSON, 60);
   useImperativeSource(mapForHook, 'sar-aois', sarAoisGeoJSON, 120);
   useImperativeSource(mapForHook, 'sar-anomalies', sarAnomaliesGeoJSON, 120);
+  useImperativeSource(mapForHook, 'sar-scenes', sarScenesGeoJSON, 120);
 
   const handleMouseMove = useCallback(
     (evt: MapLayerMouseEvent) => {
@@ -1820,7 +1950,7 @@ const MaplibreViewer = ({
 
   return (
     <div
-      className={`relative h-full w-full z-0 isolate ${selectedEntity && ['region_dossier', 'gdelt', 'liveuamap', 'news', 'telegram_osint'].includes(selectedEntity.type) ? 'map-focus-active' : ''}`}
+      className={`relative h-full w-full z-0 isolate ${selectedEntity && ['region_dossier', 'gdelt', 'liveuamap', 'news', 'telegram_osint', 'reddit_osint', 'gt_risk'].includes(selectedEntity.type) ? 'map-focus-active' : ''}`}
       style={pinPlacementMode || sarAoiDropMode ? { cursor: 'crosshair' } : undefined}
     >
       <Map
@@ -1907,9 +2037,7 @@ const MaplibreViewer = ({
             // and renders above entity layers. If an entity (flight, ship,
             // SDR receiver, etc.) is also under the cursor, prefer it — the
             // AOI should only win when the user clicks empty space inside it.
-            const nonAoiFeature = e.features.find(
-              (f) => f.layer?.id !== 'sar-aois-fill',
-            );
+            const nonAoiFeature = e.features.find((f) => f.layer?.id !== 'sar-aois-fill');
             const feature = nonAoiFeature ?? e.features[0];
             const props = feature.properties || {};
 
@@ -1967,6 +2095,72 @@ const MaplibreViewer = ({
               beforeId="imagery-ceiling"
               paint={{
                 'raster-opacity': 1,
+                'raster-fade-duration': 300,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Open-Meteo — cloud cover forecast */}
+        {weatherCloudSourceUrl && (
+          <Source
+            key={`open-meteo-cloud-${forecastTimeStep}`}
+            id="open-meteo-cloud"
+            type="raster"
+            url={weatherCloudSourceUrl}
+            tileSize={256}
+            maxzoom={12}
+          >
+            <Layer
+              id="open-meteo-cloud-layer"
+              type="raster"
+              beforeId="imagery-ceiling"
+              paint={{
+                'raster-opacity': 0.52,
+                'raster-fade-duration': 300,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Open-Meteo — precipitation forecast */}
+        {weatherPrecipSourceUrl && (
+          <Source
+            key={`open-meteo-precip-${forecastTimeStep}`}
+            id="open-meteo-precip"
+            type="raster"
+            url={weatherPrecipSourceUrl}
+            tileSize={256}
+            maxzoom={12}
+          >
+            <Layer
+              id="open-meteo-precip-layer"
+              type="raster"
+              beforeId="imagery-ceiling"
+              paint={{
+                'raster-opacity': 0.58,
+                'raster-fade-duration': 300,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* RainViewer — global precipitation radar overlay */}
+        {weatherRadarTiles && (
+          <Source
+            key={`weather-radar-${weatherRadarMode}-${weatherRadarFrameIndex}-${data?.weather?.time ?? 'live'}`}
+            id="weather-radar"
+            type="raster"
+            tiles={[weatherRadarTiles]}
+            tileSize={256}
+            maxzoom={7}
+          >
+            <Layer
+              id="weather-radar-layer"
+              type="raster"
+              beforeId="imagery-ceiling"
+              paint={{
+                'raster-opacity': 0.58,
                 'raster-fade-duration': 300,
               }}
             />
@@ -2222,6 +2416,55 @@ const MaplibreViewer = ({
               'text-color': '#ff4060',
               'text-halo-color': '#000000',
               'text-halo-width': 1.5,
+            }}
+          />
+        </Source>
+
+        {/* Strategic Risk Heatmap — Bayesian posterior scores */}
+        <Source id="gt-risk-source" type="geojson" data={(gtRiskGeoJSON ?? EMPTY_FC)}>
+          <Layer
+            id="gt-risk-heatmap"
+            type="circle"
+            minzoom={2}
+            paint={{
+              'circle-radius': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                2,
+                ['+', 6, ['*', 14, ['get', 'risk']]],
+                6,
+                ['+', 10, ['*', 28, ['get', 'risk']]],
+                10,
+                ['+', 14, ['*', 40, ['get', 'risk']]],
+              ],
+              'circle-color': [
+                'interpolate',
+                ['linear'],
+                ['get', 'risk'],
+                0.15,
+                '#22c55e',
+                0.35,
+                '#84cc16',
+                0.5,
+                '#eab308',
+                0.65,
+                '#f97316',
+                0.8,
+                '#ef4444',
+              ],
+              'circle-opacity': [
+                'interpolate',
+                ['linear'],
+                ['get', 'risk'],
+                0.15,
+                0.22,
+                0.8,
+                0.72,
+              ],
+              'circle-stroke-width': 1,
+              'circle-stroke-color': '#fbbf24',
+              'circle-stroke-opacity': 0.35,
             }}
           />
         </Source>
@@ -3081,6 +3324,47 @@ const MaplibreViewer = ({
           </Source>
         )}
 
+        {/* SAR catalog passes — Sentinel-1 pins inside operator AOIs (Mode A) */}
+        {sarScenesGeoJSON && (
+          <Source id="sar-scenes" type="geojson" data={EMPTY_FC}>
+            <Layer
+              id="sar-scenes-layer"
+              type="circle"
+              filter={['==', ['get', 'type'], 'sar_scene']}
+              paint={{
+                'circle-radius': [
+                  'interpolate', ['linear'], ['zoom'],
+                  2, 3, 6, 5, 10, 7,
+                ],
+                'circle-color': '#fde047',
+                'circle-opacity': 0.95,
+                'circle-stroke-width': 1.5,
+                'circle-stroke-color': '#422006',
+              }}
+            />
+            <Layer
+              id="sar-scenes-label"
+              type="symbol"
+              minzoom={6}
+              filter={['==', ['get', 'type'], 'sar_scene']}
+              layout={{
+                'text-field': ['get', 'name'],
+                'text-font': ['Noto Sans Regular'],
+                'text-size': 9,
+                'text-offset': [0, 1.1],
+                'text-anchor': 'top',
+                'text-allow-overlap': false,
+                'text-max-width': 14,
+              }}
+              paint={{
+                'text-color': '#a5f3fc',
+                'text-halo-color': 'rgba(0,0,0,0.9)',
+                'text-halo-width': 1,
+              }}
+            />
+          </Source>
+        )}
+
         {/* SAR Anomalies — Mode B pre-processed findings (OPERA/EGMS/GFM/EMS/UNOSAT) */}
         {sarAnomaliesGeoJSON && (
           <Source id="sar-anomalies" type="geojson" data={EMPTY_FC}>
@@ -3389,6 +3673,51 @@ const MaplibreViewer = ({
         <Source id="weather-alert-labels-source" type="geojson" data={(weatherAlertLabelsGeoJSON ?? EMPTY_FC)}>
           <Layer
             id="weather-alert-icons"
+            type="symbol"
+            layout={{
+              'icon-image': ['get', 'iconId'],
+              'icon-size': 1.1,
+              'icon-allow-overlap': true,
+              'icon-anchor': 'bottom',
+              'text-field': ['get', 'event'],
+              'text-font': ['Noto Sans Bold'],
+              'text-size': 11,
+              'text-offset': [0, 0.4],
+              'text-anchor': 'top',
+              'text-allow-overlap': false,
+              'text-max-width': 14,
+            }}
+            paint={{
+              'text-color': ['get', 'color'],
+              'text-halo-color': '#000000',
+              'text-halo-width': 1.5,
+            }}
+          />
+        </Source>
+
+        {/* GDACS — global tropical cyclone / flood / wildfire / drought hazards */}
+        <Source id="global-weather-hazards-source" type="geojson" data={(globalWeatherHazardsGeoJSON ?? EMPTY_FC)}>
+          <Layer
+            id="global-weather-hazards-fill"
+            type="fill"
+            paint={{
+              'fill-color': ['get', 'color'],
+              'fill-opacity': 0.14,
+            }}
+          />
+          <Layer
+            id="global-weather-hazards-outline"
+            type="line"
+            paint={{
+              'line-color': ['get', 'color'],
+              'line-width': 2,
+              'line-opacity': 0.75,
+            }}
+          />
+        </Source>
+        <Source id="global-weather-hazard-labels-source" type="geojson" data={(globalWeatherHazardLabelsGeoJSON ?? EMPTY_FC)}>
+          <Layer
+            id="global-weather-hazard-icons"
             type="symbol"
             layout={{
               'icon-image': ['get', 'iconId'],
@@ -4421,6 +4750,20 @@ const MaplibreViewer = ({
           />
         ) : null}
 
+        {activeLayers.reddit_osint && !isMapInteracting && redditOsintGeoJSONPlaced?.features?.length ? (
+          <RedditOsintMarkers
+            features={redditOsintGeoJSONPlaced.features}
+            onEntityClick={onEntityClick}
+          />
+        ) : null}
+
+        {activeLayers.wastewater && !isMapInteracting ? (
+          <WastewaterSurveillanceBeacon
+            enabled={activeLayers.wastewater}
+            surveillance={data?.wastewater_surveillance}
+          />
+        ) : null}
+
         {/* Satellite positions — mission-type icons */}
         {/* satellites: data pushed imperatively */}
         <Source id="satellites" type="geojson" data={EMPTY_FC}>
@@ -5140,19 +5483,22 @@ const MaplibreViewer = ({
         {selectedEntity?.type === 'sar_anomaly' &&
           (() => {
             const extra = (selectedEntity.extra || {}) as Record<string, unknown>;
-            const anomaly = data?.sar_anomalies?.find(
-              (a) => a.anomaly_id === selectedEntity.id,
-            );
+            const anomaly = sarAnomaliesList.find((a) => a.anomaly_id === selectedEntity.id);
             const a = anomaly || extra;
-            const lat = typeof a.lat === 'number' ? a.lat : Number(extra.center_lat);
-            const lng =
-              typeof (a as { lon?: number }).lon === 'number'
-                ? (a as { lon: number }).lon
-                : Number(extra.center_lon);
+            const lat = Number(extra.pin_lat ?? (typeof a.lat === 'number' ? a.lat : extra.center_lat));
+            const lng = Number(
+              extra.pin_lon ??
+                (typeof (a as { lon?: number }).lon === 'number'
+                  ? (a as { lon: number }).lon
+                  : extra.center_lon),
+            );
             if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
             const kind = String(a.kind || extra.kind || 'anomaly');
+            const kindLabel = String(extra.kind_label || '');
             const title = String(a.title || extra.title || `SAR ${kind}`);
-            const summary = String(a.summary || extra.summary || '');
+            const summary = String(
+              kindLabel || a.summary || extra.summary || 'SAR ground-change alert',
+            );
             const solver = String(a.solver || extra.solver || '');
             const constellation = String(
               (a as { source_constellation?: string }).source_constellation ||
@@ -5200,9 +5546,9 @@ const MaplibreViewer = ({
                     </div>
                   )}
                   <div className="map-popup-row text-[11px]">
-                    Kind:{' '}
-                    <span className="text-amber-200 font-mono">
-                      {kind.replace(/_/g, ' ')}
+                    Signal:{' '}
+                    <span className="text-amber-200 leading-snug">
+                      {kindLabel || kind.replace(/_/g, ' ')}
                     </span>
                   </div>
                   {solver && (
@@ -5251,6 +5597,83 @@ const MaplibreViewer = ({
                         Provenance ↗
                       </a>
                     </div>
+                  )}
+                </div>
+              </Popup>
+            );
+          })()}
+
+        {/* SAR scene click popup — Sentinel-1 catalog pass */}
+        {selectedEntity?.type === 'sar_scene' &&
+          (() => {
+            const extra = (selectedEntity.extra || {}) as Record<string, unknown>;
+            const scene = sarScenesList.find((row) => row.scene_id === selectedEntity.id);
+            const plotLat = Number(extra.pin_lat);
+            const plotLng = Number(extra.pin_lon);
+            if (!Number.isFinite(plotLat) || !Number.isFinite(plotLng)) return null;
+            const platform = String(scene?.platform || extra.platform || 'Sentinel-1');
+            const acquired = String(scene?.time || extra.time || '—');
+            const mode = String(scene?.mode || extra.mode || '—');
+            const orbit =
+              scene?.relative_orbit != null
+                ? String(scene.relative_orbit)
+                : extra.relative_orbit != null
+                  ? String(extra.relative_orbit)
+                  : '—';
+            const direction = String(scene?.flight_direction || extra.flight_direction || '—');
+            const aoiId = String(scene?.aoi_id || extra.aoi_id || '');
+            const downloadUrl = String(scene?.download_url || extra.download_url || '');
+            return (
+              <Popup
+                longitude={plotLng}
+                latitude={plotLat}
+                closeButton={false}
+                closeOnClick={false}
+                onClose={() => onEntityClick?.(null)}
+                className="threat-popup"
+                maxWidth="340px"
+              >
+                <div className="map-popup bg-zinc-950/95 border border-cyan-500/40 text-cyan-50 min-w-[240px]">
+                  <div className="map-popup-title flex items-center justify-between gap-2 text-cyan-300 border-b border-cyan-500/20 pb-1">
+                    <span>SAR PASS · {platform}</span>
+                    <button
+                      type="button"
+                      onClick={() => onEntityClick?.(null)}
+                      className="text-cyan-200/60 hover:text-cyan-100"
+                      aria-label="Close"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="map-popup-row text-[11px]">
+                    Acquired: <span className="text-cyan-100 font-mono">{acquired}</span>
+                  </div>
+                  <div className="map-popup-row text-[11px]">
+                    Mode: <span className="text-cyan-100">{mode}</span>
+                    {' · '}
+                    Orbit: <span className="text-cyan-100">{orbit}</span>
+                  </div>
+                  <div className="map-popup-row text-[11px]">
+                    Track: <span className="text-cyan-100">{direction}</span>
+                  </div>
+                  {aoiId && (
+                    <div className="map-popup-row text-[11px]">
+                      AOI: <span className="text-cyan-100 font-mono">{aoiId}</span>
+                    </div>
+                  )}
+                  <div className="map-popup-row text-[10px] text-cyan-200/75 leading-snug pt-1">
+                    Cyan markers = cataloged Sentinel-1 acquisitions over your AOIs. This is
+                    metadata only — click download for the raw GRD/SLC product.
+                  </div>
+                  {downloadUrl && (
+                    <a
+                      href={downloadUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex text-[10px] font-mono tracking-wider text-cyan-300 hover:text-cyan-100 border border-cyan-500/40 px-2 py-1 rounded"
+                    >
+                      ↗ DOWNLOAD SCENE
+                    </a>
                   )}
                 </div>
               </Popup>
@@ -5511,16 +5934,19 @@ const MaplibreViewer = ({
             );
           })()}
 
-        {/* Weather Alert popup */}
+        {/* Weather Alert popup (NOAA/NWS + GDACS) */}
         {selectedEntity?.type === 'weather_alert' &&
           (() => {
-            const alert = data?.weather_alerts?.find((a) => a.id === selectedEntity.id);
+            const alert =
+              data?.weather_alerts?.find((a) => a.id === selectedEntity.id)
+              ?? data?.global_weather_hazards?.find((a) => a.id === selectedEntity.id);
             if (!alert) return null;
             const sevColors: Record<string, string> = { Extreme: '#ef4444', Severe: '#f97316', Moderate: '#eab308', Minor: '#3b82f6' };
-            const accent = sevColors[alert.severity] || '#3b82f6';
+            const accent = sevColors[alert.severity] || (alert.source === 'GDACS' ? '#c026d3' : '#3b82f6');
             const geom = alert.geometry;
             const coords = geom?.type === 'Polygon' ? geom.coordinates?.[0]?.[0] : geom?.type === 'MultiPolygon' ? geom.coordinates?.[0]?.[0]?.[0] : null;
             if (!coords) return null;
+            const sourceLabel = alert.source === 'GDACS' ? 'GDACS' : 'NOAA/NWS';
             return (
               <Popup longitude={coords[0]} latitude={coords[1]} closeButton={false} closeOnClick={false} onClose={() => onEntityClick?.(null)} className="threat-popup" maxWidth="300px">
                 <div className="map-popup bg-[#1a1035] min-w-[220px]" style={{ borderColor: `${accent}66` }}>
@@ -5529,8 +5955,20 @@ const MaplibreViewer = ({
                   </div>
                   <div className="map-popup-row text-white text-[10px] leading-snug">{alert.headline}</div>
                   <div className="map-popup-row">Severity: <span style={{ color: accent }}>{alert.severity}</span></div>
+                  {alert.country && <div className="map-popup-row">Region: <span className="text-white">{alert.country}</span></div>}
                   {alert.expires && <div className="map-popup-row">Expires: <span className="text-white">{new Date(alert.expires).toLocaleString()}</span></div>}
                   <div className="mt-1 text-[9px] text-gray-400 leading-snug max-h-[60px] overflow-hidden">{alert.description}</div>
+                  {alert.report_url ? (
+                    <a
+                      href={alert.report_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-block text-[9px] tracking-wider text-cyan-400 hover:text-cyan-300"
+                    >
+                      VIEW GDACS REPORT →
+                    </a>
+                  ) : null}
+                  <div className="mt-1.5 text-[9px] tracking-wider text-gray-500">WEATHER — {sourceLabel}</div>
                 </div>
               </Popup>
             );
@@ -5572,6 +6010,18 @@ const MaplibreViewer = ({
             if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
             const mag = eq?.mag ?? Number(extra.mag);
             const place = eq?.place || String(extra.place || selectedEntity.name || 'Unknown location');
+            const time =
+              (typeof eq?.time === 'string' && eq.time) ||
+              (typeof extra.time === 'string' ? extra.time : undefined);
+            const depthKm =
+              typeof eq?.depth_km === 'number'
+                ? eq.depth_km
+                : typeof extra.depth_km === 'number'
+                  ? extra.depth_km
+                  : null;
+            const usgsUrl =
+              (typeof eq?.url === 'string' && eq.url) ||
+              (typeof extra.url === 'string' ? extra.url : undefined);
             const accent = mag >= 6 ? '#ef4444' : mag >= 4.5 ? '#f97316' : '#eab308';
             return (
               <Popup
@@ -5596,6 +6046,18 @@ const MaplibreViewer = ({
                       {lat.toFixed(3)}, {lng.toFixed(3)}
                     </span>
                   </div>
+                  <div className="map-popup-row">
+                    Time:{' '}
+                    <span className="text-white">
+                      {time ? formatEventTimestamp(time, { style: 'full' }) : 'Unknown'}
+                    </span>
+                  </div>
+                  <div className="map-popup-row">
+                    Depth:{' '}
+                    <span className="text-white font-mono">
+                      {depthKm != null && Number.isFinite(depthKm) ? `${depthKm.toFixed(1)} km` : 'Unknown'}
+                    </span>
+                  </div>
                   {oracleIntel?.found && (
                     <div className="mt-2 pt-2 border-t border-yellow-500/20">
                       <div className="text-[10px] font-mono text-yellow-500/80 tracking-wider mb-1">REGION INTEL</div>
@@ -5611,8 +6073,18 @@ const MaplibreViewer = ({
                       </div>
                     </div>
                   )}
-                  <div className="mt-1.5 text-[9px] tracking-wider" style={{ color: `${accent}99` }}>
-                    SEISMIC — USGS
+                  <div className="mt-1.5 flex items-center justify-between gap-2 text-[9px] tracking-wider" style={{ color: `${accent}99` }}>
+                    <span>SEISMIC — USGS</span>
+                    {usgsUrl ? (
+                      <a
+                        href={usgsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-cyan-400 hover:text-cyan-200 underline underline-offset-2"
+                      >
+                        USGS REPORT ↗
+                      </a>
+                    ) : null}
                   </div>
                 </div>
               </Popup>
@@ -5713,6 +6185,30 @@ const MaplibreViewer = ({
           })()}
 
         {(() => {
+          if (selectedEntity?.type !== 'gt_risk' || !selectedEntity.extra) return null;
+          const props = selectedEntity.extra as Record<string, unknown>;
+          const lat = Number(props.lat);
+          const lng = Number(props.lng);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+          return (
+            <GtRiskPopup
+              region={String(props.region || props.name || selectedEntity.id)}
+              risk={Number(props.risk ?? 0)}
+              financial={Number(props.financial ?? 0)}
+              unrest={Number(props.unrest ?? 0)}
+              conflict={Number(props.conflict ?? 0)}
+              contagion={Number(props.contagion ?? 0)}
+              interpretation={String(props.interpretation || '')}
+              weatherNoise={Number(props.weather_noise ?? 0)}
+              collectionBadge={String(props.collection_badge || '')}
+              lat={lat}
+              lng={lng}
+              onClose={() => onEntityClick?.(null)}
+            />
+          );
+        })()}
+
+        {(() => {
           if (selectedEntity?.type !== 'telegram_osint' || !data?.telegram_osint?.posts) return null;
           const allPosts = data.telegram_osint.posts;
           const clusterPosts = allPosts.filter((p) => {
@@ -5726,6 +6222,28 @@ const MaplibreViewer = ({
           const [pinLat, pinLng] = telegramMapPinCoords(anchor[0], anchor[1], avoidAlert);
           return (
             <TelegramOsintPopup
+              posts={clusterPosts}
+              lat={pinLat}
+              lng={pinLng}
+              onClose={() => onEntityClick?.(null)}
+            />
+          );
+        })()}
+
+        {(() => {
+          if (selectedEntity?.type !== 'reddit_osint' || !data?.reddit_osint?.posts) return null;
+          const allPosts = data.reddit_osint.posts;
+          const clusterPosts = allPosts.filter((p) => {
+            if (!p.coords || p.coords.length < 2) return false;
+            const key = telegramClusterKey(p.coords[0], p.coords[1]);
+            return key === selectedEntity.id || p.id === selectedEntity.id;
+          });
+          const anchor = clusterPosts[0]?.coords;
+          if (!anchor || anchor.length < 2) return null;
+          const avoidAlert = telegramClusterNearNewsAlert(anchor[0], anchor[1], data?.news);
+          const [pinLat, pinLng] = telegramMapPinCoords(anchor[0], anchor[1], avoidAlert);
+          return (
+            <RedditOsintPopup
               posts={clusterPosts}
               lat={pinLat}
               lng={pinLng}
@@ -6000,7 +6518,9 @@ const MaplibreViewer = ({
           const sentArrow = sent != null ? (sent < -0.1 ? '▼' : sent > 0.1 ? '▲' : '—') : '';
           const sentLabel = sent != null ? (sent < -0.1 ? 'NEGATIVE' : sent > 0.1 ? 'POSITIVE' : 'NEUTRAL') : '';
           const pred = item.prediction_odds as any;
-          const articles = (item.articles as any[]) || [];
+          const articles = [...((item.articles as any[]) || [])].sort((a, b) =>
+            compareEventTimestampsDesc(a?.published, b?.published),
+          );
           const clusterCount = (item.cluster_count as number) || 1;
           const isBreaking = item.breaking === true;
 
@@ -6062,7 +6582,9 @@ const MaplibreViewer = ({
                     </h2>
                     <div className="flex items-center gap-3 mt-2 text-[11px] text-[var(--text-muted)]">
                       <span className="text-white font-bold text-[12px]">{item.source || 'UNKNOWN'}</span>
-                      {item.published && <span>• {item.published}</span>}
+                      {item.published && (
+                        <span>• {formatEventTimestamp(item.published, { style: 'full' })}</span>
+                      )}
                       {clusterCount > 1 && <span className="text-cyan-400 font-bold">• {clusterCount} SOURCES REPORTING</span>}
                       {item.coords && (
                         <span className="ml-auto text-[10px] font-mono text-[var(--text-muted)]">
@@ -6222,7 +6744,11 @@ const MaplibreViewer = ({
                                 <div className="flex items-center gap-2 text-[10px]">
                                   <span className="text-white font-bold">{sub.source}</span>
                                   <span className={`${subColor} font-bold`}>LVL: {subRs}/10</span>
-                                  {sub.published && <span className="text-[var(--text-muted)] text-[9px]">{sub.published}</span>}
+                                  {sub.published && (
+                                    <span className="text-[var(--text-muted)] text-[9px]">
+                                      {formatEventTimestamp(sub.published)}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-[11px] text-[var(--text-secondary)] leading-snug mt-0.5 group-hover:text-cyan-300 transition-colors">
                                   {sub.title}
@@ -6286,6 +6812,7 @@ const MaplibreViewer = ({
           regionDossier?.sentinel2 && (
             <RegionDossierPanel
               sentinel2={regionDossier.sentinel2}
+              weather={regionDossier.weather}
               lat={selectedEntity.extra.lat}
               lng={selectedEntity.extra.lng}
               onClose={() => onEntityClick(null)}

@@ -6,7 +6,7 @@ import html
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from services.fetchers._store import _data_lock, _mark_fresh, is_any_active, latest_data
@@ -15,6 +15,8 @@ from services.network_utils import fetch_with_curl, outbound_user_agent
 from services.telegram_translate import apply_post_translation, apply_posts_translations
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_TELEGRAM_MAX_AGE_DAYS = 7
 
 _DEFAULT_CHANNELS = (
     "osintdefender",
@@ -36,7 +38,7 @@ _TEXT_RE = re.compile(
 )
 _DATE_RE = re.compile(
     r'<a class="tgme_widget_message_date" href="(https://t\.me/[^"]+)".*?<time datetime="([^"]+)"',
-    re.IGNORECASE,
+    re.IGNORECASE | re.DOTALL,
 )
 _HAS_VIDEO_RE = re.compile(
     r'tgme_widget_message_video|js-message_video|<video\s',
@@ -120,6 +122,61 @@ _RISK_KEYWORDS = (
     "explosion",
     "shelling",
 )
+
+
+def telegram_max_age_days() -> int:
+    raw = str(os.environ.get("TELEGRAM_OSINT_MAX_AGE_DAYS", "")).strip()
+    if not raw:
+        return DEFAULT_TELEGRAM_MAX_AGE_DAYS
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return DEFAULT_TELEGRAM_MAX_AGE_DAYS
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_published_at(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _post_within_retention(
+    post: dict[str, Any],
+    *,
+    max_age_days: int | None = None,
+    now: datetime | None = None,
+) -> bool:
+    published = _parse_published_at(post.get("published"))
+    if published is None:
+        return False
+    limit_days = max_age_days if max_age_days is not None else telegram_max_age_days()
+    cutoff = (now or _utcnow()) - timedelta(days=limit_days)
+    return published >= cutoff
+
+
+def prune_telegram_posts(
+    posts: list[dict[str, Any]],
+    *,
+    max_age_days: int | None = None,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Drop Telegram posts older than the configured retention window."""
+    return [
+        post
+        for post in posts
+        if _post_within_retention(post, max_age_days=max_age_days, now=now)
+    ]
 
 
 def telegram_osint_enabled() -> bool:
@@ -235,6 +292,7 @@ def _extract_new_channel_posts(
     parsed = parse_telegram_channel_html(html, channel)
     if not parsed:
         return []
+    parsed = prune_telegram_posts(parsed)
     if not known_links:
         return parsed[-bootstrap_limit:]
 
@@ -266,7 +324,8 @@ def _merge_telegram_posts(
         existing.append(post)
         added += 1
     existing.sort(key=lambda p: str(p.get("published") or ""), reverse=True)
-    return existing[:max_posts], added
+    pruned = prune_telegram_posts(existing[:max_posts])
+    return pruned, added
 
 
 def parse_telegram_channel_html(html: str, channel: str) -> list[dict[str, Any]]:
@@ -302,7 +361,7 @@ def parse_telegram_channel_html(html: str, channel: str) -> list[dict[str, Any]]
             **media,
         }
         posts.append(apply_post_translation(post))
-    return posts
+    return prune_telegram_posts(posts)
 
 
 def fetch_telegram_osint() -> dict[str, Any]:
@@ -325,7 +384,7 @@ def fetch_telegram_osint() -> dict[str, Any]:
 
     with _data_lock:
         prior = latest_data.get("telegram_osint") or {}
-        existing_posts = list(prior.get("posts") or [])
+        existing_posts = prune_telegram_posts(list(prior.get("posts") or []))
 
     known_links = {_post_link(post) for post in existing_posts if _post_link(post)}
     incoming: list[dict[str, Any]] = []
@@ -356,22 +415,25 @@ def fetch_telegram_osint() -> dict[str, Any]:
     merged_posts = apply_posts_translations(merged_posts)
     geolocated = sum(1 for p in merged_posts if p.get("coords"))
 
+    max_age_days = telegram_max_age_days()
     payload = {
         "posts": merged_posts,
         "total": len(merged_posts),
         "geolocated": geolocated,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": _utcnow().isoformat(),
         "channels": _configured_channels(),
         "last_fetch_new": added,
+        "max_age_days": max_age_days,
     }
 
     with _data_lock:
         latest_data["telegram_osint"] = payload
     _mark_fresh("telegram_osint")
     logger.info(
-        "Telegram OSINT: +%s new, %s retained (%s geolocated)",
+        "Telegram OSINT: +%s new, %s retained (%s geolocated, <=%sd)",
         added,
         len(merged_posts),
         geolocated,
+        max_age_days,
     )
     return payload

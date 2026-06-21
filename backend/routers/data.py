@@ -10,6 +10,9 @@ from pydantic import BaseModel
 from limiter import limiter
 from auth import require_admin, require_local_operator
 from services.data_fetcher import update_all_data
+from services.fetchers.telegram_osint import prune_telegram_posts
+from services.fetchers.reddit_osint import prune_reddit_posts
+from services.liveuamap_retention import prune_liveuamap_incidents
 import orjson
 import json as json_mod
 
@@ -44,6 +47,33 @@ _LAST_VIEWPORT_UPDATE_TS = 0.0
 _VIEWPORT_UPDATE_LOCK = threading.Lock()
 _VIEWPORT_DEDUPE_EPSILON = 1.0
 _VIEWPORT_MIN_UPDATE_S = 10.0
+
+
+def _fresh_liveuamap_incidents(incidents: Any) -> list[dict[str, Any]]:
+    return prune_liveuamap_incidents(list(incidents or []))
+
+
+def _fresh_telegram_osint_payload(payload: Any) -> dict[str, Any]:
+    base = payload if isinstance(payload, dict) else {}
+    posts = prune_telegram_posts(list(base.get("posts") or []))
+    return {
+        **base,
+        "posts": posts,
+        "total": len(posts),
+        "geolocated": sum(1 for post in posts if post.get("coords")),
+    }
+
+
+def _fresh_reddit_osint_payload(payload: Any) -> dict[str, Any]:
+    base = payload if isinstance(payload, dict) else {}
+    posts = prune_reddit_posts(list(base.get("posts") or []))
+    return {
+        **base,
+        "posts": posts,
+        "total": len(posts),
+        "geolocated": sum(1 for post in posts if post.get("coords")),
+        "adversarial_count": sum(1 for post in posts if post.get("narrative_profile") == "adversarial"),
+    }
 
 
 def _normalize_longitude(value: float) -> float:
@@ -644,7 +674,9 @@ async def bootstrap_critical(request: Request):
         "ships": _cap_startup_items((d.get("ships") or []) if ships_enabled else [], 1500),
         "uavs": _cap_startup_items((d.get("uavs") or []) if active_layers.get("military", True) else [], 100),
         "liveuamap": _cap_startup_items(
-            (d.get("liveuamap") or []) if active_layers.get("global_incidents", True) else [],
+            _fresh_liveuamap_incidents(d.get("liveuamap") or [])
+            if active_layers.get("global_incidents", True)
+            else [],
             300,
         ),
         "gps_jamming": _cap_startup_items(
@@ -724,7 +756,11 @@ async def live_data_fast(
         "ships": (d.get("ships") or []) if ships_enabled else [],
         "cctv": (d.get("cctv") or []) if active_layers.get("cctv", True) else [],
         "uavs": (d.get("uavs") or []) if active_layers.get("military", True) else [],
-        "liveuamap": (d.get("liveuamap") or []) if active_layers.get("global_incidents", True) else [],
+        "liveuamap": (
+            _fresh_liveuamap_incidents(d.get("liveuamap") or [])
+            if active_layers.get("global_incidents", True)
+            else []
+        ),
         "gps_jamming": (d.get("gps_jamming") or []) if active_layers.get("gps_jamming", True) else [],
         "satellites": (d.get("satellites") or []) if active_layers.get("satellites", True) else [],
         "satellite_source": d.get("satellite_source", "none"),
@@ -770,10 +806,12 @@ async def live_data_slow(
         "earthquakes", "frontlines", "gdelt", "airports", "kiwisdr", "satnogs_stations",
         "satnogs_observations", "tinygs_satellites", "space_weather", "internet_outages",
         "firms_fires", "datacenters", "military_bases", "power_plants", "viirs_change_nodes",
-        "scanners", "weather_alerts", "ukraine_alerts", "air_quality", "volcanoes",
+        "scanners", "weather_alerts", "global_weather_hazards", "weather_forecast",
+        "ukraine_alerts", "air_quality", "volcanoes",
         "fishing_activity", "psk_reporter", "correlations", "uap_sightings", "wastewater",
+        "wastewater_surveillance",
         "crowdthreat", "threat_level", "trending_markets", "road_corridor_trends",
-        "malware_threats", "cyber_threats", "scm_suppliers", "telegram_osint",
+        "malware_threats", "cyber_threats", "scm_suppliers", "telegram_osint", "reddit_osint", "gt_risk",
     )
     freshness = get_source_timestamps_snapshot()
     payload = {
@@ -784,7 +822,10 @@ async def live_data_slow(
         "stocks": d.get("stocks", {}),
         "financial_source": d.get("financial_source", ""),
         "oil": d.get("oil", {}),
-        "weather": d.get("weather"),
+        "weather": d.get("weather") if active_layers.get("weather_radar", True) else None,
+        "weather_forecast": d.get("weather_forecast")
+        if active_layers.get("weather_cloud", False) or active_layers.get("weather_precip", False)
+        else None,
         "traffic": d.get("traffic", []),
         "earthquakes": (d.get("earthquakes") or []) if active_layers.get("earthquakes", True) else [],
         "frontlines": d.get("frontlines") if active_layers.get("ukraine_frontline", True) else None,
@@ -806,6 +847,9 @@ async def live_data_slow(
         "viirs_change_nodes": (d.get("viirs_change_nodes") or []) if active_layers.get("viirs_nightlights", True) else [],
         "scanners": (d.get("scanners") or []) if active_layers.get("scanners", True) else [],
         "weather_alerts": d.get("weather_alerts", []) if active_layers.get("weather_alerts", True) else [],
+        "global_weather_hazards": d.get("global_weather_hazards", [])
+        if active_layers.get("global_weather_hazards", True)
+        else [],
         "ukraine_alerts": d.get("ukraine_alerts", []) if active_layers.get("ukraine_alerts", True) else [],
         "air_quality": (d.get("air_quality") or []) if active_layers.get("air_quality", True) else [],
         "volcanoes": (d.get("volcanoes") or []) if active_layers.get("volcanoes", True) else [],
@@ -813,6 +857,19 @@ async def live_data_slow(
         "correlations": (d.get("correlations") or []) if active_layers.get("correlations", True) else [],
         "uap_sightings": (d.get("uap_sightings") or []) if active_layers.get("uap_sightings", True) else [],
         "wastewater": (d.get("wastewater") or []) if active_layers.get("wastewater", True) else [],
+        "wastewater_surveillance": (
+            d.get("wastewater_surveillance")
+            if active_layers.get("wastewater", True)
+            else {
+                "updated_at": None,
+                "baseline_date": None,
+                "marker": {"lat": 39.8283, "lng": -98.5795},
+                "pathogens": [],
+                "rising_pathogens": [],
+                "pathogens_rising": 0,
+                "signature": "",
+            }
+        ),
         "crowdthreat": (d.get("crowdthreat") or []) if active_layers.get("crowdthreat", True) else [],
         "road_corridor_trends": (
             d.get("road_corridor_trends") or {"updated_at": None, "corridors": []}
@@ -835,10 +892,21 @@ async def live_data_slow(
         if active_layers.get("scm_suppliers", False)
         else {"suppliers": [], "total": 0, "critical_count": 0},
         "telegram_osint": (
-            d.get("telegram_osint") or {"posts": [], "total": 0, "geolocated": 0}
+            _fresh_telegram_osint_payload(d.get("telegram_osint"))
         )
         if active_layers.get("telegram_osint", True)
         else {"posts": [], "total": 0, "geolocated": 0},
+        "reddit_osint": (
+            _fresh_reddit_osint_payload(d.get("reddit_osint"))
+        )
+        if active_layers.get("reddit_osint", True)
+        else {"posts": [], "total": 0, "geolocated": 0},
+        "gt_risk": (
+            d.get("gt_risk")
+            or {"enabled": False, "heatmap": {"type": "FeatureCollection", "features": []}, "clusters": []}
+        )
+        if active_layers.get("gt_risk", False)
+        else {"enabled": False, "heatmap": {"type": "FeatureCollection", "features": []}, "clusters": []},
         "freshness": freshness,
     }
     # Issue #288: bbox filter heavy/dense layers only when all four bounds

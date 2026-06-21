@@ -229,6 +229,8 @@ describe('page.tsx decomposition — retained orchestration', () => {
     expect(page).toContain('localStorage.getItem');
     expect(page).toContain('sb_left_open');
     expect(page).toContain('sb_right_open');
+    expect(page).toContain('loadActiveLayersFromStorage');
+    expect(page).toContain('saveActiveLayersToStorage');
   });
 
   it('page.tsx retains infonetOpen state', () => {

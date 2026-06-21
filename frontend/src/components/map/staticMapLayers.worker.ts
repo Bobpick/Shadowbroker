@@ -23,6 +23,7 @@ import {
   buildCrowdThreatGeoJSON,
   buildMalwareGeoJSON,
   buildTelegramOsintGeoJSON,
+  buildRedditOsintGeoJSON,
 } from '@/components/map/geoJSONBuilders';
 import type {
   AirQualityStation,
@@ -85,6 +86,18 @@ export type StaticMapLayersDataPayload = {
     risk_score?: number;
     coords?: [number, number] | null;
   }>;
+  redditOsintPosts?: Array<{
+    id: string;
+    title?: string;
+    description?: string;
+    link?: string;
+    source?: string;
+    subreddit?: string;
+    narrative_profile?: string;
+    risk_score?: number;
+    published?: string;
+    coords?: [number, number] | null;
+  }>;
 };
 
 export type StaticMapLayersBuildPayload = {
@@ -111,6 +124,7 @@ export type StaticMapLayersBuildPayload = {
     crowdthreat: boolean;
     malware_c2: boolean;
     telegram_osint: boolean;
+    reddit_osint: boolean;
   };
 };
 
@@ -137,6 +151,7 @@ export type StaticMapLayersResult = {
   crowdthreatGeoJSON: FC;
   malwareGeoJSON: FC;
   telegramOsintGeoJSON: FC;
+  redditOsintGeoJSON: FC;
 };
 
 type SyncRequest = {
@@ -214,6 +229,9 @@ function buildStaticLayers(payload: StaticMapLayersBuildPayload): StaticMapLayer
       : null,
   telegramOsintGeoJSON: payload.activeLayers.telegram_osint
       ? buildTelegramOsintGeoJSON({ posts: staticData.telegramOsintPosts })
+      : null,
+  redditOsintGeoJSON: payload.activeLayers.reddit_osint
+      ? buildRedditOsintGeoJSON({ posts: staticData.redditOsintPosts })
       : null,
   };
 }

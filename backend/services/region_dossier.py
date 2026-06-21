@@ -220,7 +220,9 @@ def get_region_dossier(lat: float, lng: float) -> dict:
     state_name = geo.get("state", "")
 
     # Step 2: Parallel fetch with real timeouts that do not block on executor shutdown
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+    from services.open_meteo import fetch_point_weather
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=5)
     try:
         country_fut = pool.submit(_fetch_country_data, country_code)
         leader_fut = pool.submit(_fetch_wikidata_leader, country_name)
@@ -228,6 +230,7 @@ def get_region_dossier(lat: float, lng: float) -> dict:
             _fetch_local_wiki_summary, city_name or state_name, country_name
         )
         country_wiki_fut = pool.submit(_fetch_local_wiki_summary, country_name, "")
+        weather_fut = pool.submit(fetch_point_weather, lat, lng)
 
         try:
             country_data = country_fut.result(timeout=6)
@@ -248,6 +251,11 @@ def get_region_dossier(lat: float, lng: float) -> dict:
             country_wiki_data = country_wiki_fut.result(timeout=5)
         except Exception:  # Intentional: optional enrichment
             country_wiki_data = {}
+        try:
+            weather_data = weather_fut.result(timeout=8)
+        except Exception:  # Intentional: optional enrichment
+            logger.warning("Point weather fetch timed out or failed")
+            weather_data = {"error": "Weather forecast unavailable"}
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
 
@@ -297,6 +305,7 @@ def get_region_dossier(lat: float, lng: float) -> dict:
             "summary": local_data.get("extract", ""),
             "thumbnail": local_data.get("thumbnail", ""),
         },
+        "weather": weather_data,
     }
 
     dossier_cache[cache_key] = result

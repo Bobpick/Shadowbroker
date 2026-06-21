@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { ToastItem } from '@/hooks/useAlertToasts';
+import { formatEventTimestamp } from '@/lib/eventDateTime';
 
 const TOAST_LIFETIME_MS = 5_000;
 
@@ -114,9 +115,15 @@ function ToastCard({
             {toast.title}
           </div>
 
-          {/* Source */}
+          {/* Source + event time */}
           <div className="text-[9px] text-[var(--text-muted)] tracking-wider uppercase">
             {toast.source}
+            {toast.published ? (
+              <span className="normal-case tracking-normal">
+                {' '}
+                · {formatEventTimestamp(toast.published)}
+              </span>
+            ) : null}
           </div>
         </div>
 

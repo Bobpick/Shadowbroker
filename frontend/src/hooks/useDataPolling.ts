@@ -88,6 +88,22 @@ export const LAYER_TOGGLE_EVENT = 'sb:layer-toggle';
 const VIEWPORT_FAST_REFETCH_DEBOUNCE_MS = 400;
 const VIEWPORT_FAST_REFETCH_MIN_INTERVAL_MS = 2500;
 
+/** Steady-state poll cadence (must match scheduleNext delays). */
+const FAST_POLL_MS = 15_000;
+const SLOW_POLL_MS = 120_000;
+
+/** Abort hung proxy/backend fetches so the poll chain cannot stall indefinitely. */
+const FAST_FETCH_TIMEOUT_MS = 45_000;
+const SLOW_FETCH_TIMEOUT_MS = 90_000;
+
+/** Watchdog checks whether polls are still advancing (background tab timer throttling). */
+const KEEPALIVE_WATCHDOG_MS = 30_000;
+const FAST_STALE_MS = FAST_POLL_MS * 4;
+const SLOW_STALE_MS = SLOW_POLL_MS * 2;
+
+/** Lightweight backend ping so long-lived tabs keep the proxy connection warm. */
+const HEALTH_PING_MS = 4 * 60_000;
+
 /**
  * Polls the backend for fast and slow data tiers.
  *
@@ -124,6 +140,27 @@ export function useDataPolling() {
     const fastFetchGenRef = { current: 0 };
     let lastViewportFetchKey: string | null = null;
     let lastViewportFetchAt = 0;
+    let lastFastPollAt = Date.now();
+    let lastSlowPollAt = Date.now();
+
+    const touchFastPoll = () => {
+      lastFastPollAt = Date.now();
+    };
+
+    const touchSlowPoll = () => {
+      lastSlowPollAt = Date.now();
+    };
+
+    const armFetchTimeout = (controller: AbortController, timeoutMs: number) => {
+      return window.setTimeout(() => controller.abort(), timeoutMs);
+    };
+
+    const wakeLiveData = () => {
+      if (_pollingPaused) return;
+      fastEtag.current = null;
+      slowEtag.current = null;
+      void forceRefreshLiveData();
+    };
 
     const fetchCriticalBootstrap = async () => {
       try {
@@ -169,6 +206,7 @@ export function useDataPolling() {
       const controller = new AbortController();
       fastAbortRef.current = controller;
       const fetchGen = ++fastFetchGenRef.current;
+      const timeoutId = armFetchTimeout(controller, FAST_FETCH_TIMEOUT_MS);
 
       try {
         const useStartupPayload = !fetchedStartupFastPayload && !fastEtag.current;
@@ -182,9 +220,9 @@ export function useDataPolling() {
           signal: controller.signal,
         });
         if (fetchGen !== fastFetchGenRef.current) return;
+        touchFastPoll();
         if (res.status === 304) {
           setStoreBackendStatus('connected');
-          scheduleNext('fast', fetchGen);
           return;
         }
         if (res.ok) {
@@ -209,18 +247,38 @@ export function useDataPolling() {
           setStoreBackendStatus('disconnected');
         }
       } finally {
+        window.clearTimeout(timeoutId);
         if (fastAbortRef.current === controller) {
           fastAbortRef.current = null;
         }
+        if (fetchGen === fastFetchGenRef.current) {
+          scheduleNext('fast', fetchGen);
+        }
       }
-      scheduleNext('fast', fetchGen);
+    };
+
+    const abortInFlightSlowFetch = () => {
+      if (slowAbortRef.current) {
+        slowAbortRef.current.abort();
+        slowAbortRef.current = null;
+      }
     };
 
     const fetchSlowData = async () => {
-      if (_pollingPaused) { scheduleNext('slow'); return; }
-      if (slowAbortRef.current) return;
+      if (slowTimerId) {
+        clearTimeout(slowTimerId);
+        slowTimerId = null;
+      }
+      if (_pollingPaused) {
+        scheduleNext('slow');
+        return;
+      }
+
+      abortInFlightSlowFetch();
       const controller = new AbortController();
       slowAbortRef.current = controller;
+      const timeoutId = armFetchTimeout(controller, SLOW_FETCH_TIMEOUT_MS);
+
       try {
         const headers: Record<string, string> = {};
         if (slowEtag.current) headers['If-None-Match'] = slowEtag.current;
@@ -231,7 +289,8 @@ export function useDataPolling() {
             signal: controller.signal,
           },
         );
-        if (res.status === 304) { scheduleNext('slow'); return; }
+        touchSlowPoll();
+        if (res.status === 304) return;
         if (res.ok) {
           slowEtag.current = res.headers.get('etag') || null;
           const json = await res.json();
@@ -247,22 +306,23 @@ export function useDataPolling() {
           console.warn("Slow live data fetch will retry after runtime is reachable", e);
         }
       } finally {
+        window.clearTimeout(timeoutId);
         if (slowAbortRef.current === controller) {
           slowAbortRef.current = null;
         }
+        scheduleNext('slow');
       }
-      scheduleNext('slow');
     };
 
     // Adaptive polling: retry every 3s during startup, back off to normal cadence once data arrives
     const scheduleNext = (tier: 'fast' | 'slow', fetchGen?: number) => {
       if (tier === 'fast') {
         if (fetchGen !== undefined && fetchGen !== fastFetchGenRef.current) return;
-        const delay = hasData ? 15000 : 3000; // 3s startup retry → 15s steady state
+        const delay = hasData ? FAST_POLL_MS : 3000; // 3s startup retry → steady state
         const needsFullFastPayload = fetchedStartupFastPayload && !fastEtag.current;
         fastTimerId = setTimeout(fetchFastData, needsFullFastPayload ? 750 : delay);
       } else {
-        const delay = hasData ? 120000 : 5000; // 5s startup retry → 120s steady state
+        const delay = hasData ? SLOW_POLL_MS : 5000; // 5s startup retry → steady state
         slowTimerId = setTimeout(fetchSlowData, delay);
       }
     };
@@ -303,8 +363,56 @@ export function useDataPolling() {
       slowTimerId = null;
       fetchSlowData();
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        wakeLiveData();
+      }
+    };
+
+    const onWindowFocus = () => {
+      wakeLiveData();
+    };
+
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        wakeLiveData();
+      }
+    };
+
+    const onOnline = () => {
+      wakeLiveData();
+    };
+
+    const watchdogId = window.setInterval(() => {
+      if (_pollingPaused) return;
+      const now = Date.now();
+      const fastStale = now - lastFastPollAt > FAST_STALE_MS;
+      const slowStale = now - lastSlowPollAt > SLOW_STALE_MS;
+      if (fastStale) {
+        console.info('Keepalive: restarting stale fast live-data polling');
+        fastEtag.current = null;
+        void fetchFastData();
+      }
+      if (slowStale) {
+        console.info('Keepalive: restarting stale slow live-data polling');
+        slowEtag.current = null;
+        void fetchSlowData();
+      }
+    }, KEEPALIVE_WATCHDOG_MS);
+
+    const healthPingId = window.setInterval(() => {
+      if (_pollingPaused || document.visibilityState === 'hidden') return;
+      void fetch(`${API_BASE}/api/health`, { cache: 'no-store' }).catch(() => {
+        /* watchdog + tier polls own reconnection */
+      });
+    }, HEALTH_PING_MS);
+
     window.addEventListener(LAYER_TOGGLE_EVENT, onLayerToggle);
     window.addEventListener(VIEWPORT_COMMITTED_EVENT, queueViewportFastRefetch);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onWindowFocus);
+    window.addEventListener('pageshow', onPageShow);
+    window.addEventListener('online', onOnline);
 
     void (async () => {
       await fetchCriticalBootstrap();
@@ -316,11 +424,17 @@ export function useDataPolling() {
     return () => {
       window.removeEventListener(LAYER_TOGGLE_EVENT, onLayerToggle);
       window.removeEventListener(VIEWPORT_COMMITTED_EVENT, queueViewportFastRefetch);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onWindowFocus);
+      window.removeEventListener('pageshow', onPageShow);
+      window.removeEventListener('online', onOnline);
+      window.clearInterval(watchdogId);
+      window.clearInterval(healthPingId);
       if (fastTimerId) clearTimeout(fastTimerId);
       if (slowTimerId) clearTimeout(slowTimerId);
       if (viewportDebounceTimer) clearTimeout(viewportDebounceTimer);
       abortInFlightFastFetch();
-      if (slowAbortRef.current) slowAbortRef.current.abort();
+      abortInFlightSlowFetch();
     };
   }, []);
 

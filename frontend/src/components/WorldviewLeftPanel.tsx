@@ -34,7 +34,9 @@ import {
   ToggleLeft,
   ToggleRight,
   Palette,
+  Cloud,
   CloudLightning,
+  CloudRain,
   Mountain,
   Wind,
   Fish,
@@ -44,6 +46,7 @@ import {
   Radar,
   MapPin,
   Truck,
+  MessageSquare,
 } from 'lucide-react';
 import RoadCorridorLayerControls from '@/components/RoadCorridorLayerControls';
 import { API_BASE } from '@/lib/api';
@@ -55,6 +58,9 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useTranslation } from '@/i18n';
 import SarModeChooserModal from './SarModeChooserModal';
 import KiwiSdrConsentDialog from './ui/KiwiSdrConsentDialog';
+import { extractGtAlerts } from '@/lib/gtAlerts';
+import { OPEN_METEO_FORECAST_STEPS } from '@/lib/openMeteoMap';
+import { SAR_GUIDE_EVENT, type SarGuideDetail } from '@/lib/sarGuide';
 
 function relativeTime(iso: string | undefined): string {
   if (!iso) return '';
@@ -99,6 +105,10 @@ const FRESHNESS_MAP: Record<string, string> = {
   sigint_aprs: 'sigint',
   ukraine_alerts: 'ukraine_alerts',
   weather_alerts: 'weather_alerts',
+  weather_radar: 'weather',
+  weather_cloud: 'weather_forecast',
+  weather_precip: 'weather_forecast',
+  global_weather_hazards: 'global_weather_hazards',
   air_quality: 'air_quality',
   volcanoes: 'volcanoes',
   fishing_activity: 'fishing_activity',
@@ -115,6 +125,8 @@ const FRESHNESS_MAP: Record<string, string> = {
   scm_suppliers: 'scm_suppliers',
   cyber_threats: 'cyber_threats',
   telegram_osint: 'telegram_osint',
+  reddit_osint: 'reddit_osint',
+  gt_risk: 'gt_risk',
 };
 
 // POTUS fleet ICAO hex codes for client-side filtering
@@ -669,6 +681,14 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   onMinimizedChange,
   onOpenSarAoiEditor,
   viewBoundsRef,
+  weatherForecastOffset = 0,
+  setWeatherForecastOffset,
+  weatherRadarMode = 'past',
+  setWeatherRadarMode,
+  weatherRadarFrameIndex = -1,
+  setWeatherRadarFrameIndex,
+  sarKindFilter = 'excavation',
+  setSarKindFilter,
 }: {
   activeLayers: ActiveLayers;
   setActiveLayers: React.Dispatch<React.SetStateAction<ActiveLayers>>;
@@ -695,6 +715,14 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   onMinimizedChange?: (minimized: boolean) => void;
   onOpenSarAoiEditor?: () => void;
   viewBoundsRef?: React.RefObject<{ south: number; west: number; north: number; east: number } | null>;
+  weatherForecastOffset?: number;
+  setWeatherForecastOffset?: (offset: number) => void;
+  weatherRadarMode?: import('@/types/dashboard').WeatherRadarMode;
+  setWeatherRadarMode?: (mode: import('@/types/dashboard').WeatherRadarMode) => void;
+  weatherRadarFrameIndex?: number;
+  setWeatherRadarFrameIndex?: (index: number) => void;
+  sarKindFilter?: import('@/lib/sarKinds').SarKindFilter;
+  setSarKindFilter?: (filter: import('@/lib/sarKinds').SarKindFilter) => void;
 }) {
   const data = useDataSnapshot() as import('@/types/dashboard').DashboardData;
   const { t } = useTranslation();
@@ -723,6 +751,23 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   });
   const [sarModalOpen, setSarModalOpen] = useState(false);
   const [sarPendingEnable, setSarPendingEnable] = useState(false);
+
+  useEffect(() => {
+    const onSarGuide = (event: Event) => {
+      const detail = (event as CustomEvent<SarGuideDetail>).detail;
+      if (sarChoice === null) {
+        setSarPendingEnable(true);
+        setSarModalOpen(true);
+      } else {
+        setActiveLayers((prev: ActiveLayers) => ({ ...prev, sar: true }));
+      }
+      if (detail?.openAoiEditor && onOpenSarAoiEditor) {
+        window.setTimeout(() => onOpenSarAoiEditor(), 350);
+      }
+    };
+    window.addEventListener(SAR_GUIDE_EVENT, onSarGuide);
+    return () => window.removeEventListener(SAR_GUIDE_EVENT, onSarGuide);
+  }, [sarChoice, setActiveLayers, onOpenSarAoiEditor]);
 
   const [liveuamapModalOpen, setLiveuamapModalOpen] = useState(false);
   const [liveuamapPendingEnable, setLiveuamapPendingEnable] = useState<(() => void) | null>(null);
@@ -1128,6 +1173,34 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
           icon: CloudLightning,
         },
         {
+          id: 'weather_radar',
+          name: t('layers.weatherRadar'),
+          source: 'RainViewer',
+          count: data?.weather?.time ? 1 : 0,
+          icon: CloudRain,
+        },
+        {
+          id: 'weather_cloud',
+          name: t('layers.weatherCloud'),
+          source: 'Open-Meteo',
+          count: data?.weather_forecast?.valid_times?.length ? 1 : 0,
+          icon: Cloud,
+        },
+        {
+          id: 'weather_precip',
+          name: t('layers.weatherPrecip'),
+          source: 'Open-Meteo',
+          count: data?.weather_forecast?.valid_times?.length ? 1 : 0,
+          icon: Droplets,
+        },
+        {
+          id: 'global_weather_hazards',
+          name: t('layers.globalWeatherHazards'),
+          source: 'GDACS',
+          count: data?.global_weather_hazards?.length || 0,
+          icon: Globe,
+        },
+        {
           id: 'volcanoes',
           name: t('layers.volcanoes'),
           source: 'Smithsonian GVP',
@@ -1351,11 +1424,28 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
           icon: Radio,
         },
         {
+          id: 'reddit_osint',
+          name: t('layers.redditOsint'),
+          source: 'reddit.com public subs',
+          count: data?.reddit_osint?.geolocated || 0,
+          icon: MessageSquare,
+        },
+        {
           id: 'crowdthreat',
           name: t('layers.crowdThreat'),
           source: 'CrowdThreat',
           count: data?.crowdthreat?.length || 0,
           icon: Shield,
+        },
+        {
+          id: 'gt_risk',
+          name: t('layers.strategicRisk'),
+          source: 'Game Theory Early Warning',
+          count:
+            extractGtAlerts(data?.gt_risk).plottedRegions ||
+            data?.gt_risk?.meta?.plotted_regions ||
+            0,
+          icon: Radar,
         },
         {
           id: 'correlations',
@@ -1394,7 +1484,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
     sections.forEach((s) => {
       // Keep high-traffic intel overlays visible on first paint (GDELT, Telegram, etc.)
       initial[s.label] = s.layers.some((l) =>
-        ['global_incidents', 'telegram_osint', 'ukraine_frontline'].includes(l.id),
+        ['global_incidents', 'telegram_osint', 'ukraine_frontline', 'gt_risk'].includes(l.id),
       );
     });
     return initial;
@@ -1840,6 +1930,100 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
                                     )}
                                   </div>
                                 </div>
+                                {/* RainViewer radar timeline */}
+                                {layer.id === 'weather_radar' &&
+                                  active &&
+                                  setWeatherRadarMode &&
+                                  setWeatherRadarFrameIndex && (
+                                    <div
+                                      className="ml-7 mt-2 flex flex-col gap-2"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="flex items-center gap-1">
+                                        {(['past', 'nowcast'] as const).map((mode) => (
+                                          <button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() => {
+                                              setWeatherRadarMode(mode);
+                                              setWeatherRadarFrameIndex(-1);
+                                            }}
+                                            className={`text-[10px] font-mono px-1.5 py-0.5 border transition-colors ${
+                                              weatherRadarMode === mode
+                                                ? 'border-cyan-500/50 text-cyan-400 bg-cyan-950/30'
+                                                : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:text-cyan-400'
+                                            }`}
+                                          >
+                                            {mode === 'past'
+                                              ? t('layers.radarPast')
+                                              : t('layers.radarNowcast')}
+                                          </button>
+                                        ))}
+                                      </div>
+                                      {(() => {
+                                        const frames =
+                                          weatherRadarMode === 'nowcast'
+                                            ? data?.weather?.nowcast_frames
+                                            : data?.weather?.past_frames;
+                                        if (!frames?.length) return null;
+                                        const idx =
+                                          weatherRadarFrameIndex < 0
+                                            ? frames.length - 1
+                                            : Math.min(weatherRadarFrameIndex, frames.length - 1);
+                                        const frame = frames[idx];
+                                        const label = frame?.time
+                                          ? new Date(frame.time * 1000).toLocaleTimeString([], {
+                                              hour: '2-digit',
+                                              minute: '2-digit',
+                                            })
+                                          : t('layers.radarLive');
+                                        return (
+                                          <div className="flex items-center gap-2">
+                                            <input
+                                              type="range"
+                                              min={0}
+                                              max={Math.max(0, frames.length - 1)}
+                                              value={idx}
+                                              onChange={(e) =>
+                                                setWeatherRadarFrameIndex(parseInt(e.target.value, 10))
+                                              }
+                                              className="flex-1 h-1 accent-cyan-500 cursor-pointer"
+                                            />
+                                            <span className="text-[10px] text-cyan-400 font-mono whitespace-nowrap">
+                                              {label}
+                                            </span>
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+                                  )}
+                                {/* Open-Meteo forecast time step (shared by cloud + precip overlays) */}
+                                {layer.id === 'weather_precip' &&
+                                  setWeatherForecastOffset &&
+                                  (activeLayers.weather_cloud || activeLayers.weather_precip) && (
+                                    <div
+                                      className="ml-7 mt-2 flex items-center gap-1"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <span className="text-[10px] text-[var(--text-muted)] font-mono mr-1">
+                                        {t('layers.weatherForecast')}
+                                      </span>
+                                      {OPEN_METEO_FORECAST_STEPS.map((step) => (
+                                        <button
+                                          key={step.id}
+                                          type="button"
+                                          onClick={() => setWeatherForecastOffset(step.offset)}
+                                          className={`text-[10px] font-mono px-1.5 py-0.5 border transition-colors ${
+                                            weatherForecastOffset === step.offset
+                                              ? 'border-cyan-500/50 text-cyan-400 bg-cyan-950/30'
+                                              : 'border-[var(--border-primary)] text-[var(--text-muted)] hover:text-cyan-400'
+                                          }`}
+                                        >
+                                          {step.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
                                 {/* GIBS Imagery inline controls */}
                                 {active &&
                                   layer.id === 'gibs_imagery' &&
@@ -1905,19 +2089,45 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
                                 {active && layer.id === 'road_corridor_trends' && (
                                   <RoadCorridorLayerControls viewBoundsRef={viewBoundsRef} />
                                 )}
-                                {active && layer.id === 'sar' && onOpenSarAoiEditor && (
+                                {active && layer.id === 'sar' && (
                                   <div
-                                    className="ml-7 mt-2 flex items-center gap-2"
+                                    className="ml-7 mt-2 flex flex-col gap-2"
                                     onClick={(e) => e.stopPropagation()}
                                   >
-                                    <button
-                                      type="button"
-                                      onClick={onOpenSarAoiEditor}
-                                      className="flex items-center gap-1.5 text-[9px] font-mono tracking-wide text-cyan-400 hover:text-cyan-200 border border-cyan-500/30 hover:border-cyan-500/50 bg-cyan-500/5 hover:bg-cyan-500/10 px-2.5 py-1 rounded transition"
-                                    >
-                                      <MapPin size={10} />
-                                      EDIT AOIs
-                                    </button>
+                                    {setSarKindFilter && (
+                                      <div className="flex flex-wrap gap-1">
+                                        {(
+                                          [
+                                            ['excavation', t('sarGuide.filterExcavation')],
+                                            ['water', t('sarGuide.filterWater')],
+                                            ['all', t('sarGuide.filterAll')],
+                                          ] as const
+                                        ).map(([mode, label]) => (
+                                          <button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() => setSarKindFilter(mode)}
+                                            className={`text-[9px] font-mono tracking-wide px-2 py-0.5 rounded border transition ${
+                                              sarKindFilter === mode
+                                                ? 'text-amber-200 border-amber-400/60 bg-amber-500/15'
+                                                : 'text-[var(--text-muted)] border-[var(--border-primary)] hover:text-amber-200/90'
+                                            }`}
+                                          >
+                                            {label}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {onOpenSarAoiEditor && (
+                                      <button
+                                        type="button"
+                                        onClick={onOpenSarAoiEditor}
+                                        className="flex items-center gap-1.5 self-start text-[9px] font-mono tracking-wide text-cyan-400 hover:text-cyan-200 border border-cyan-500/30 hover:border-cyan-500/50 bg-cyan-500/5 hover:bg-cyan-500/10 px-2.5 py-1 rounded transition"
+                                      >
+                                        <MapPin size={10} />
+                                        EDIT AOIs
+                                      </button>
+                                    )}
                                   </div>
                                 )}
                                 {/* Sentinel Hub inline controls */}

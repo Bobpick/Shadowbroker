@@ -1,13 +1,24 @@
 """Telegram OSINT HTML parsing and geoparsing."""
 
+from datetime import datetime, timezone
+
+import pytest
+
 from services.fetchers import telegram_osint
+
+_FIXED_NOW = datetime(2026, 6, 16, 12, 0, tzinfo=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def _fixed_telegram_clock(monkeypatch):
+    monkeypatch.setattr(telegram_osint, "_utcnow", lambda: _FIXED_NOW)
 
 
 SAMPLE_HTML = """
 <div class="tgme_widget_message_wrap js-widget_message_wrap">
   <div class="tgme_widget_message_text">Missile strike reported near Kyiv overnight.</div>
   <a class="tgme_widget_message_date" href="https://t.me/osintdefender/12345">
-    <time datetime="2026-06-02T12:00:00+00:00"></time>
+    <time datetime="2026-06-15T12:00:00+00:00"></time>
   </a>
 </div>
 </div>
@@ -19,7 +30,7 @@ SAMPLE_VIDEO_HTML = """
   <div class="tgme_widget_message_text">Drone footage from Kharkiv.</div>
   <video src="https://cdn4.telesco.pe/file/sample.mp4?token=abc" class="tgme_widget_message_video js-message_video"></video>
   <a class="tgme_widget_message_date" href="https://t.me/osintdefender/99999">
-    <time datetime="2026-06-02T13:00:00+00:00"></time>
+    <time datetime="2026-06-15T13:00:00+00:00"></time>
   </a>
 </div>
 </div>
@@ -86,22 +97,47 @@ def test_merge_telegram_posts_keeps_existing_and_adds_only_new():
         {
             "id": "old",
             "link": "https://t.me/osintdefender/111",
-            "published": "2026-06-01T12:00:00+00:00",
+            "published": "2026-06-14T12:00:00+00:00",
         }
     ]
     incoming = [
         {
             "id": "dup",
             "link": "https://t.me/osintdefender/111",
-            "published": "2026-06-02T12:00:00+00:00",
+            "published": "2026-06-15T12:00:00+00:00",
         },
         {
             "id": "new",
             "link": "https://t.me/osintdefender/222",
-            "published": "2026-06-03T12:00:00+00:00",
+            "published": "2026-06-16T10:00:00+00:00",
         },
     ]
     merged, added = telegram_osint._merge_telegram_posts(existing, incoming)
     assert added == 1
     assert len(merged) == 2
     assert merged[0]["link"] == "https://t.me/osintdefender/222"
+
+
+def test_prune_telegram_posts_drops_entries_older_than_max_age():
+    posts = [
+        {"link": "https://t.me/a/1", "published": "2026-06-15T12:00:00+00:00"},
+        {"link": "https://t.me/a/2", "published": "2026-03-01T12:00:00+00:00"},
+        {"link": "https://t.me/a/3", "published": "invalid"},
+    ]
+    pruned = telegram_osint.prune_telegram_posts(posts, max_age_days=7)
+    assert [post["link"] for post in pruned] == ["https://t.me/a/1"]
+
+
+def test_parse_telegram_channel_html_skips_posts_older_than_retention():
+    old_html = """
+    <div class="tgme_widget_message_wrap js-widget_message_wrap">
+      <div class="tgme_widget_message_text">Old strike near Kyiv.</div>
+      <a class="tgme_widget_message_date" href="https://t.me/osintdefender/1">
+        <time datetime="2026-02-01T12:00:00+00:00"></time>
+      </a>
+    </div>
+    </div>
+    </div>
+    """
+    posts = telegram_osint.parse_telegram_channel_html(old_html, "osintdefender")
+    assert posts == []
