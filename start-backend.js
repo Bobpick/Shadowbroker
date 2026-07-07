@@ -76,10 +76,17 @@ function canRun(command, args) {
   return !result.error && result.status === 0;
 }
 
+function pythonVersionSupported(pythonBin) {
+  return canRun(pythonBin, [
+    "-c",
+    "import sys; v = sys.version_info; raise SystemExit(0 if (3, 10) <= v[:2] <= (3, 12) else 1)",
+  ]);
+}
+
 function canRunBackendPython(pythonBin) {
   return (
-    canRun(pythonBin, ["-V"]) &&
-    canRun(pythonBin, ["-c", "import fastapi, uvicorn"])
+    pythonVersionSupported(pythonBin) &&
+    canRun(pythonBin, ["-c", "import fastapi, uvicorn, feedparser"])
   );
 }
 
@@ -87,25 +94,53 @@ function findBasePython() {
   const candidates = isWindows
     ? [
         [configuredBasePython, []],
-        ["python", []],
+        ["py", ["-3.12"]],
         ["py", ["-3.11"]],
-        ["py", ["-3"]],
+        ["py", ["-3.10"]],
+        ["python", []],
       ]
     : [
         [configuredBasePython, []],
-        ["python3", []],
-        ["python", []],
+        ["python3.12", []],
+        ["python3.11", []],
+        ["python3.10", []],
+        ["/usr/bin/python3.12", []],
+        ["/usr/bin/python3.11", []],
+        ["/usr/bin/python3.10", []],
       ];
 
   for (const [command, prefixArgs] of candidates) {
     if (!command) {
       continue;
     }
-    if (canRun(command, [...prefixArgs, "-V"])) {
-      return { command, prefixArgs };
+    if (!canRun(command, [...prefixArgs, "-V"])) {
+      continue;
     }
+    const probeBin =
+      prefixArgs.length === 0 && command.includes("python")
+        ? command
+        : null;
+    if (probeBin && !pythonVersionSupported(probeBin)) {
+      continue;
+    }
+    return { command, prefixArgs };
   }
   return null;
+}
+
+function syncBackendDeps(targetDir) {
+  if (!canRun("uv", ["--version"])) {
+    return false;
+  }
+  const result = spawnSync("uv", ["sync", "--frozen", "--no-dev"], {
+    cwd: backendDir,
+    env: {
+      ...process.env,
+      UV_PROJECT_ENVIRONMENT: targetDir,
+    },
+    stdio: "inherit",
+  });
+  return !result.error && result.status === 0;
 }
 
 function rebuildBackendVenv(targetDir, basePython) {
@@ -134,11 +169,22 @@ function rebuildBackendVenv(targetDir, basePython) {
     ? path.join(targetDir, "Scripts", "python.exe")
     : path.join(targetDir, "bin", "python3");
 
-  result = spawnSync(repairedBin, ["-m", "pip", "install", "-q", "."], {
-    cwd: backendDir,
-    env: process.env,
-    stdio: "inherit",
-  });
+  if (canRun("uv", ["--version"])) {
+    result = spawnSync("uv", ["sync", "--frozen", "--no-dev"], {
+      cwd: backendDir,
+      env: {
+        ...process.env,
+        UV_PROJECT_ENVIRONMENT: targetDir,
+      },
+      stdio: "inherit",
+    });
+  } else {
+    result = spawnSync(repairedBin, ["-m", "pip", "install", "-q", "."], {
+      cwd: backendDir,
+      env: process.env,
+      stdio: "inherit",
+    });
+  }
   if (result.error || result.status !== 0) {
     return null;
   }
@@ -147,7 +193,15 @@ function rebuildBackendVenv(targetDir, basePython) {
 
 function ensureBackendVenv() {
   for (const candidate of venvCandidates) {
-    if (fs.existsSync(candidate) && canRunBackendPython(candidate)) {
+    if (!fs.existsSync(candidate)) {
+      continue;
+    }
+    if (canRunBackendPython(candidate)) {
+      persistSelectedVenv(candidate);
+      return candidate;
+    }
+    const envDir = path.dirname(path.dirname(candidate));
+    if (syncBackendDeps(envDir) && canRunBackendPython(candidate)) {
       persistSelectedVenv(candidate);
       return candidate;
     }

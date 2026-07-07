@@ -39,6 +39,25 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = str(os.environ.get(name, "")).strip()
+    if not raw:
+        return default
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return default
+
+
+def _peak_score(row: RegionSnapshot) -> float:
+    return max(row.composite_risk, row.financial, row.unrest, row.conflict)
+
+
+def rolling_label_delay_days() -> int:
+    """Days after freeze before auto-labeling infers delayed outcomes."""
+    return _env_int("GT_ROLLING_LABEL_DELAY_DAYS", 5)
+
+
 def rolling_alert_threshold() -> float:
     """Fixed operational alert cutoff — not retroactively tuned per week."""
     return _env_float("GT_ROLLING_ALERT_THRESHOLD", DEFAULT_BACKTEST_ALERT_THRESHOLD)
@@ -54,12 +73,11 @@ def iso_week_id(when: datetime | date | None = None) -> str:
     return f"{year}-W{week:02d}"
 
 
-def _region_rows_from_engine(
-    engine: GT_EarlyWarning,
+def _region_rows_from_heatmap(
+    heatmap: dict[str, Any],
     *,
     alert_threshold: float,
 ) -> list[RegionSnapshot]:
-    heatmap = engine.get_risk_heatmap()
     rows: list[RegionSnapshot] = []
     for feature in heatmap.get("features") or []:
         if not isinstance(feature, dict):
@@ -84,8 +102,44 @@ def _region_rows_from_engine(
                 label="pending",
             )
         )
+    return rows
+
+
+def _region_rows_from_engine(
+    engine: GT_EarlyWarning,
+    *,
+    alert_threshold: float,
+) -> list[RegionSnapshot]:
+    rows = _region_rows_from_heatmap(
+        engine.get_risk_heatmap(),
+        alert_threshold=alert_threshold,
+    )
     rows.sort(key=lambda row: row.composite_risk, reverse=True)
     return rows
+
+
+def _current_region_rows(
+    engine: GT_EarlyWarning | None,
+    *,
+    alert_threshold: float,
+) -> dict[str, RegionSnapshot]:
+    """Resolve latest regional scores from the engine or persisted gt_risk snapshot."""
+    rows: list[RegionSnapshot] = []
+    if engine is not None:
+        rows = _region_rows_from_engine(engine, alert_threshold=alert_threshold)
+    if not rows:
+        try:
+            from services.fetchers._store import _data_lock, latest_data
+
+            with _data_lock:
+                payload = dict(latest_data.get("gt_risk") or {})
+            rows = _region_rows_from_heatmap(
+                dict(payload.get("heatmap") or {}),
+                alert_threshold=alert_threshold,
+            )
+        except Exception:
+            rows = []
+    return {row.region: row for row in rows}
 
 
 @dataclass(frozen=True)
@@ -330,6 +384,97 @@ def label_region(
         [{"region": region, "label": label, "notes": notes}],
         labeled_by=labeled_by,
     )
+
+
+def _infer_outcome_label(
+    frozen: RegionSnapshot,
+    current: RegionSnapshot | None,
+    *,
+    alert_threshold: float,
+) -> LabelName | None:
+    """Map a frozen region row to a delayed outcome using current GT scores."""
+    if current is None:
+        return None
+    current_peak = _peak_score(current)
+    if frozen.alerted:
+        if current_peak >= alert_threshold:
+            return "true_escalation"
+        return "false_alarm"
+    if current_peak < alert_threshold:
+        return "benign"
+    return None
+
+
+def auto_label_mature_weeks(
+    *,
+    label_delay_days: int | None = None,
+    engine: GT_EarlyWarning | None = None,
+    labeled_by: str = "auto",
+) -> dict[str, Any]:
+    """
+    Infer delayed outcome labels for frozen weeks past the label delay.
+
+    Uses current GT posterior scores as a proxy for whether alerted regions
+    escalated or cooled — enough to make operational checks scorable without
+    manual OpenClaw labels on every region.
+    """
+    resolved_engine = engine or get_gt_engine()
+    if resolved_engine is None:
+        return {"ok": False, "detail": "GT analytics engine unavailable"}
+
+    delay_days = label_delay_days if label_delay_days is not None else rolling_label_delay_days()
+    threshold = rolling_alert_threshold()
+    current_rows = _current_region_rows(resolved_engine, alert_threshold=threshold)
+    now = datetime.now(timezone.utc)
+    details: list[dict[str, Any]] = []
+
+    for week_id in list_week_ids(newest_first=False):
+        snapshot = load_week(week_id)
+        if snapshot is None:
+            continue
+        try:
+            frozen_at = datetime.fromisoformat(snapshot.frozen_at.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if frozen_at.tzinfo is None:
+            frozen_at = frozen_at.replace(tzinfo=timezone.utc)
+        age_days = (now.date() - frozen_at.date()).days
+        if age_days < delay_days:
+            continue
+
+        pending = [row for row in snapshot.regions if row.label == "pending"]
+        if not pending:
+            continue
+
+        labels: list[dict[str, Any]] = []
+        for row in pending:
+            inferred = _infer_outcome_label(
+                row,
+                current_rows.get(row.region),
+                alert_threshold=snapshot.alert_threshold,
+            )
+            if inferred is not None:
+                labels.append({"region": row.region, "label": inferred})
+
+        if len(labels) < MIN_LABELED_FOR_TREND:
+            continue
+
+        result = label_regions(week_id, labels, labeled_by=labeled_by)
+        details.append(
+            {
+                "week_id": week_id,
+                "age_days": age_days,
+                "updated": result.get("updated"),
+                "scorable": (result.get("score") or {}).get("scorable"),
+            }
+        )
+
+    return {
+        "ok": True,
+        "label_delay_days": delay_days,
+        "weeks_labeled": len(details),
+        "details": details,
+    }
 
 
 def rolling_trend(*, weeks: int = 8) -> list[WeekScore]:

@@ -18,6 +18,18 @@ US_SURVEILLANCE_LNG = -98.5795
 TREND_WINDOW_DAYS = 21
 SNAPSHOT_RETENTION_DAYS = 90
 BASELINE_LOOKBACK_DAYS = 7
+DEFAULT_MAX_SAMPLE_AGE_DAYS = 45
+
+
+def max_sample_age_days() -> int:
+    """How long plant samples stay valid while WastewaterSCAN catches up each month."""
+    raw = str(os.environ.get("WASTEWATER_MAX_SAMPLE_AGE_DAYS", "")).strip()
+    if not raw:
+        return DEFAULT_MAX_SAMPLE_AGE_DAYS
+    try:
+        return max(14, int(raw))
+    except ValueError:
+        return DEFAULT_MAX_SAMPLE_AGE_DAYS
 
 ACTIVITY_RANK: dict[str, int] = {
     "not calculated": -1,
@@ -116,16 +128,18 @@ def parse_plant_series(
     target_display: dict[str, str],
     *,
     window_days: int = TREND_WINDOW_DAYS,
-    max_age_days: int = 30,
+    max_age_days: int | None = None,
 ) -> dict[str, Any] | None:
     """Parse a plant time series into latest pathogen levels plus per-pathogen trends."""
     if not samples:
         return None
 
+    age_limit_days = max_age_days if max_age_days is not None else max_sample_age_days()
+
     latest = samples[-1]
     collection_date = str(latest.get("collection_date") or "")
     sample_dt = _parse_collection_date(collection_date)
-    if sample_dt and sample_dt < _utcnow() - timedelta(days=max_age_days):
+    if sample_dt and sample_dt < _utcnow() - timedelta(days=age_limit_days):
         return None
 
     cutoff = _utcnow() - timedelta(days=window_days)
@@ -334,6 +348,37 @@ def _rate_display(current: int, baseline: int, delta: int) -> str:
     return f"{sign}{rate}%"
 
 
+def _summarize_collection_freshness(active_plants: list[dict[str, Any]]) -> dict[str, Any]:
+    """Track how current loaded plant samples are relative to upstream publication lag."""
+    collection_dates: list[str] = []
+    sample_ages: list[int] = []
+    for plant in active_plants:
+        collection_date = str(plant.get("collection_date") or "").strip()
+        if collection_date:
+            collection_dates.append(collection_date)
+        age = plant.get("sample_age_days")
+        if isinstance(age, int):
+            sample_ages.append(age)
+
+    latest_collection_date = max(collection_dates) if collection_dates else None
+    median_sample_age_days = None
+    if sample_ages:
+        ordered = sorted(sample_ages)
+        median_sample_age_days = ordered[len(ordered) // 2]
+
+    current_month = _utcnow().strftime("%Y-%m")
+    plants_current_month = sum(
+        1 for date in collection_dates if date.startswith(current_month)
+    )
+
+    return {
+        "latest_collection_date": latest_collection_date,
+        "median_sample_age_days": median_sample_age_days,
+        "plants_current_month": plants_current_month,
+        "max_sample_age_days": max_sample_age_days(),
+    }
+
+
 def build_surveillance_summary(
     plants: list[dict[str, Any]],
     *,
@@ -341,6 +386,7 @@ def build_surveillance_summary(
 ) -> dict[str, Any]:
     """Build national biosurveillance rollup for the map beacon."""
     active_plants = [plant for plant in plants if plant.get("pathogens")]
+    freshness = _summarize_collection_freshness(active_plants)
     rollups = build_pathogen_rollups(active_plants)
     baseline_pathogens = (baseline or {}).get("pathogens") or {}
 
@@ -380,6 +426,13 @@ def build_surveillance_summary(
     )
     rising_rows = [row for row in pathogen_rows if int(row.get("states_rising") or 0) > 0]
 
+    signature_parts = [
+        f"{row['name']}:{row['states_rising']}:{row.get('rising_rate_display')}"
+        for row in rising_rows[:12]
+    ]
+    if freshness.get("latest_collection_date"):
+        signature_parts.append(f"through:{freshness['latest_collection_date']}")
+
     return {
         "updated_at": _utcnow().isoformat(),
         "baseline_date": baseline.get("date") if baseline else None,
@@ -391,8 +444,6 @@ def build_surveillance_summary(
         "pathogens_rising": len(rising_rows),
         "pathogens": pathogen_rows,
         "rising_pathogens": rising_rows,
-        "signature": "|".join(
-            f"{row['name']}:{row['states_rising']}:{row.get('rising_rate_display')}"
-            for row in rising_rows[:12]
-        ),
+        **freshness,
+        "signature": "|".join(signature_parts),
     }

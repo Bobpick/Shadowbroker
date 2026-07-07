@@ -14,6 +14,20 @@ echo "   S H A D O W B R O K E R   -   macOS / Linux Start   "
 echo "======================================================="
 echo ""
 
+# Keep Node backend launcher off unsupported Python (e.g. 3.14 removes stdlib cgi).
+if [ -z "${BACKEND_BASE_PYTHON:-}" ]; then
+    for candidate in python3.12 python3.11 python3.10 /usr/bin/python3.12 /usr/bin/python3.11 /usr/bin/python3.10; do
+        if command -v "$candidate" >/dev/null 2>&1; then
+            export BACKEND_BASE_PYTHON="$candidate"
+            break
+        fi
+    done
+fi
+if [ -n "${BACKEND_BASE_PYTHON:-}" ]; then
+    echo "[*] Backend Python pin: $BACKEND_BASE_PYTHON"
+    export BACKEND_BASE_PYTHON
+fi
+
 # Check for stale docker-compose.yml from pre-migration clones
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -f "$SCRIPT_DIR/docker-compose.yml" ] && grep -q '^\s*build:' "$SCRIPT_DIR/docker-compose.yml" 2>/dev/null; then
@@ -143,9 +157,7 @@ if command -v uv &> /dev/null; then
         exit 1
     fi
     echo "[*] Installing Python dependencies via UV (fast)..."
-    cd "$SCRIPT_DIR"
-    UV_PROJECT_ENVIRONMENT="$SCRIPT_DIR/backend/$VENV_DIR" uv sync --frozen --no-dev
-    cd "$SCRIPT_DIR/backend"
+    UV_PROJECT_ENVIRONMENT="$(pwd)/$VENV_DIR" uv sync --frozen --no-dev
 else
     echo "[*] UV not found, using pip (install UV for faster installs: https://docs.astral.sh/uv/)"
     PRIMARY_VENV_DIR="venv"

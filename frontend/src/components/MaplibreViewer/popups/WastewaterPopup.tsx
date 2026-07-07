@@ -62,8 +62,11 @@ export function WastewaterPopup({ plant, onClose }: WastewaterPopupProps) {
           </div>
         )}
         {plant.collection_date && (
-          <div className="map-popup-row text-[#8899aa] mb-2">
+          <div className="map-popup-row text-[#8899aa] mb-1">
             SAMPLED: <span className="text-white">{plant.collection_date}</span>
+            {plant.sample_age_days != null ? (
+              <span className="text-gray-500"> ({plant.sample_age_days}d ago)</span>
+            ) : null}
           </div>
         )}
 

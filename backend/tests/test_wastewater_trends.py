@@ -6,6 +6,7 @@ from services.fetchers.wastewater_trends import (
     build_pathogen_rollups,
     build_surveillance_summary,
     compute_pathogen_trend,
+    max_sample_age_days,
     parse_plant_series,
 )
 
@@ -114,3 +115,48 @@ def test_build_surveillance_summary_new_signal_without_baseline():
     rota = summary["rising_pathogens"][0]
     assert rota["rising_rate_pct"] is None
     assert rota["rising_rate_display"] == "+1 states (new)"
+
+
+def test_parse_plant_series_keeps_late_month_samples_with_extended_age(monkeypatch):
+    monkeypatch.setenv("WASTEWATER_MAX_SAMPLE_AGE_DAYS", "45")
+    sample_day = (datetime.now(timezone.utc) - timedelta(days=35)).date().isoformat()
+    samples = [
+        {
+            "collection_date": sample_day,
+            "targets": {
+                "Rota": {
+                    "gc_g_dry_weight": 1000,
+                    "gc_g_dry_weight_pmmov": 0.0001,
+                    "activity_category": "medium",
+                }
+            },
+        }
+    ]
+    parsed = parse_plant_series(samples, TARGETS, max_age_days=max_sample_age_days())
+    assert parsed is not None
+    assert parsed["collection_date"] == sample_day
+
+
+def test_build_surveillance_summary_reports_collection_freshness():
+    plants = [
+        {
+            "state": "Colorado",
+            "collection_date": "2026-06-30",
+            "sample_age_days": 4,
+            "pathogens": [
+                {"name": "Rotavirus", "target_key": "Rota", "alert": True, "trend": "rising"},
+            ],
+        },
+        {
+            "state": "Texas",
+            "collection_date": "2026-07-02",
+            "sample_age_days": 2,
+            "pathogens": [
+                {"name": "Norovirus", "target_key": "Noro_G2", "alert": False, "trend": "stable"},
+            ],
+        },
+    ]
+    summary = build_surveillance_summary(plants, baseline=None)
+    assert summary["latest_collection_date"] == "2026-07-02"
+    assert summary["median_sample_age_days"] == 4
+    assert "through:2026-07-02" in summary["signature"]

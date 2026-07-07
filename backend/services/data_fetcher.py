@@ -1011,6 +1011,14 @@ def start_scheduler():
         except Exception as exc:
             logger.error("GT rolling weekly freeze failed: %s", exc)
 
+    def _auto_label_gt_rolling():
+        try:
+            from analytics.integration import maybe_auto_label_gt_rolling
+
+            maybe_auto_label_gt_rolling()
+        except Exception as exc:
+            logger.error("GT rolling auto-label failed: %s", exc)
+
     try:
         from analytics.settings import get_gt_settings
 
@@ -1034,6 +1042,29 @@ def start_scheduler():
                 id="gt_rolling_weekly_freeze",
                 max_instances=1,
                 misfire_grace_time=3600,
+            )
+            _scheduler.add_job(
+                _auto_label_gt_rolling,
+                "cron",
+                hour=1,
+                minute=15,
+                id="gt_rolling_auto_label",
+                max_instances=1,
+                misfire_grace_time=3600,
+            )
+            _scheduler.add_job(
+                _freeze_gt_weekly_snapshot,
+                "date",
+                run_date=datetime.utcnow() + timedelta(minutes=4),
+                id="gt_rolling_startup_freeze",
+                max_instances=1,
+            )
+            _scheduler.add_job(
+                _auto_label_gt_rolling,
+                "date",
+                run_date=datetime.utcnow() + timedelta(minutes=6),
+                id="gt_rolling_startup_auto_label",
+                max_instances=1,
             )
     except Exception as exc:
         logger.warning("GT Louvain scheduler not registered: %s", exc)

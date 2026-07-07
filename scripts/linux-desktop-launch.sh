@@ -3,18 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_FILE="$REPO_ROOT/.env"
-FRONTEND_PORT=3000
-
-if [[ -f "$ENV_FILE" ]]; then
-  # shellcheck disable=SC1090
-  port_from_env="$(grep -E '^[[:space:]]*FRONTEND_PORT=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- | tr -d '[:space:]"'"'"'')"
-  if [[ -n "$port_from_env" ]]; then
-    FRONTEND_PORT="$port_from_env"
-  fi
-fi
-
-DASHBOARD_URL="http://127.0.0.1:${FRONTEND_PORT}"
+START_SCRIPT="$SCRIPT_DIR/start-source.sh"
+LOG_DIR="$REPO_ROOT/.local/logs"
+LOG_FILE="$LOG_DIR/shadowbroker-source.log"
+PID_FILE="$LOG_DIR/shadowbroker-source.pid"
+DASHBOARD_URL="http://127.0.0.1:3000"
 
 notify() {
   if command -v notify-send >/dev/null 2>&1; then
@@ -22,21 +15,45 @@ notify() {
   fi
 }
 
-if ! command -v docker >/dev/null 2>&1; then
-  notify "ShadowBroker" "Docker is not installed or not on PATH."
-  exit 1
-fi
+is_listening() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -tln | grep -q ":${port} "
+    return
+  fi
+  curl -fsS -o /dev/null "http://127.0.0.1:${port}/" 2>/dev/null
+}
 
-if ! docker info >/dev/null 2>&1; then
-  notify "ShadowBroker" "Docker is not running. Start Docker and try again."
-  exit 1
-fi
+source_running() {
+  if [[ -f "$PID_FILE" ]]; then
+    local pid
+    pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+  fi
+  is_listening 3000 && is_listening 8000
+}
+
+start_source() {
+  mkdir -p "$LOG_DIR"
+  if source_running; then
+    return 0
+  fi
+  if ! command -v npm >/dev/null 2>&1; then
+    notify "ShadowBroker" "npm/Node.js is required for source mode."
+    exit 1
+  fi
+  if ! command -v python3.12 >/dev/null 2>&1 && ! command -v python3.11 >/dev/null 2>&1; then
+    notify "ShadowBroker" "Python 3.11 or 3.12 is required for source mode."
+    exit 1
+  fi
+  nohup "$START_SCRIPT" >>"$LOG_FILE" 2>&1 &
+  echo $! >"$PID_FILE"
+}
 
 cd "$REPO_ROOT"
-if ! docker compose up -d; then
-  notify "ShadowBroker" "Failed to start containers. Check Docker logs."
-  exit 1
-fi
+start_source
 
 ready=0
 for _ in $(seq 1 60); do

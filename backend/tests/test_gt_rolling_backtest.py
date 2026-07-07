@@ -12,6 +12,7 @@ from analytics.backtest import DEFAULT_BACKTEST_ALERT_THRESHOLD
 from analytics.gt_early_warning import GT_EarlyWarning
 from analytics.integration import reset_gt_engine
 from analytics.rolling_backtest import (
+    auto_label_mature_weeks,
     freeze_weekly_snapshot,
     iso_week_id,
     label_regions,
@@ -158,6 +159,41 @@ def test_openclaw_rolling_commands(
     trend = _dispatch_command("gt_rolling_backtest", {"weeks": 4, "compact": True})
     assert trend["ok"] is True
     assert trend["data"]["mode"] == "rolling_operational"
+
+
+def test_auto_label_mature_weeks(rolling_store: Path) -> None:
+    engine = _seed_engine()
+    for region, text in (
+        ("france", "Routine diplomatic statement about trade"),
+        ("germany", "Central bank holds rates steady amid calm markets"),
+        ("poland", "Border cooperation talks continue without incident"),
+    ):
+        engine.process_feed_item(
+            {
+                "text": text,
+                "region": region,
+                "source": "test",
+                "source_type": "manual",
+            }
+        )
+    freeze_weekly_snapshot(week_id="2026-W10", engine=engine, frozen_by="test")
+
+    snapshot = load_week("2026-W10")
+    assert snapshot is not None
+    snapshot.frozen_at = "2020-01-01T00:00:00+00:00"
+    from analytics.weekly_store import save_week
+
+    save_week(snapshot)
+
+    result = auto_label_mature_weeks(engine=engine, label_delay_days=0)
+    assert result["ok"] is True
+    assert result["weeks_labeled"] == 1
+
+    labeled = load_week("2026-W10")
+    assert labeled is not None
+    scored = score_week(labeled)
+    assert scored.labeled >= 2
+    assert scored.scorable is True
 
 
 def test_route_query_rolling_intent() -> None:

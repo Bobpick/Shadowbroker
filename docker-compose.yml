@@ -110,6 +110,9 @@ services:
       - GT_ANALYTICS_BASE_PRIOR=${GT_ANALYTICS_BASE_PRIOR:-0.15}
       - GT_ANALYTICS_WATCHED_CHANNELS=${GT_ANALYTICS_WATCHED_CHANNELS:-}
       - OPENCLAW_HMAC_SECRET=${OPENCLAW_HMAC_SECRET:-}
+      # WastewaterSCAN samples often lag 1–2 weeks into a new month; keep June
+      # data valid until July upstream points publish.
+      - WASTEWATER_MAX_SAMPLE_AGE_DAYS=${WASTEWATER_MAX_SAMPLE_AGE_DAYS:-45}
     volumes:
       - backend_data:/app/data
     restart: unless-stopped

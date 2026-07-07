@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Minus, Plus, Radar, RefreshCw, XCircle } from 'lucide-react';
 import { API_BASE } from '@/lib/api';
+import { controlPlaneFetch } from '@/lib/controlPlane';
 import { useDataKey } from '@/hooks/useDataStore';
 import { useTranslation } from '@/i18n';
 import type { GtBacktestReport, GtMicroRollingReport, GtRollingReport } from '@/types/dashboard';
@@ -58,6 +59,8 @@ export default function GtBacktestPanel({ layerEnabled = false, embedded = false
   const [loadingBenchmark, setLoadingBenchmark] = useState(false);
   const [loadingRolling, setLoadingRolling] = useState(false);
   const [loadingMicro, setLoadingMicro] = useState(false);
+  const [autoLabeling, setAutoLabeling] = useState(false);
+  const [autoLabelNote, setAutoLabelNote] = useState<string | null>(null);
   const [showFailures, setShowFailures] = useState(false);
 
   const refreshBenchmark = useCallback(async () => {
@@ -111,6 +114,42 @@ export default function GtBacktestPanel({ layerEnabled = false, embedded = false
   const refresh = useCallback(async () => {
     await Promise.all([refreshBenchmark(), refreshRolling(), refreshMicro()]);
   }, [refreshBenchmark, refreshRolling, refreshMicro]);
+
+  const runAutoLabelNow = useCallback(async () => {
+    if (!layerEnabled || autoLabeling) return;
+    setAutoLabeling(true);
+    setAutoLabelNote(null);
+    try {
+      const res = await controlPlaneFetch('/api/analytics/rolling/auto-label', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force_now: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          typeof data?.detail === 'string'
+            ? data.detail
+            : t('gtBacktest.autoLabelFailed'),
+        );
+      }
+      if (data?.rolling) {
+        setRolling(data.rolling);
+      } else {
+        await refreshRolling();
+      }
+      const weeksLabeled = Number(data?.weeks_labeled ?? 0);
+      setAutoLabelNote(
+        t('gtBacktest.autoLabelDone').replace('{count}', String(weeksLabeled)),
+      );
+    } catch (err) {
+      setAutoLabelNote(
+        err instanceof Error ? err.message : t('gtBacktest.autoLabelFailed'),
+      );
+    } finally {
+      setAutoLabeling(false);
+    }
+  }, [autoLabeling, layerEnabled, refreshRolling, t]);
 
   useEffect(() => {
     refresh();
@@ -413,9 +452,26 @@ export default function GtBacktestPanel({ layerEnabled = false, embedded = false
                     )}
                   </div>
 
-                  <div className="text-[10px] font-mono tracking-widest text-amber-600/80 pt-1">
-                    {t('gtBacktest.tabOperational').toUpperCase()} — {t('gtBacktest.operationalTrend')}
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <div className="text-[10px] font-mono tracking-widest text-amber-600/80">
+                      {t('gtBacktest.tabOperational').toUpperCase()} — {t('gtBacktest.operationalTrend')}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={runAutoLabelNow}
+                      disabled={autoLabeling}
+                      title={t('gtBacktest.autoLabelNow')}
+                      className="shrink-0 text-[10px] font-mono tracking-widest px-2 py-0.5 border border-amber-700/45 bg-amber-950/25 text-amber-300 transition-colors hover:bg-amber-900/35 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {autoLabeling ? t('gtBacktest.autoLabelRunning') : t('gtBacktest.autoLabelNow')}
+                    </button>
                   </div>
+
+                  {autoLabelNote && (
+                    <div className="text-[10px] font-mono tracking-wider text-amber-500/85">
+                      {autoLabelNote}
+                    </div>
+                  )}
 
                   {!rolling || rolling.weeks_stored === 0 ? (
                     <div className="text-[10px] font-mono tracking-wider text-amber-600/70 py-1">

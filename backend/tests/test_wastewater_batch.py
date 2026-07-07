@@ -1,6 +1,12 @@
 """Wastewater rotating batch selection tests."""
 
-from services.fetchers.wastewater import _fallback_plants, select_batch_ids
+from datetime import datetime, timedelta, timezone
+
+from services.fetchers.wastewater import (
+    _fallback_plants,
+    _select_no_data_retry_ids,
+    select_batch_ids,
+)
 
 
 def _plant_map(ids: list[str], with_data: set[str] | None = None) -> dict[str, dict]:
@@ -62,3 +68,62 @@ def test_select_batch_wraps_cursor():
 
     assert batch == ["c", "a"]
     assert cursor == 1
+
+
+def test_select_batch_prioritizes_stale_loaded_plants():
+    ids = ["fresh", "stale", "older"]
+    plant_map = {
+        "fresh": {
+            "id": "fresh",
+            "pathogens": [{"name": "Rota"}],
+            "sample_age_days": 2,
+        },
+        "stale": {
+            "id": "stale",
+            "pathogens": [{"name": "Rota"}],
+            "sample_age_days": 18,
+        },
+        "older": {
+            "id": "older",
+            "pathogens": [{"name": "Rota"}],
+            "sample_age_days": 30,
+        },
+    }
+
+    batch, _, _ = select_batch_ids(ids, plant_map, cursor=0, batch_size=3)
+
+    assert "older" in batch
+    assert batch.index("older") < batch.index("fresh")
+
+
+def test_select_batch_includes_retry_ids_before_refresh():
+    ids = ["a", "b", "c", "d"]
+    plant_map = _plant_map(ids, with_data={"a"})
+
+    batch, _, _ = select_batch_ids(
+        ids,
+        plant_map,
+        cursor=0,
+        batch_size=3,
+        no_data_ids={"c"},
+        retry_ids=["c"],
+    )
+
+    assert batch[0] == "c"
+    assert "b" in batch
+
+
+def test_select_no_data_retry_ids_rotates_and_respects_cooldown():
+    now = datetime.now(timezone.utc)
+    state = {
+        "no_data_retry_cursor": 0,
+        "no_data_since": {
+            "fresh": (now - timedelta(hours=1)).isoformat(),
+            "cool": (now - timedelta(hours=8)).isoformat(),
+        },
+    }
+
+    retries, cursor = _select_no_data_retry_ids(state, {"fresh", "cool"}, limit=2)
+
+    assert retries == ["cool"]
+    assert cursor == 0

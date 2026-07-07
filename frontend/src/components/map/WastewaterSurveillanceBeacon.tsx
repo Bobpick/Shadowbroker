@@ -59,6 +59,7 @@ export function WastewaterSurveillanceBeacon({ enabled, surveillance }: Props) {
   const rising = summary.rising_pathogens ?? [];
   const risingCount = summary.pathogens_rising ?? rising.length;
   const signature = summary.signature ?? '';
+  const refreshKey = `${signature}|${summary.updated_at ?? ''}|${summary.latest_collection_date ?? ''}`;
   const hasSignal = risingCount > 0;
 
   const lat = marker?.lat ?? 39.8283;
@@ -72,12 +73,12 @@ export function WastewaterSurveillanceBeacon({ enabled, surveillance }: Props) {
   }, [hasSignal, risingCount]);
 
   useEffect(() => {
-    if (!enabled || !hasSignal || !signature) return;
+    if (!enabled || !hasSignal || !refreshKey) return;
 
     const previous = sessionStorage.getItem(SESSION_SIGNATURE_KEY);
-    if (previous === signature) return;
+    if (previous === refreshKey) return;
 
-    sessionStorage.setItem(SESSION_SIGNATURE_KEY, signature);
+    sessionStorage.setItem(SESSION_SIGNATURE_KEY, refreshKey);
     pinnedOpenRef.current = false;
     setExpanded(true);
 
@@ -89,7 +90,7 @@ export function WastewaterSurveillanceBeacon({ enabled, surveillance }: Props) {
     return () => {
       if (autoTimerRef.current) clearTimeout(autoTimerRef.current);
     };
-  }, [enabled, hasSignal, signature]);
+  }, [enabled, hasSignal, refreshKey]);
 
   if (!enabled) return null;
 
@@ -222,6 +223,21 @@ export function WastewaterSurveillanceBeacon({ enabled, surveillance }: Props) {
                   {summary.plants_active ?? 0} active sites · {summary.pathogens_tracked ?? 0} pathogens tracked
                 </>
               )}
+              {summary.latest_collection_date ? (
+                <>
+                  {' · '}
+                  samples through {summary.latest_collection_date}
+                  {summary.median_sample_age_days != null ? (
+                    <span> (median {summary.median_sample_age_days}d old)</span>
+                  ) : null}
+                </>
+              ) : null}
+              {summary.updated_at ? (
+                <>
+                  {' · '}
+                  refreshed {summary.updated_at.slice(0, 16).replace('T', ' ')} UTC
+                </>
+              ) : null}
             </div>
           </div>
         </Popup>

@@ -214,3 +214,21 @@ def maybe_freeze_gt_weekly_snapshot() -> None:
             )
     except Exception:
         logger.exception("GT rolling weekly freeze failed")
+
+
+def maybe_auto_label_gt_rolling() -> None:
+    """Hook for scheduler — infer delayed labels for mature frozen weeks."""
+    if not gt_analytics_enabled():
+        return
+    try:
+        from analytics.rolling_backtest import auto_label_mature_weeks
+
+        result = auto_label_mature_weeks(labeled_by="scheduler")
+        if result.get("weeks_labeled"):
+            logger.info(
+                "GT rolling auto-label: weeks=%s details=%s",
+                result.get("weeks_labeled"),
+                result.get("details"),
+            )
+    except Exception:
+        logger.exception("GT rolling auto-label failed")

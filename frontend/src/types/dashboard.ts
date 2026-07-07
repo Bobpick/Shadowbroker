@@ -595,6 +595,10 @@ export interface WastewaterSurveillanceSummary {
   pathogens_tracked?: number;
   pathogens_rising?: number;
   signature?: string;
+  latest_collection_date?: string | null;
+  median_sample_age_days?: number | null;
+  plants_current_month?: number;
+  max_sample_age_days?: number;
   fetch_progress?: {
     with_data?: number;
     total?: number;

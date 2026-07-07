@@ -24,6 +24,7 @@ from services.fetchers.wastewater_trends import (
     build_pathogen_rollups,
     build_surveillance_summary,
     load_baseline_snapshot,
+    max_sample_age_days,
     parse_plant_series,
     save_daily_snapshot,
     _snapshot_dir,
@@ -38,6 +39,9 @@ _BATCH_SIZE = int(os.environ.get("WASTEWATER_BATCH_SIZE", "36"))
 _BATCH_TIMEOUT_S = float(os.environ.get("WASTEWATER_BATCH_TIMEOUT_S", "70"))
 _PLANT_FETCH_TIMEOUT_S = int(os.environ.get("WASTEWATER_PLANT_TIMEOUT_S", "10"))
 _BATCH_WORKERS = int(os.environ.get("WASTEWATER_BATCH_WORKERS", "8"))
+_NO_DATA_FAILURE_THRESHOLD = int(os.environ.get("WASTEWATER_NO_DATA_FAILURE_THRESHOLD", "3"))
+_NO_DATA_RETRY_HOURS = float(os.environ.get("WASTEWATER_NO_DATA_RETRY_HOURS", "6"))
+_NO_DATA_RETRY_PER_BATCH = int(os.environ.get("WASTEWATER_NO_DATA_RETRY_PER_BATCH", "12"))
 
 # Cache the plants list for 24 hours (it rarely changes)
 _plants_cache: list[dict] = []
@@ -113,6 +117,13 @@ def _fetch_state_path() -> Path:
     return Path(__file__).resolve().parents[2] / "data" / "wastewater_fetch_state.json"
 
 
+def _pathogens_cache_path() -> Path:
+    raw = os.environ.get("WASTEWATER_PATHOGENS_CACHE_PATH", "").strip()
+    if raw:
+        return Path(raw)
+    return Path(__file__).resolve().parents[2] / "data" / "wastewater_pathogens_cache.json"
+
+
 def _load_fetch_state() -> dict[str, Any]:
     path = _fetch_state_path()
     if not path.exists():
@@ -132,6 +143,87 @@ def _save_fetch_state(state: dict[str, Any]) -> None:
     path.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
+def _no_data_retry_eligible(state: dict[str, Any], pid: str, *, now: datetime | None = None) -> bool:
+    since_map = state.get("no_data_since") or {}
+    since_raw = since_map.get(pid)
+    if not since_raw:
+        return True
+    try:
+        since_dt = datetime.fromisoformat(str(since_raw).replace("Z", "+00:00"))
+        if since_dt.tzinfo is None:
+            since_dt = since_dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return True
+    age_h = ((now or datetime.now(timezone.utc)) - since_dt).total_seconds() / 3600.0
+    return age_h >= _NO_DATA_RETRY_HOURS
+
+
+def _select_no_data_retry_ids(
+    state: dict[str, Any],
+    no_data_ids: set[str],
+    *,
+    limit: int,
+) -> tuple[list[str], int]:
+    if not no_data_ids or limit <= 0:
+        return [], int(state.get("no_data_retry_cursor") or 0)
+
+    eligible = sorted(pid for pid in no_data_ids if _no_data_retry_eligible(state, pid))
+    if not eligible:
+        return [], int(state.get("no_data_retry_cursor") or 0)
+
+    cursor = int(state.get("no_data_retry_cursor") or 0) % len(eligible)
+    retries: list[str] = []
+    idx = cursor
+    guard = 0
+    while len(retries) < limit and guard < len(eligible):
+        pid = eligible[idx % len(eligible)]
+        if pid not in retries:
+            retries.append(pid)
+        idx += 1
+        guard += 1
+    return retries, idx % len(eligible)
+
+
+def _stale_refresh_priority(
+    all_ids: list[str],
+    plant_map: dict[str, dict[str, Any]],
+    *,
+    skip: set[str],
+    limit: int,
+) -> list[str]:
+    """Prefer plants with the oldest samples so month rollovers refresh faster."""
+    if limit <= 0:
+        return []
+
+    ranked: list[tuple[float, str]] = []
+    for pid in all_ids:
+        if pid in skip:
+            continue
+        plant = plant_map.get(pid) or {}
+        if not plant.get("pathogens"):
+            continue
+        age = plant.get("sample_age_days")
+        if age is None:
+            continue
+        try:
+            age_f = float(age)
+        except (TypeError, ValueError):
+            continue
+        if age_f < 7:
+            continue
+        ranked.append((age_f, pid))
+
+    ranked.sort(key=lambda row: row[0], reverse=True)
+    picked: list[str] = []
+    for _, pid in ranked:
+        if pid in picked:
+            continue
+        picked.append(pid)
+        if len(picked) >= limit:
+            break
+    return picked
+
+
 def select_batch_ids(
     all_ids: list[str],
     plant_map: dict[str, dict[str, Any]],
@@ -140,12 +232,15 @@ def select_batch_ids(
     batch_size: int,
     no_data_ids: set[str] | None = None,
     unfetched_cursor: int = 0,
+    retry_ids: list[str] | None = None,
 ) -> tuple[list[str], int, int]:
     """Pick the next plant IDs to fetch.
 
     Unfetched sites are tried first (paginated). Sites that repeatedly return
-    no recent pathogen series are skipped via ``no_data_ids``. Remaining batch
-    slots refresh already-loaded plants so national rollups keep moving.
+    no recent pathogen series are skipped via ``no_data_ids``. A rotating retry
+    slice re-probes cooled-down ``no_data_ids`` so transient fetch failures do
+    not permanently stall coverage. Remaining batch slots refresh already-loaded
+    plants so national rollups keep moving.
     """
     ordered = sorted(all_ids)
     if not ordered:
@@ -161,6 +256,11 @@ def select_batch_ids(
     batch: list[str] = []
     new_unfetched_cursor = unfetched_cursor
 
+    for pid in retry_ids or []:
+        if len(batch) >= batch_size or pid in batch:
+            continue
+        batch.append(pid)
+
     if pending:
         start = unfetched_cursor % len(pending)
         idx = start
@@ -172,6 +272,18 @@ def select_batch_ids(
             idx += 1
             guard += 1
         new_unfetched_cursor = idx % len(pending)
+
+    if len(batch) < batch_size:
+        stale_slots = max(1, batch_size // 3)
+        for pid in _stale_refresh_priority(
+            ordered,
+            plant_map,
+            skip=skip,
+            limit=stale_slots,
+        ):
+            if len(batch) >= batch_size or pid in batch:
+                continue
+            batch.append(pid)
 
     if len(batch) < batch_size:
         index = cursor % len(ordered)
@@ -195,18 +307,24 @@ def _update_batch_failures(
     """Track plants that never return a parseable series so we stop wedging on them."""
     no_data_ids = set(state.get("no_data_ids") or [])
     failures: dict[str, int] = dict(state.get("fetch_failures") or {})
+    no_data_since: dict[str, str] = dict(state.get("no_data_since") or {})
+    now_iso = datetime.now(timezone.utc).isoformat()
 
     for pid in batch_ids:
         if (plant_map.get(pid) or {}).get("pathogens"):
             failures.pop(pid, None)
             no_data_ids.discard(pid)
+            no_data_since.pop(pid, None)
             continue
         failures[pid] = failures.get(pid, 0) + 1
-        if failures[pid] >= 2:
+        if failures[pid] >= _NO_DATA_FAILURE_THRESHOLD:
+            if pid not in no_data_ids:
+                no_data_since[pid] = now_iso
             no_data_ids.add(pid)
 
     state["fetch_failures"] = failures
     state["no_data_ids"] = sorted(no_data_ids)
+    state["no_data_since"] = no_data_since
 
 
 def _snapshot_exists_today() -> bool:
@@ -283,7 +401,68 @@ def _build_plant_map(plants: list[dict]) -> dict[str, dict[str, Any]]:
     return plant_map
 
 
+def _load_pathogens_disk_cache() -> dict[str, dict[str, Any]]:
+    path = _pathogens_cache_path()
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.debug("WastewaterSCAN: could not read pathogen cache from %s: %s", path, exc)
+        return {}
+    plants = payload.get("plants") if isinstance(payload, dict) else None
+    if not isinstance(plants, dict):
+        return {}
+    return {
+        str(pid): node
+        for pid, node in plants.items()
+        if isinstance(node, dict) and node.get("pathogens")
+    }
+
+
+def _save_pathogens_disk_cache(plant_map: dict[str, dict[str, Any]]) -> None:
+    plants = {
+        pid: {
+            "pathogens": node.get("pathogens") or [],
+            "alert_count": int(node.get("alert_count") or 0),
+            "collection_date": node.get("collection_date") or "",
+            "sample_age_days": node.get("sample_age_days"),
+        }
+        for pid, node in plant_map.items()
+        if node.get("pathogens")
+    }
+    if not plants:
+        return
+    path = _pathogens_cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "plants": plants,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        logger.debug("WastewaterSCAN: could not write pathogen cache to %s: %s", path, exc)
+
+
+def _apply_pathogen_cache_entry(plant_map: dict[str, dict[str, Any]], pid: str, node: dict[str, Any]) -> None:
+    if pid not in plant_map or not node.get("pathogens"):
+        return
+    plant_map[pid]["pathogens"] = node.get("pathogens") or []
+    plant_map[pid]["alert_count"] = int(node.get("alert_count") or 0)
+    plant_map[pid]["collection_date"] = node.get("collection_date") or ""
+    plant_map[pid]["sample_age_days"] = node.get("sample_age_days")
+
+
 def _merge_cached_pathogens(plant_map: dict[str, dict[str, Any]]) -> None:
+    for pid, node in _load_pathogens_disk_cache().items():
+        _apply_pathogen_cache_entry(plant_map, pid, node)
+
     with _data_lock:
         cached_nodes = latest_data.get("wastewater") or []
     for node in cached_nodes:
@@ -292,10 +471,7 @@ def _merge_cached_pathogens(plant_map: dict[str, dict[str, Any]]) -> None:
             continue
         if not node.get("pathogens"):
             continue
-        plant_map[pid]["pathogens"] = node.get("pathogens") or []
-        plant_map[pid]["alert_count"] = int(node.get("alert_count") or 0)
-        plant_map[pid]["collection_date"] = node.get("collection_date") or ""
-        plant_map[pid]["sample_age_days"] = node.get("sample_age_days")
+        _apply_pathogen_cache_entry(plant_map, pid, node)
 
 
 def _fetch_plant_series(plant_id: str) -> dict[str, Any] | None:
@@ -305,7 +481,11 @@ def _fetch_plant_series(plant_id: str) -> dict[str, Any] | None:
         if resp.status_code != 200:
             return None
         samples = resp.json().get("samples", [])
-        return parse_plant_series(samples, _TARGET_DISPLAY)
+        return parse_plant_series(
+            samples,
+            _TARGET_DISPLAY,
+            max_age_days=max_sample_age_days(),
+        )
     except Exception as exc:
         logger.debug("WastewaterSCAN: failed to fetch plant %s: %s", plant_id, exc)
         return None
@@ -348,11 +528,6 @@ def _fetch_plant_batch(batch_ids: list[str], plant_map: dict[str, dict[str, Any]
 
 def fetch_wastewater():
     """Fetch one rotating WastewaterSCAN batch and merge into cached plant data."""
-    from services.fetchers._store import is_any_active
-
-    if not is_any_active("wastewater"):
-        return
-
     plants = _fetch_plants()
     if not plants:
         logger.warning("WastewaterSCAN: no plant data available")
@@ -366,6 +541,11 @@ def fetch_wastewater():
     cursor = int(state.get("cursor") or 0)
     unfetched_cursor = int(state.get("unfetched_cursor") or 0)
     no_data_ids = set(state.get("no_data_ids") or [])
+    retry_ids, no_data_retry_cursor = _select_no_data_retry_ids(
+        state,
+        no_data_ids,
+        limit=min(_NO_DATA_RETRY_PER_BATCH, max(0, _BATCH_SIZE // 3)),
+    )
     batch_ids, new_cursor, new_unfetched_cursor = select_batch_ids(
         all_ids,
         plant_map,
@@ -373,6 +553,7 @@ def fetch_wastewater():
         batch_size=_BATCH_SIZE,
         no_data_ids=no_data_ids,
         unfetched_cursor=unfetched_cursor,
+        retry_ids=retry_ids,
     )
 
     batch_ok = _fetch_plant_batch(batch_ids, plant_map)
@@ -382,12 +563,15 @@ def fetch_wastewater():
         {
             "cursor": new_cursor,
             "unfetched_cursor": new_unfetched_cursor,
+            "no_data_retry_cursor": no_data_retry_cursor,
             "last_batch_at": datetime.now(timezone.utc).isoformat(),
             "last_batch_ids": len(batch_ids),
             "last_batch_ok": batch_ok,
+            "last_retry_ids": len(retry_ids),
         }
     )
     _save_fetch_state(state)
+    _save_pathogens_disk_cache(plant_map)
 
     nodes = list(plant_map.values())
     active_nodes = [n for n in nodes if n.get("pathogens")]

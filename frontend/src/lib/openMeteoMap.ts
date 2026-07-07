@@ -1,9 +1,28 @@
-import { omProtocol } from '@openmeteo/weather-map-layer';
 import type { WeatherForecastMeta } from '@/types/dashboard';
 
 const OM_HOST = 'https://map-tiles.open-meteo.com/data_spatial/dwd_icon';
 
 let _protocolRegistered = false;
+let _omRequestChain: Promise<unknown> = Promise.resolve();
+
+type OmProtocolHandler = (
+  params: { url: string; type?: string },
+  abortController?: AbortController,
+) => Promise<{ data: ArrayBuffer | null | undefined }>;
+
+async function loadOmProtocol(): Promise<OmProtocolHandler> {
+  const { omProtocol } = await import('@openmeteo/weather-map-layer');
+  return omProtocol as OmProtocolHandler;
+}
+
+function isBenignOmError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes('Reader not initialized') ||
+    msg.includes('Aborted') ||
+    msg.includes('abort')
+  );
+}
 
 export function registerOpenMeteoProtocol(maplibregl: {
   addProtocol: (
@@ -14,15 +33,27 @@ export function registerOpenMeteoProtocol(maplibregl: {
     ) => Promise<{ data: ArrayBuffer }>,
   ) => void;
 }): void {
+  if (typeof window === 'undefined') return;
   if (_protocolRegistered) return;
   _protocolRegistered = true;
-  maplibregl.addProtocol(
-    'om',
-    omProtocol as (
-      params: { url: string },
-      abortController?: AbortController,
-    ) => Promise<{ data: ArrayBuffer }>,
-  );
+
+  const emptyTile = new ArrayBuffer(0);
+
+  maplibregl.addProtocol('om', (params, abortController) => {
+    const run = _omRequestChain.then(async () => {
+      try {
+        const protocol = await loadOmProtocol();
+        return await protocol(params, abortController);
+      } catch (err) {
+        if (abortController?.signal.aborted || isBenignOmError(err)) {
+          return { data: emptyTile };
+        }
+        throw err;
+      }
+    });
+    _omRequestChain = run.catch(() => undefined);
+    return run as Promise<{ data: ArrayBuffer }>;
+  });
 }
 
 export function buildOpenMeteoOmUrl(

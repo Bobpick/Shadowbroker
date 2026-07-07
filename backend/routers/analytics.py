@@ -20,6 +20,7 @@ from analytics.integration import get_gt_engine, refresh_from_latest_data
 from analytics.gt_alerts import top_gt_alerts
 from analytics.micro_rolling import micro_rolling_report
 from analytics.rolling_backtest import (
+    auto_label_mature_weeks,
     freeze_weekly_snapshot,
     label_region,
     label_regions,
@@ -57,6 +58,11 @@ class RollingLabelEntry(BaseModel):
 class RollingLabelRequest(BaseModel):
     week_id: str
     labels: list[RollingLabelEntry] = Field(default_factory=list)
+
+
+class RollingAutoLabelRequest(BaseModel):
+    label_delay_days: int | None = None
+    force_now: bool = False
 
 
 def _empty_heatmap() -> dict[str, Any]:
@@ -299,6 +305,33 @@ async def analytics_rolling_freeze(
     if not result.get("ok"):
         raise HTTPException(status_code=503, detail=result.get("detail", "Freeze failed"))
     result["enabled"] = True
+    return result
+
+
+@router.post("/api/analytics/rolling/auto-label")
+@limiter.limit("6/minute")
+async def analytics_rolling_auto_label(
+    request: Request,
+    body: RollingAutoLabelRequest,
+    _: None = Depends(require_local_operator),
+) -> dict[str, Any]:
+    """Infer delayed outcome labels for mature frozen weeks (operator trigger)."""
+    if not gt_analytics_enabled():
+        raise HTTPException(status_code=503, detail="Strategic Risk Analytics is disabled")
+
+    delay_days = 0 if body.force_now else body.label_delay_days
+    result = auto_label_mature_weeks(
+        label_delay_days=delay_days,
+        labeled_by="api",
+    )
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=503,
+            detail=result.get("detail", "Auto-label failed"),
+        )
+    report = rolling_report(weeks=8)
+    result["enabled"] = True
+    result["rolling"] = report
     return result
 
 
