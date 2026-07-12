@@ -7,6 +7,7 @@ import { useFloatingPanel } from '@/hooks/useFloatingPanel';
 import GtBacktestPanel from '@/components/GtBacktestPanel';
 import GtTopAlertsStrip from '@/components/GtTopAlertsStrip';
 import GtUsCitiesPanel from '@/components/GtUsCitiesPanel';
+import { GT_ICON, GT_TEXT } from '@/lib/gtTypography';
 import type { SelectedEntity } from '@/types/dashboard';
 
 interface Props {
@@ -31,7 +32,7 @@ export default function GtAnalyticsHud({
   return (
     <div
       className={`pointer-events-auto fixed z-[201] flex flex-col border border-amber-700/45 bg-black/80 shadow-[0_0_16px_rgba(245,158,11,0.12)] backdrop-blur-sm ${
-        isMinimized ? 'w-fit' : 'w-[min(92vw,28rem)]'
+        isMinimized ? 'w-fit' : 'w-[min(92vw,34rem)]'
       } ${isDragging ? 'cursor-grabbing select-none' : ''}`}
       style={{ left: position.x, top: position.y }}
     >
@@ -42,12 +43,12 @@ export default function GtAnalyticsHud({
         onMouseDown={onDragStart}
         title={t('gtHud.dragHint')}
       >
-        <GripVertical size={12} className="shrink-0 text-amber-600/80" />
-        <span className="whitespace-nowrap text-[10px] font-mono font-bold tracking-widest text-amber-300">
+        <GripVertical size={GT_ICON.lg} className="shrink-0 text-amber-600/80" />
+        <span className={`whitespace-nowrap ${GT_TEXT.sm} font-mono font-bold tracking-widest text-amber-300`}>
           {t('gtHud.title')}
         </span>
         {!isMinimized && (
-          <span className="text-[9px] font-mono tracking-wider text-amber-600/70">
+          <span className={`${GT_TEXT.xs} font-mono tracking-wider text-amber-600/70`}>
             {t('gtHud.dragHint')}
           </span>
         )}
@@ -58,12 +59,12 @@ export default function GtAnalyticsHud({
           className="ml-auto p-0.5 text-amber-500 transition-colors hover:text-amber-300"
           title={isMinimized ? t('gtHud.expand') : t('gtHud.collapse')}
         >
-          {isMinimized ? <Plus size={14} /> : <Minus size={14} />}
+          {isMinimized ? <Plus size={GT_ICON.xl} /> : <Minus size={GT_ICON.xl} />}
         </button>
       </div>
 
       {!isMinimized && (
-        <div className="flex max-h-[min(70vh,32rem)] flex-col overflow-y-auto styled-scrollbar">
+        <div className="flex max-h-[min(72vh,36rem)] flex-col overflow-y-auto styled-scrollbar">
           <GtUsCitiesPanel
             layerEnabled={layerEnabled}
             onFlyTo={onFlyTo}

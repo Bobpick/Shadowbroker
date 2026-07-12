@@ -13,6 +13,7 @@ import {
   consolidateCostlySignals,
   formatConsolidatedSources,
 } from '@/lib/gtSignals';
+import { GT_ICON } from '@/lib/gtTypography';
 import type { GtDossier } from '@/types/dashboard';
 
 export interface GtRiskPopupProps {
@@ -123,12 +124,12 @@ export function GtRiskPopup({
       closeOnClick={false}
       onClose={onClose}
       className="threat-popup"
-      maxWidth="360px"
+      maxWidth="380px"
     >
-      <div className="bg-black/95 border border-amber-700/50 rounded-lg overflow-hidden font-mono text-[11px]">
+      <div className="bg-black/95 border border-amber-700/50 rounded-lg overflow-hidden font-mono text-[17px]">
         <div className="px-3 py-2 border-b border-amber-800/40 bg-amber-950/40 flex items-center gap-2">
-          <Radar size={14} className="text-amber-400" />
-          <span className="text-amber-300 font-bold tracking-widest text-[10px]">
+          <Radar size={GT_ICON.xl} className="text-amber-400" />
+          <span className="text-amber-300 font-bold tracking-widest text-[15px]">
             {t('gtRisk.popupTitle')}
           </span>
           <button
@@ -150,7 +151,7 @@ export function GtRiskPopup({
               {(risk * 100).toFixed(1)}%
             </span>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-[10px]">
+          <div className="grid grid-cols-3 gap-2 text-[15px]">
             <div>
               <div className="text-[var(--text-muted)]">{t('gtRisk.financial')}</div>
               <div className="text-cyan-300">{((financial ?? 0) * 100).toFixed(0)}%</div>
@@ -177,7 +178,7 @@ export function GtRiskPopup({
             </p>
           )}
           {resolvedWeatherNoise >= 0.25 && (
-            <div className="border-t border-amber-900/40 pt-2 text-[10px] text-orange-300/90 leading-relaxed">
+            <div className="border-t border-amber-900/40 pt-2 text-[15px] text-orange-300/90 leading-relaxed">
               <span className="text-orange-400 font-bold tracking-wider">
                 {t('gtRisk.weatherNoise')}
               </span>{' '}
@@ -191,17 +192,17 @@ export function GtRiskPopup({
           )}
 
           <div className="border-t border-amber-900/40 pt-2">
-            <div className="text-[10px] tracking-widest text-amber-500/90 font-bold mb-1.5">
+            <div className="text-[15px] tracking-widest text-amber-500/90 font-bold mb-1.5">
               {t('gtRisk.costlySignals')}
             </div>
             {loadingSignals ? (
-              <div className="text-[10px] text-amber-600/80">{t('gtRisk.loadingSignals')}</div>
+              <div className="text-[15px] text-amber-600/80">{t('gtRisk.loadingSignals')}</div>
             ) : consolidatedSignals.length > 0 ? (
               <div className="space-y-1.5">
                 {consolidatedSignals.map((signal) => (
                   <div
                     key={signal.signalKey}
-                    className="border-l-2 border-amber-700/60 pl-2 text-[10px] text-[var(--text-secondary)]"
+                    className="border-l-2 border-amber-700/60 pl-2 text-[15px] text-[var(--text-secondary)]"
                   >
                     <div className="text-amber-300 uppercase">
                       {signal.label}
@@ -215,7 +216,7 @@ export function GtRiskPopup({
                         {formatConsolidatedSources(signal.sources) || t('gtRisk.unknownSource')}
                       </span>
                       {signal.latestTimestamp ? (
-                        <span className="shrink-0 text-[9px]">
+                        <span className="shrink-0 text-[12px]">
                           {formatEventTimestamp(signal.latestTimestamp)}
                         </span>
                       ) : null}
@@ -224,7 +225,7 @@ export function GtRiskPopup({
                 ))}
               </div>
             ) : (
-              <div className="text-[10px] text-amber-600/75 leading-relaxed">
+              <div className="text-[15px] text-amber-600/75 leading-relaxed">
                 {t('gtRisk.noSignals')}
               </div>
             )}

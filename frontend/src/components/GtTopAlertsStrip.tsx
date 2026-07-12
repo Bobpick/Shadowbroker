@@ -5,6 +5,7 @@ import { ChevronRight, Radar } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import { useDataKey } from '@/hooks/useDataStore';
 import { extractGtAlerts } from '@/lib/gtAlerts';
+import { GT_ICON } from '@/lib/gtTypography';
 import type { SelectedEntity } from '@/types/dashboard';
 
 interface Props {
@@ -64,11 +65,11 @@ export default function GtTopAlertsStrip({
   return (
     <div className={shellClass}>
       <div className="flex items-center gap-2 border-b border-amber-800/35 bg-amber-950/25 px-2.5 py-1.5">
-        <Radar size={12} className="text-amber-400 shrink-0" />
-        <span className="text-[10px] font-mono font-bold tracking-widest text-amber-300">
+        <Radar size={GT_ICON.lg} className="text-amber-400 shrink-0" />
+        <span className="text-[15px] font-mono font-bold tracking-widest text-amber-300">
           {t('gtAlerts.title')}
         </span>
-        <span className="text-[9px] font-mono tracking-wider text-amber-600/80">
+        <span className="text-[14px] font-mono tracking-wider text-amber-600/80">
           {t('gtAlerts.counts')
             .replace('{plotted}', String(plottedRegions))
             .replace('{tracked}', String(trackedRegions))
@@ -77,7 +78,7 @@ export default function GtTopAlertsStrip({
       </div>
 
       {alerts.length === 0 ? (
-        <div className="px-2.5 py-2 text-[10px] font-mono tracking-wider text-amber-600/70">
+        <div className="px-2.5 py-2 text-[15px] font-mono tracking-wider text-amber-600/70">
           {t('gtAlerts.empty')}
         </div>
       ) : (
@@ -87,26 +88,26 @@ export default function GtTopAlertsStrip({
               key={alert.region}
               type="button"
               onClick={() => handleSelect(alert)}
-              className="group flex min-w-[9.5rem] shrink-0 flex-col gap-0.5 border border-amber-800/35 bg-amber-950/20 px-2 py-1 text-left transition-colors hover:border-amber-600/50 hover:bg-amber-900/25"
+              className="group flex min-w-[12rem] shrink-0 flex-col gap-0.5 border border-amber-800/35 bg-amber-950/20 px-2 py-1 text-left transition-colors hover:border-amber-600/50 hover:bg-amber-900/25"
             >
               <div className="flex items-center gap-1">
-                <span className="truncate text-[10px] font-mono font-bold uppercase text-amber-100">
+                <span className="truncate text-[15px] font-mono font-bold uppercase text-amber-100">
                   {alert.regionLabel}
                   {alert.nearbyCount && alert.nearbyCount > 1
                     ? ` (+${alert.nearbyCount - 1})`
                     : ''}
                 </span>
                 {alert.ignition && (
-                  <span className="shrink-0 border border-orange-700/50 px-1 text-[8px] font-mono text-orange-300">
+                  <span className="shrink-0 border border-orange-700/50 px-1 text-[12px] font-mono text-orange-300">
                     {t('gtAlerts.ignition')}
                   </span>
                 )}
                 <ChevronRight
-                  size={10}
+                  size={GT_ICON.sm}
                   className="ml-auto shrink-0 text-amber-600/60 group-hover:text-amber-400"
                 />
               </div>
-              <div className="text-[9px] font-mono tracking-wider text-amber-500/90">
+              <div className="text-[14px] font-mono tracking-wider text-amber-500/90">
                 {t('gtAlerts.line')
                   .replace('{risk}', pct(alert.risk))
                   .replace('{conflict}', pct(alert.conflict))}
@@ -116,7 +117,7 @@ export default function GtTopAlertsStrip({
         </div>
       )}
 
-      <div className="border-t border-amber-900/30 px-2.5 py-1 text-[9px] font-mono leading-relaxed text-amber-600/65">
+      <div className="border-t border-amber-900/30 px-2.5 py-1 text-[14px] font-mono leading-relaxed text-amber-600/65">
         {t('gtAlerts.hint')}
       </div>
     </div>

@@ -5,6 +5,7 @@ import { ChevronRight, Flag } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import { useDataKey } from '@/hooks/useDataStore';
 import { extractGtUsCities, protestPotentialLabel } from '@/lib/gtUsCities';
+import { GT_ICON } from '@/lib/gtTypography';
 import type { SelectedEntity } from '@/types/dashboard';
 
 interface Props {
@@ -73,11 +74,11 @@ export default function GtUsCitiesPanel({
   return (
     <div className={shellClass}>
       <div className="flex items-center gap-2 border-b border-blue-700/40 bg-[linear-gradient(90deg,rgba(185,28,28,0.35),rgba(248,250,252,0.08),rgba(29,78,216,0.35))] px-2.5 py-1.5">
-        <Flag size={12} className="shrink-0 text-white" />
-        <span className="text-[10px] font-mono font-bold tracking-widest text-white">
+        <Flag size={GT_ICON.lg} className="shrink-0 text-white" />
+        <span className="text-[15px] font-mono font-bold tracking-widest text-white">
           {t('gtUsCities.title')}
         </span>
-        <span className="text-[9px] font-mono tracking-wider text-blue-100/75">
+        <span className="text-[14px] font-mono tracking-wider text-blue-100/75">
           {t('gtUsCities.counts')
             .replace('{active}', String(watch.activeMetros))
             .replace('{tracked}', String(watch.trackedMetros))
@@ -86,7 +87,7 @@ export default function GtUsCitiesPanel({
       </div>
 
       {watch.cities.length === 0 ? (
-        <div className="px-2.5 py-2 text-[10px] font-mono tracking-wider text-blue-100/65">
+        <div className="px-2.5 py-2 text-[15px] font-mono tracking-wider text-blue-100/65">
           {t('gtUsCities.empty')}
         </div>
       ) : (
@@ -108,16 +109,16 @@ export default function GtUsCitiesPanel({
                 }}
               >
                 <div className="flex items-center gap-1">
-                  <span className="truncate text-[10px] font-mono font-bold uppercase text-white">
+                  <span className="truncate text-[15px] font-mono font-bold uppercase text-white">
                     {city.label}
                   </span>
                   {city.ignition && (
-                    <span className="shrink-0 border border-red-300/60 bg-red-900/50 px-1 text-[8px] font-mono text-red-100">
+                    <span className="shrink-0 border border-red-300/60 bg-red-900/50 px-1 text-[12px] font-mono text-red-100">
                       {t('gtUsCities.ignite')}
                     </span>
                   )}
                   <ChevronRight
-                    size={10}
+                    size={GT_ICON.sm}
                     className="ml-auto shrink-0 text-white/50 group-hover:text-white"
                   />
                 </div>
@@ -129,7 +130,7 @@ export default function GtUsCitiesPanel({
                   />
                 </div>
 
-                <div className="text-[9px] font-mono tracking-wide text-blue-50/85">
+                <div className="text-[14px] font-mono tracking-wide text-blue-50/85">
                   {t('gtUsCities.line')
                     .replace('{potential}', pct(city.protestPotential))
                     .replace('{unrest}', pct(city.unrest))
@@ -137,7 +138,7 @@ export default function GtUsCitiesPanel({
                 </div>
 
                 {city.mobilizationHits > 0 && (
-                  <div className="text-[8px] font-mono uppercase tracking-wider text-red-100/80">
+                  <div className="text-[12px] font-mono uppercase tracking-wider text-red-100/80">
                     {t('gtUsCities.mobilization').replace(
                       '{count}',
                       String(city.mobilizationHits),
@@ -150,7 +151,7 @@ export default function GtUsCitiesPanel({
         </div>
       )}
 
-      <div className="border-t border-blue-800/30 px-2.5 py-1 text-[8px] font-mono tracking-wider text-blue-100/55">
+      <div className="border-t border-blue-800/30 px-2.5 py-1 text-[12px] font-mono tracking-wider text-blue-100/55">
         {t('gtUsCities.hint')}
       </div>
     </div>

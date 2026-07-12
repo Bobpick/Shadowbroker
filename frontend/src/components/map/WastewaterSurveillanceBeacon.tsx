@@ -149,17 +149,17 @@ export function WastewaterSurveillanceBeacon({ enabled, surveillance }: Props) {
           }}
           anchor="top"
           offset={[BEACON_SCREEN_OFFSET[0], BEACON_SCREEN_OFFSET[1] + 18]}
-          maxWidth="360px"
+          maxWidth="400px"
           className="threat-popup"
         >
-          <div className="map-popup min-w-[280px] border border-lime-500/40 bg-[#08110a]/95 font-mono text-lime-100">
+          <div className="map-popup min-w-[300px] border border-lime-500/40 bg-[#08110a]/95 font-mono text-lime-100">
             <div className="mb-2 flex items-start justify-between gap-3 border-b border-lime-500/20 pb-2">
               <div>
-                <div className="flex items-center gap-2 text-[11px] font-bold tracking-[0.25em] text-lime-300">
-                  <BiohazardIcon size={16} className="text-lime-300" />
+                <div className="flex items-center gap-2 text-[13px] font-bold tracking-[0.25em] text-lime-300">
+                  <BiohazardIcon size={18} className="text-lime-300" />
                   BIOSURVEILLANCE
                 </div>
-                <div className="mt-1 text-[10px] text-lime-500/80">
+                <div className="mt-1 text-[12px] text-lime-500/80">
                   WastewaterSCAN · 21-day trend window
                 </div>
               </div>
@@ -178,7 +178,7 @@ export function WastewaterSurveillanceBeacon({ enabled, surveillance }: Props) {
 
             {hasSignal ? (
               <>
-                <div className="mb-2 text-[10px] text-lime-400/90">
+                <div className="mb-2 text-[12px] text-lime-400/90">
                   {risingCount} pathogen{risingCount === 1 ? '' : 's'} rising across US wastewater
                   {summary.baseline_date ? (
                     <span> · vs {summary.baseline_date}</span>
@@ -190,11 +190,11 @@ export function WastewaterSurveillanceBeacon({ enabled, surveillance }: Props) {
                       key={pathogen.name}
                       className="rounded border border-lime-500/20 bg-black/50 px-2 py-1.5"
                     >
-                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                      <div className="flex items-center justify-between gap-2 text-[13px]">
                         <span className="font-bold text-lime-200">{pathogen.name}</span>
                         <span className="text-amber-300">↑ RISING</span>
                       </div>
-                      <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-lime-400/90">
+                      <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12px] text-lime-400/90">
                         <span>States rising: <span className="text-white">{pathogen.states_rising}</span></span>
                         <span>States elevated: <span className="text-white">{pathogen.states_alert}</span></span>
                         <span>Rate: <span className="text-white">{formatRate(pathogen.rising_rate_display, pathogen.rising_rate_pct)}</span></span>
@@ -205,12 +205,12 @@ export function WastewaterSurveillanceBeacon({ enabled, surveillance }: Props) {
                 </div>
               </>
             ) : (
-              <div className="py-3 text-center text-[10px] text-lime-500/80">
+              <div className="py-3 text-center text-[12px] text-lime-500/80">
                 No rising pathogen signals in the current 21-day window.
               </div>
             )}
 
-            <div className="mt-2 border-t border-lime-500/15 pt-2 text-[9px] text-lime-600/80">
+            <div className="mt-2 border-t border-lime-500/15 pt-2 text-[11px] text-lime-600/80">
               {summary.fetch_progress?.total ? (
                 <>
                   {summary.fetch_progress.with_data ?? summary.plants_active ?? 0}/
