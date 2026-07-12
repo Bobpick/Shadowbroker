@@ -1,0 +1,145 @@
+================================================================================
+  SHADOWBROKER — Windows Installation Guide
+  Global Threat Intercept · Real-Time OSINT Dashboard
+================================================================================
+
+This package runs ShadowBroker directly on Windows (no Docker required).
+First launch installs dependencies automatically via start.bat.
+
+
+--------------------------------------------------------------------------------
+1. REQUIREMENTS
+--------------------------------------------------------------------------------
+
+  • Windows 10 or 11 (64-bit)
+  • Python 3.10, 3.11, or 3.12
+      Download: https://www.python.org/downloads/
+      IMPORTANT: During install, check "Add python.exe to PATH"
+
+  • Node.js 18 or newer (includes npm)
+      Download: https://nodejs.org/  (LTS recommended)
+
+  • Optional but faster: UV package manager for Python
+      https://docs.astral.sh/uv/getting-started/installation/
+      start.bat uses UV automatically when it is on PATH.
+
+  • Internet access on first run (downloads Python + Node dependencies)
+
+
+--------------------------------------------------------------------------------
+2. EXTRACT
+--------------------------------------------------------------------------------
+
+  1. Right-click ShadowBroker-Windows.zip → Extract All…
+  2. Choose a short path without spaces if possible, e.g.:
+       C:\Shadowbroker
+  3. Open the extracted folder. You should see start.bat in the root.
+
+
+--------------------------------------------------------------------------------
+3. CONFIGURE API KEYS (recommended before first run)
+--------------------------------------------------------------------------------
+
+  1. Copy the environment template:
+       copy .env.example .env
+       copy backend\.env.example backend\.env
+
+  2. Edit .env in Notepad and add keys you have (at minimum for full map data):
+
+       OPENSKY_CLIENT_ID=          (free — opensky-network.org)
+       OPENSKY_CLIENT_SECRET=
+       AIS_API_KEY=                (free — aisstream.io)
+
+     Optional layers:
+       SHODAN_API_KEY=
+       WINDY_API_KEY=
+       GFW_API_TOKEN=
+       GT_ANALYTICS_ENABLED=true   (Game Theory / protest watch panels)
+
+  3. Save the file. Do not share .env — it contains secrets.
+
+
+--------------------------------------------------------------------------------
+4. START
+--------------------------------------------------------------------------------
+
+  Double-click:  start.bat
+
+  What happens:
+    • Clears stale processes on ports 3000 / 8000 / 8787
+    • Creates backend Python venv and installs packages
+    • Runs npm install in frontend/
+    • Starts backend (port 8000) and dashboard (port 3000)
+
+  First run may take 5–15 minutes depending on bandwidth and disk speed.
+  Later starts are much faster.
+
+  When ready, open in your browser:
+    http://localhost:3000
+
+
+--------------------------------------------------------------------------------
+5. STOP
+--------------------------------------------------------------------------------
+
+  Double-click:  stop.bat
+
+  Or close the "ShadowBroker Runtime" PowerShell window that start.bat opened.
+
+
+--------------------------------------------------------------------------------
+6. FIREWALL / ANTIVIRUS
+--------------------------------------------------------------------------------
+
+  Windows may prompt to allow Python and Node through the firewall — allow
+  for private networks so local map tiles and API calls work.
+
+  If SmartScreen blocks start.bat: More info → Run anyway (you built/trust
+  this source) or unblock the folder in file Properties.
+
+
+--------------------------------------------------------------------------------
+7. TROUBLESHOOTING
+--------------------------------------------------------------------------------
+
+  Port already in use
+    Run stop.bat, wait 10 seconds, run start.bat again.
+
+  "Python is not installed"
+    Reinstall Python 3.12 with "Add to PATH" checked. Open a NEW cmd window.
+
+  "Node.js/npm is not installed"
+    Install Node LTS from nodejs.org, restart cmd, retry.
+
+  Blank map / no flights
+    Add OPENSKY_CLIENT_ID + OPENSKY_CLIENT_SECRET and AIS_API_KEY to .env,
+    then restart.
+
+  Game Theory / US Protest Watch panel missing
+    Set GT_ANALYTICS_ENABLED=true in .env and restart.
+
+  Dashboard loads but data never updates
+    Check backend window for errors. Ensure .env is in the project ROOT
+    (same folder as start.bat), not only in backend\.
+
+  Prefer containers?
+    Use Docker Desktop instead: docker compose pull && docker compose up -d
+    See README.md in this folder for compose examples.
+
+
+--------------------------------------------------------------------------------
+8. UPDATING
+--------------------------------------------------------------------------------
+
+  Download a newer ShadowBroker-Windows.zip, extract over a fresh folder
+  (or backup your .env first), copy your .env back, run start.bat.
+
+
+--------------------------------------------------------------------------------
+9. SUPPORT / SOURCE
+--------------------------------------------------------------------------------
+
+  Repository: https://github.com/Bobpick/Shadowbroker
+  Full docs:    README.md (included in this zip)
+
+================================================================================
