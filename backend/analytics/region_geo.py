@@ -6,9 +6,15 @@ import math
 import re
 from typing import Any
 
+from analytics.us_cities import _US_METROS
+
 # name, lat_min, lat_max, lng_min, lng_max, centroid_lat, centroid_lng
 # Ordered most-specific first so overlapping boxes resolve predictably.
-_THEATER_BBOXES: tuple[tuple[str, float, float, float, float, float, float], ...] = (
+_US_CITY_BBOXES: tuple[tuple[str, float, float, float, float, float, float], ...] = tuple(
+    (row[0], row[1], row[2], row[3], row[4], row[5], row[6]) for row in _US_METROS
+)
+
+_THEATER_BBOXES: tuple[tuple[str, float, float, float, float, float, float], ...] = _US_CITY_BBOXES + (
     ("gaza", 31.15, 31.65, 34.15, 34.65, 31.50, 34.47),
     ("israel", 29.40, 33.60, 34.10, 35.95, 31.77, 35.22),
     ("taiwan", 21.50, 25.60, 119.30, 122.10, 23.70, 121.00),
@@ -20,6 +26,7 @@ _THEATER_BBOXES: tuple[tuple[str, float, float, float, float, float, float], ...
 )
 
 _THEATER_LABELS = {
+    **{row[0]: row[7] for row in _US_METROS},
     "ukraine": "Ukraine",
     "russia": "Russia",
     "israel": "Israel",

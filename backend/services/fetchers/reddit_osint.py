@@ -43,6 +43,23 @@ _DEFAULT_SUBREDDITS: tuple[str, ...] = (
     "europe",
 )
 
+# US civil-unrest / mobilization spaces — merged unless REDDIT_OSINT_SUBREDDITS overrides all.
+_EXTRA_PROTEST_SUBREDDITS: tuple[str, ...] = (
+    "NJ50501",
+    "GreenAndPleasant",
+    "Political_Revolution",
+    "demsocialists",
+    "EyesOnIce",
+    "eyesoniceoregon",
+    "EyesOnICEBaltimore",
+    "EyesOnICE_Protest",
+    "DemocraticSocialism",
+    "dsa",
+    "directaction",
+)
+
+_PROTEST_SUBREDDITS = frozenset(sub.lower() for sub in _EXTRA_PROTEST_SUBREDDITS)
+
 _ADVERSARIAL_SUBREDDITS = frozenset(
     {
         "russia",
@@ -140,6 +157,15 @@ def reddit_osint_enabled() -> bool:
     }
 
 
+def protest_watch_enabled() -> bool:
+    return str(os.environ.get("REDDIT_OSINT_PROTEST_WATCH", "true")).strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
 def _configured_subreddits() -> list[str]:
     raw = str(os.environ.get("REDDIT_OSINT_SUBREDDITS", "")).strip()
     multireddits = configured_multireddits()
@@ -152,6 +178,13 @@ def _configured_subreddits() -> list[str]:
         subs = list(_DEFAULT_SUBREDDITS)
 
     seen = {sub.lower() for sub in subs}
+    if protest_watch_enabled():
+        for sub in _EXTRA_PROTEST_SUBREDDITS:
+            key = sub.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            subs.append(sub)
     for multi_path in multireddits:
         for sub in resolve_multireddit_subs(multi_path):
             key = sub.lower()
@@ -164,9 +197,11 @@ def _configured_subreddits() -> list[str]:
 
 def _narrative_profile(subreddit: str, *, text: str = "") -> str:
     haystack = str(text or "").strip()
+    key = str(subreddit or "").strip().lower()
+    if key in _PROTEST_SUBREDDITS:
+        return "protest"
     if haystack and _PROTEST_HINTS.search(haystack):
         return "protest"
-    key = str(subreddit or "").strip().lower()
     if key in _ADVERSARIAL_SUBREDDITS:
         return "adversarial"
     if key in _GEOPOLITICAL_SUBREDDITS:

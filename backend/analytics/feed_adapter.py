@@ -6,6 +6,7 @@ import re
 from typing import Any, Iterable
 
 from analytics.region_geo import resolve_region_from_coords, theater_centroid
+from analytics.us_cities import resolve_us_city
 
 _DOMAIN_CONFLICT = "conflict"
 _DOMAIN_UNREST = "unrest"
@@ -87,7 +88,38 @@ def _region_from_hashtags(text: str) -> str | None:
             "belfast",
             "uk",
             "usa",
+            "dc",
+            "nyc",
+            "portland",
+            "chicago",
+            "baltimore",
+            "seattle",
+            "minneapolis",
+            "atlanta",
+            "philadelphia",
+            "oakland",
+            "austin",
+            "denver",
+            "boston",
+            "houston",
+            "detroit",
+            "phoenix",
+            "miami",
+            "dallas",
+            "nashville",
+            "charlotte",
+            "tampa",
+            "cleveland",
+            "pittsburgh",
+            "memphis",
+            "nola",
         }:
+            if tag == "dc":
+                return "washington_dc"
+            if tag == "nyc":
+                return "new_york"
+            if tag == "nola":
+                return "new_orleans"
             return tag
     return None
 
@@ -99,6 +131,15 @@ def _region_from_record(record: dict[str, Any], *, text: str = "") -> str:
     hashtag_region = _region_from_hashtags(text)
     if hashtag_region:
         return hashtag_region
+    source = str(record.get("source") or record.get("channel") or record.get("subreddit") or "")
+    us_city = resolve_us_city(
+        text=text,
+        coords=record.get("coords"),
+        source=source,
+        region="",
+    )
+    if us_city:
+        return us_city
     coords = record.get("coords")
     if isinstance(coords, (list, tuple)) and len(coords) >= 2:
         try:

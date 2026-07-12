@@ -81,11 +81,25 @@ def _persist_gt_snapshot(
 
     clusters = engine.compute_herding_clusters()
     from analytics.gt_alerts import parse_heatmap_alerts
+    from analytics.us_cities import build_us_city_watch
 
     _, plotted_regions = parse_heatmap_alerts(heatmap)
     with engine._lock:  # noqa: SLF001 — snapshot meta
         engine_regions = len(engine._regions)
     settings = get_gt_settings()
+    us_city_watch: dict[str, Any] = {}
+    try:
+        with _data_lock:
+            telegram_snap = dict(latest_data.get("telegram_osint") or {})
+            reddit_snap = dict(latest_data.get("reddit_osint") or {})
+        us_city_watch = build_us_city_watch(
+            gt_risk={"heatmap": heatmap},
+            telegram_osint=telegram_snap,
+            reddit_osint=reddit_snap,
+        )
+    except Exception:
+        logger.exception("GT US city protest watch failed")
+
     payload = {
         "enabled": True,
         "timestamp": timestamp,
@@ -95,6 +109,7 @@ def _persist_gt_snapshot(
         "sample": list(sample or [])[:5],
         "regions": len(heatmap.get("features") or []),
         "micro": micro_summary,
+        "us_cities": us_city_watch,
         "meta": {
             "tracked_regions": len(heatmap.get("features") or []),
             "engine_regions": engine_regions,
@@ -102,6 +117,10 @@ def _persist_gt_snapshot(
             "max_regions": settings.max_heatmap_features,
             "base_prior": settings.base_prior,
             "top_alerts_min_score": settings.base_prior + 0.05,
+            "us_city_watch": {
+                "active_metros": int(us_city_watch.get("active_metros") or 0),
+                "tracked_metros": int(us_city_watch.get("tracked_metros") or 0),
+            },
         },
     }
     with _data_lock:

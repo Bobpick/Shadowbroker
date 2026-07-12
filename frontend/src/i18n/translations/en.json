@@ -227,6 +227,15 @@
     "collapse": "Collapse panel",
     "expand": "Expand panel"
   },
+  "gtUsCities": {
+    "title": "US PROTEST WATCH",
+    "counts": "{active} active · {tracked} metros · {days}d feeds",
+    "empty": "No elevated US metros yet — Telegram/Reddit protest chatter is being scanned city-by-city.",
+    "ignite": "IGNITE",
+    "line": "potential {potential} · unrest {unrest} · protest hits {mentions}",
+    "mobilization": "{count} mobilization signal(s)",
+    "hint": "Scores blend GT unrest with Telegram/Reddit protest + mobilization keywords. Click a city to fly there."
+  },
   "gtAlerts": {
     "title": "TOP ALERTS",
     "counts": "{plotted} on map · {tracked} tracked (max {max})",

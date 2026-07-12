@@ -28,6 +28,15 @@ _DEFAULT_CHANNELS = (
     "Liveuamap",
 )
 
+_EXTRA_PROTEST_CHANNELS = (
+    "dsausa",
+    "PortlandDSA",
+    "nycDSA",
+    "ChicagoDSA",
+    "leftcoastriseup",
+    "climatestrike",
+)
+
 _MESSAGE_BLOCK_RE = re.compile(
     r'<div class="tgme_widget_message_wrap js-widget_message_wrap"[\s\S]*?</div>\s*</div>\s*</div>',
     re.IGNORECASE,
@@ -189,11 +198,32 @@ def telegram_osint_enabled() -> bool:
     }
 
 
+def protest_watch_enabled() -> bool:
+    return str(os.environ.get("TELEGRAM_OSINT_PROTEST_WATCH", "true")).strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
 def _configured_channels() -> list[str]:
     raw = str(os.environ.get("TELEGRAM_OSINT_CHANNELS", "")).strip()
     if raw:
         return [part.strip().lstrip("@") for part in raw.split(",") if part.strip()]
-    return list(_DEFAULT_CHANNELS)
+
+    channels = list(_DEFAULT_CHANNELS)
+    if not protest_watch_enabled():
+        return channels
+
+    seen = {channel.lower() for channel in channels}
+    for channel in _EXTRA_PROTEST_CHANNELS:
+        key = channel.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        channels.append(channel)
+    return channels
 
 
 def telegram_media_host_allowed(hostname: str | None) -> bool:

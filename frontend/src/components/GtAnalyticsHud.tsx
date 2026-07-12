@@ -6,6 +6,7 @@ import { useTranslation } from '@/i18n';
 import { useFloatingPanel } from '@/hooks/useFloatingPanel';
 import GtBacktestPanel from '@/components/GtBacktestPanel';
 import GtTopAlertsStrip from '@/components/GtTopAlertsStrip';
+import GtUsCitiesPanel from '@/components/GtUsCitiesPanel';
 import type { SelectedEntity } from '@/types/dashboard';
 
 interface Props {
@@ -62,7 +63,13 @@ export default function GtAnalyticsHud({
       </div>
 
       {!isMinimized && (
-        <div className="flex max-h-[min(70vh,28rem)] flex-col overflow-y-auto styled-scrollbar">
+        <div className="flex max-h-[min(70vh,32rem)] flex-col overflow-y-auto styled-scrollbar">
+          <GtUsCitiesPanel
+            layerEnabled={layerEnabled}
+            onFlyTo={onFlyTo}
+            onSelectEntity={onSelectEntity}
+            embedded
+          />
           <GtBacktestPanel layerEnabled={layerEnabled} embedded />
           <GtTopAlertsStrip
             layerEnabled={layerEnabled}

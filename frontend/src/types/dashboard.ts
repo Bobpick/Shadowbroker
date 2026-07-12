@@ -1138,10 +1138,39 @@ export interface GTRiskHeatmapFeature {
   };
 }
 
+export interface GtUsCityWatchPayload {
+  enabled?: boolean;
+  timestamp?: string | null;
+  lookback_days?: number;
+  tracked_metros?: number;
+  active_metros?: number;
+  cities?: Array<{
+    city: string;
+    label: string;
+    lat: number;
+    lng: number;
+    protest_potential: number;
+    unrest: number;
+    risk: number;
+    ignition?: boolean;
+    mentions?: number;
+    protest_mentions?: number;
+    mobilization_hits?: number;
+    sources?: string[];
+    recent_signals?: Array<{
+      title?: string;
+      source?: string;
+      published?: string;
+      link?: string;
+    }>;
+  }>;
+}
+
 export interface GTRiskPayload {
   enabled?: boolean;
   timestamp?: string | null;
   processed?: number;
+  us_cities?: GtUsCityWatchPayload;
   meta?: {
     tracked_regions?: number;
     engine_regions?: number;
@@ -1149,6 +1178,10 @@ export interface GTRiskPayload {
     max_regions?: number;
     base_prior?: number;
     top_alerts_min_score?: number;
+    us_city_watch?: {
+      active_metros?: number;
+      tracked_metros?: number;
+    };
   };
   heatmap?: {
     type: 'FeatureCollection';

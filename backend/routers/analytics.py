@@ -18,6 +18,7 @@ from analytics.backtest import (
 from analytics.feed_adapter import normalize_feed_item
 from analytics.integration import get_gt_engine, refresh_from_latest_data
 from analytics.gt_alerts import top_gt_alerts
+from analytics.us_cities import build_us_city_watch
 from analytics.micro_rolling import micro_rolling_report
 from analytics.rolling_backtest import (
     auto_label_mature_weeks,
@@ -221,6 +222,43 @@ async def analytics_rolling(
         }
 
     report = rolling_report(weeks=max(1, min(weeks, 52)), target_confidence=target_confidence)
+    report["enabled"] = True
+    return report
+
+
+@router.get("/api/analytics/us_cities")
+@limiter.limit("30/minute")
+async def analytics_us_cities(
+    request: Request,
+    limit: int = 20,
+    lookback_days: int = 7,
+) -> dict[str, Any]:
+    """US metro protest watch — city-level unrest from Telegram/Reddit + GT."""
+    if not gt_analytics_enabled():
+        return {
+            "enabled": False,
+            "message": "Strategic Risk Analytics is disabled.",
+        }
+
+    with _data_lock:
+        gt_snap = dict(latest_data.get("gt_risk") or {})
+        telegram_snap = dict(latest_data.get("telegram_osint") or {})
+        reddit_snap = dict(latest_data.get("reddit_osint") or {})
+
+    cached = gt_snap.get("us_cities")
+    if isinstance(cached, dict) and cached.get("cities"):
+        payload = dict(cached)
+        payload["enabled"] = True
+        payload["cities"] = list(payload.get("cities") or [])[: max(1, min(limit, 20))]
+        return payload
+
+    report = build_us_city_watch(
+        gt_risk=gt_snap,
+        telegram_osint=telegram_snap,
+        reddit_osint=reddit_snap,
+        lookback_days=max(1, min(lookback_days, 30)),
+        limit=max(1, min(limit, 20)),
+    )
     report["enabled"] = True
     return report
 
