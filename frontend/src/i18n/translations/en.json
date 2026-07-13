@@ -242,7 +242,27 @@
     "line": "potential {potential} · unrest {unrest} · protest hits {mentions}",
     "mobilization": "{count} mobilization signal(s)",
     "mobilizationTooltip": "Posts mentioning scheduled actions: direct action, rally at, meet at, mass rally, blockade, etc.",
-    "hint": "Scores blend GT unrest with Telegram/Reddit protest + mobilization keywords. Click a city to fly there."
+    "hint": "Scores blend GT unrest with Telegram/Reddit protest + mobilization keywords. Click a city to fly there.",
+    "personalPlanning": {
+      "title": "PERSONAL PLANNING",
+      "titleTooltip": "Practical tiers for friends and family. These are OSINT awareness guides — not evacuation orders, legal advice, or predictions of war or collapse.",
+      "disclaimer": "Do not leave a city based on one percentage. Use converging signals: score tier, mobilization posts, IGNITE spikes, a rising multi-day trend, and what you see on the ground (transit, closures, official alerts).",
+      "brooklynNote": "Brooklyn, Manhattan, Queens, and the Bronx are all tracked under the New York City metro card.",
+      "nycNow": "NYC area now — potential {potential}, unrest {unrest}, {hits} protest hits, {mobilization} mobilization: {guidance}",
+      "tierRoutine": "<35% · steady — Normal life. Stay generally aware.",
+      "tierWatch": "18–35% — Above baseline. Note protest routes; keep comms and cash handy.",
+      "tierElevated": "35–55% — Elevated watch. Review go-bag, routes, and childcare/work flexibility. Avoid protest cores if risk-averse. Do not evacuate on the score alone.",
+      "tierHigh": "≥55% + mobilization or IGNITE — Active prep. Consider staying out of hot zones; flexible remote work if you can.",
+      "tierLeave": "≥55–60% sustained + mobilization + real-world disruption (violence, transit shutdown, official emergency orders) — Consider temporary relocation for days or weeks if you are vulnerable or mobility-limited. Leave immediately if officials order it or your neighborhood is directly affected.",
+      "guidance": {
+        "routine": "Routine awareness — no change to daily plans.",
+        "watch": "Light watch — note local news and protest routes; no need to leave.",
+        "elevatedQuiet": "Elevated watch without feed-confirmed protests. Good time to review your plan and avoid marching routes — not a signal to leave Brooklyn.",
+        "elevatedActive": "Elevated with protest or mobilization chatter. Stay flexible, avoid announced action zones, and watch for IGNITE or a rising trend.",
+        "highMonitor": "High score but no mobilization hits yet. Prep and monitor closely; still not an automatic leave signal.",
+        "considerRelocation": "High score plus mobilization or IGNITE. If you are risk-averse or have dependents, consider staying away from hot zones; relocate only if ground truth worsens or officials say so."
+      }
+    }
   },
   "gtAlerts": {
     "title": "TOP ALERTS",

@@ -112,3 +112,21 @@ export function protestPotentialLabel(score: number): 'low' | 'watch' | 'elevate
   if (score >= 0.18) return 'watch';
   return 'low';
 }
+
+/** i18n key suffix under gtUsCities.personalPlanning.guidance.* */
+export function personalPlanningGuidanceKey(city: GtUsCityRow): string {
+  const tier = protestPotentialLabel(city.protestPotential);
+  const hasFeedSignal = city.protestMentions > 0 || city.mobilizationHits > 0;
+
+  if (tier === 'high') {
+    if (city.mobilizationHits > 0 || city.ignition) return 'considerRelocation';
+    return 'highMonitor';
+  }
+  if (tier === 'elevated') {
+    return hasFeedSignal ? 'elevatedActive' : 'elevatedQuiet';
+  }
+  if (tier === 'watch') return 'watch';
+  return 'routine';
+}
+
+export const NYC_METRO_KEY = 'new_york';

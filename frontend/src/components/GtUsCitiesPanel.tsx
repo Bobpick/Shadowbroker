@@ -4,7 +4,12 @@ import React, { useMemo } from 'react';
 import { ChevronRight, Flag, Info } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import { useDataKey } from '@/hooks/useDataStore';
-import { extractGtUsCities, protestPotentialLabel } from '@/lib/gtUsCities';
+import {
+  extractGtUsCities,
+  NYC_METRO_KEY,
+  personalPlanningGuidanceKey,
+  protestPotentialLabel,
+} from '@/lib/gtUsCities';
 import { GT_ICON } from '@/lib/gtTypography';
 import type { SelectedEntity } from '@/types/dashboard';
 
@@ -42,6 +47,10 @@ export default function GtUsCitiesPanel({
   const gtRisk = useDataKey('gt_risk');
 
   const watch = useMemo(() => extractGtUsCities(gtRisk), [gtRisk]);
+  const nycMetro = useMemo(
+    () => watch.cities.find((city) => city.city === NYC_METRO_KEY) ?? null,
+    [watch.cities],
+  );
 
   if (!layerEnabled || !watch.enabled) return null;
 
@@ -190,6 +199,50 @@ export default function GtUsCitiesPanel({
       <div className="border-t border-blue-800/30 px-2.5 py-1 text-[12px] font-mono tracking-wider text-blue-100/55">
         {t('gtUsCities.hint')}
       </div>
+
+      <details className="group border-t border-blue-800/35 bg-blue-950/20">
+        <summary
+          className="cursor-pointer list-none px-2.5 py-1.5 text-[12px] font-mono font-bold uppercase tracking-widest text-blue-100/80 marker:content-none [&::-webkit-details-marker]:hidden"
+          title={t('gtUsCities.personalPlanning.titleTooltip')}
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <Info size={GT_ICON.sm} className="text-blue-200/70" aria-hidden="true" />
+            {t('gtUsCities.personalPlanning.title')}
+            <ChevronRight
+              size={GT_ICON.sm}
+              className="text-blue-200/50 transition-transform group-open:rotate-90"
+            />
+          </span>
+        </summary>
+        <div className="space-y-1.5 border-t border-blue-800/25 px-2.5 py-2 text-[12px] font-mono leading-relaxed tracking-wide text-blue-100/70">
+          <p title={t('gtUsCities.personalPlanning.titleTooltip')}>
+            {t('gtUsCities.personalPlanning.disclaimer')}
+          </p>
+          <p className="text-blue-100/55">{t('gtUsCities.personalPlanning.brooklynNote')}</p>
+          {nycMetro && (
+            <p className="rounded-sm border border-blue-500/35 bg-blue-900/25 px-2 py-1.5 text-blue-50/90">
+              {t('gtUsCities.personalPlanning.nycNow')
+                .replace('{potential}', pct(nycMetro.protestPotential))
+                .replace('{unrest}', pct(nycMetro.unrest))
+                .replace('{hits}', String(nycMetro.protestMentions))
+                .replace('{mobilization}', String(nycMetro.mobilizationHits))
+                .replace(
+                  '{guidance}',
+                  t(
+                    `gtUsCities.personalPlanning.guidance.${personalPlanningGuidanceKey(nycMetro)}`,
+                  ),
+                )}
+            </p>
+          )}
+          <ul className="space-y-1 border-t border-blue-800/20 pt-1.5">
+            <li>{t('gtUsCities.personalPlanning.tierRoutine')}</li>
+            <li>{t('gtUsCities.personalPlanning.tierWatch')}</li>
+            <li>{t('gtUsCities.personalPlanning.tierElevated')}</li>
+            <li>{t('gtUsCities.personalPlanning.tierHigh')}</li>
+            <li>{t('gtUsCities.personalPlanning.tierLeave')}</li>
+          </ul>
+        </div>
+      </details>
     </div>
   );
 }
