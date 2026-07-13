@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   NYC_METRO_KEY,
   personalPlanningGuidanceKey,
+  protestPotentialDriver,
   protestPotentialLabel,
   type GtUsCityRow,
 } from '@/lib/gtUsCities';
@@ -31,6 +32,24 @@ describe('protestPotentialLabel', () => {
     expect(protestPotentialLabel(0.2)).toBe('watch');
     expect(protestPotentialLabel(0.43)).toBe('elevated');
     expect(protestPotentialLabel(0.55)).toBe('high');
+  });
+});
+
+describe('protestPotentialDriver', () => {
+  it('marks DC-style metros feed-driven when protest hits dominate', () => {
+    expect(
+      protestPotentialDriver(
+        city({ unrest: 0.32, protestMentions: 25, protestPotential: 0.54 }),
+      ),
+    ).toBe('feed');
+  });
+
+  it('marks NYC-style metros gt-driven without protest hits', () => {
+    expect(
+      protestPotentialDriver(
+        city({ unrest: 0.34, protestMentions: 0, mentions: 0, protestPotential: 0.54 }),
+      ),
+    ).toBe('gt');
   });
 });
 

@@ -242,6 +242,14 @@
     "line": "potential {potential} · unrest {unrest} · protest hits {mentions}",
     "mobilization": "{count} mobilization signal(s)",
     "mobilizationTooltip": "Posts mentioning scheduled actions: direct action, rally at, meet at, mass rally, blockade, etc.",
+    "driver": {
+      "feed": "FEED",
+      "gt": "GT",
+      "mixed": "MIXED",
+      "feedTooltip": "FEED-DRIVEN: protest potential is mostly from Telegram/Reddit protest or mobilization posts mapped to this metro (38% feed layer weight).",
+      "gtTooltip": "GT-DRIVEN: protest potential is mostly from Game Theory unrest/risk language without strong feed confirmation (62% GT layer weight).",
+      "mixedTooltip": "MIXED: Telegram/Reddit feed activity and GT unrest/risk are contributing roughly equally to this score."
+    },
     "hint": "Scores blend GT unrest with Telegram/Reddit protest + mobilization keywords. Click a city to fly there.",
     "personalPlanning": {
       "title": "PERSONAL PLANNING",

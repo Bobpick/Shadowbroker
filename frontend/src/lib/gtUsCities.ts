@@ -113,6 +113,42 @@ export function protestPotentialLabel(score: number): 'low' | 'watch' | 'elevate
   return 'low';
 }
 
+const GT_LAYER_WEIGHT = 0.62;
+const FEED_LAYER_WEIGHT = 0.38;
+const DRIVER_MIXED_DELTA = 0.05;
+
+export interface ProtestPotentialComponents {
+  feedScore: number;
+  gtScore: number;
+  feedContribution: number;
+  gtContribution: number;
+}
+
+/** Mirrors backend analytics/us_cities._protest_potential layer math. */
+export function computeProtestPotentialComponents(city: GtUsCityRow): ProtestPotentialComponents {
+  const feedScore = Math.min(
+    1,
+    city.protestMentions * 0.18 + city.mobilizationHits * 0.28 + city.mentions * 0.06,
+  );
+  const gtScore = Math.min(
+    1,
+    city.unrest * 0.55 + city.risk * 0.25 + (city.ignition ? 0.12 : 0),
+  );
+  return {
+    feedScore,
+    gtScore,
+    feedContribution: feedScore * FEED_LAYER_WEIGHT,
+    gtContribution: gtScore * GT_LAYER_WEIGHT,
+  };
+}
+
+export function protestPotentialDriver(city: GtUsCityRow): 'feed' | 'gt' | 'mixed' {
+  const { feedContribution, gtContribution } = computeProtestPotentialComponents(city);
+  const delta = Math.abs(feedContribution - gtContribution);
+  if (delta < DRIVER_MIXED_DELTA) return 'mixed';
+  return feedContribution > gtContribution ? 'feed' : 'gt';
+}
+
 /** i18n key suffix under gtUsCities.personalPlanning.guidance.* */
 export function personalPlanningGuidanceKey(city: GtUsCityRow): string {
   const tier = protestPotentialLabel(city.protestPotential);

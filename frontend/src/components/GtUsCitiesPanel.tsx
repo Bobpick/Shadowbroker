@@ -8,6 +8,7 @@ import {
   extractGtUsCities,
   NYC_METRO_KEY,
   personalPlanningGuidanceKey,
+  protestPotentialDriver,
   protestPotentialLabel,
 } from '@/lib/gtUsCities';
 import { GT_ICON } from '@/lib/gtTypography';
@@ -22,6 +23,17 @@ interface Props {
 
 function pct(value: number): string {
   return `${(value * 100).toFixed(0)}%`;
+}
+
+function driverBadgeClass(driver: ReturnType<typeof protestPotentialDriver>): string {
+  switch (driver) {
+    case 'feed':
+      return 'border-amber-300/55 bg-amber-950/45 text-amber-100';
+    case 'gt':
+      return 'border-blue-300/55 bg-blue-950/45 text-blue-100';
+    default:
+      return 'border-slate-300/45 bg-slate-900/45 text-slate-100';
+  }
 }
 
 function tierClass(tier: ReturnType<typeof protestPotentialLabel>): string {
@@ -113,6 +125,7 @@ export default function GtUsCitiesPanel({
         <div className="grid gap-1.5 px-2 py-2 sm:grid-cols-2">
           {watch.cities.map((city) => {
             const tier = protestPotentialLabel(city.protestPotential);
+            const driver = protestPotentialDriver(city);
             const cardTooltip = t('gtUsCities.cardTooltip')
               .replace('{city}', city.label)
               .replace('{potential}', pct(city.protestPotential))
@@ -140,6 +153,12 @@ export default function GtUsCitiesPanel({
                 <div className="flex items-center gap-1">
                   <span className="truncate text-[15px] font-mono font-bold uppercase text-white">
                     {city.label}
+                  </span>
+                  <span
+                    className={`shrink-0 border px-1 text-[10px] font-mono font-bold tracking-wider ${driverBadgeClass(driver)}`}
+                    title={t(`gtUsCities.driver.${driver}Tooltip`)}
+                  >
+                    {t(`gtUsCities.driver.${driver}`)}
                   </span>
                   {city.ignition && (
                     <span
