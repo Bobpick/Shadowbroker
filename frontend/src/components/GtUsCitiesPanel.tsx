@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { ChevronRight, Flag } from 'lucide-react';
+import { ChevronRight, Flag, Info } from 'lucide-react';
 import { useTranslation } from '@/i18n';
 import { useDataKey } from '@/hooks/useDataStore';
 import { extractGtUsCities, protestPotentialLabel } from '@/lib/gtUsCities';
@@ -75,8 +75,18 @@ export default function GtUsCitiesPanel({
     <div className={shellClass}>
       <div className="flex items-center gap-2 border-b border-blue-700/40 bg-[linear-gradient(90deg,rgba(185,28,28,0.35),rgba(248,250,252,0.08),rgba(29,78,216,0.35))] px-2.5 py-1.5">
         <Flag size={GT_ICON.lg} className="shrink-0 text-white" />
-        <span className="text-[15px] font-mono font-bold tracking-widest text-white">
+        <span
+          className="text-[15px] font-mono font-bold tracking-widest text-white"
+          title={t('gtUsCities.titleTooltip')}
+        >
           {t('gtUsCities.title')}
+        </span>
+        <span title={t('gtUsCities.titleTooltip')} className="shrink-0 leading-none">
+          <Info
+            size={GT_ICON.sm}
+            className="text-blue-200/70"
+            aria-hidden="true"
+          />
         </span>
         <span className="text-[14px] font-mono tracking-wider text-blue-100/75">
           {t('gtUsCities.counts')
@@ -94,11 +104,21 @@ export default function GtUsCitiesPanel({
         <div className="grid gap-1.5 px-2 py-2 sm:grid-cols-2">
           {watch.cities.map((city) => {
             const tier = protestPotentialLabel(city.protestPotential);
+            const cardTooltip = t('gtUsCities.cardTooltip')
+              .replace('{city}', city.label)
+              .replace('{potential}', pct(city.protestPotential))
+              .replace('{unrest}', pct(city.unrest))
+              .replace('{mentions}', String(city.protestMentions));
+            const protestHitsTooltip = t('gtUsCities.protestHitsTooltip').replace(
+              '{days}',
+              String(watch.lookbackDays),
+            );
             return (
               <button
                 key={city.city}
                 type="button"
                 onClick={() => handleSelect(city)}
+                title={cardTooltip}
                 className={`group flex min-w-0 flex-col gap-1 border px-2 py-1.5 text-left transition-colors hover:brightness-110 ${tierClass(tier)}`}
                 style={{
                   borderLeftWidth: '4px',
@@ -113,7 +133,10 @@ export default function GtUsCitiesPanel({
                     {city.label}
                   </span>
                   {city.ignition && (
-                    <span className="shrink-0 border border-red-300/60 bg-red-900/50 px-1 text-[12px] font-mono text-red-100">
+                    <span
+                      className="shrink-0 border border-red-300/60 bg-red-900/50 px-1 text-[12px] font-mono text-red-100"
+                      title={t('gtUsCities.igniteTooltip')}
+                    >
                       {t('gtUsCities.ignite')}
                     </span>
                   )}
@@ -123,7 +146,10 @@ export default function GtUsCitiesPanel({
                   />
                 </div>
 
-                <div className="h-1.5 w-full overflow-hidden rounded-sm bg-slate-900/80">
+                <div
+                  className="h-1.5 w-full overflow-hidden rounded-sm bg-slate-900/80"
+                  title={t('gtUsCities.barTooltip')}
+                >
                   <div
                     className="h-full bg-[linear-gradient(90deg,#dc2626,#f8fafc,#2563eb)]"
                     style={{ width: `${Math.min(100, city.protestPotential * 100)}%` }}
@@ -131,14 +157,24 @@ export default function GtUsCitiesPanel({
                 </div>
 
                 <div className="text-[14px] font-mono tracking-wide text-blue-50/85">
-                  {t('gtUsCities.line')
-                    .replace('{potential}', pct(city.protestPotential))
-                    .replace('{unrest}', pct(city.unrest))
-                    .replace('{mentions}', String(city.protestMentions))}
+                  <span title={t('gtUsCities.potentialTooltip')}>
+                    potential {pct(city.protestPotential)}
+                  </span>
+                  <span className="text-blue-100/50"> · </span>
+                  <span title={t('gtUsCities.unrestTooltip')}>
+                    unrest {pct(city.unrest)}
+                  </span>
+                  <span className="text-blue-100/50"> · </span>
+                  <span title={protestHitsTooltip}>
+                    protest hits {city.protestMentions}
+                  </span>
                 </div>
 
                 {city.mobilizationHits > 0 && (
-                  <div className="text-[12px] font-mono uppercase tracking-wider text-red-100/80">
+                  <div
+                    className="text-[12px] font-mono uppercase tracking-wider text-red-100/80"
+                    title={t('gtUsCities.mobilizationTooltip')}
+                  >
                     {t('gtUsCities.mobilization').replace(
                       '{count}',
                       String(city.mobilizationHits),

@@ -229,11 +229,19 @@
   },
   "gtUsCities": {
     "title": "US PROTEST WATCH",
+    "titleTooltip": "City-level protest and civil-unrest OSINT watch. Scores come from Telegram/Reddit plus Game Theory unrest language — not conflict, nuclear, or war forecasts.",
     "counts": "{active} active · {tracked} metros · {days}d feeds",
     "empty": "No elevated US metros yet — Telegram/Reddit protest chatter is being scanned city-by-city.",
     "ignite": "IGNITE",
+    "igniteTooltip": "3-day risk spike: this metro’s unrest score jumped well above its recent average.",
+    "potentialTooltip": "Protest potential (0–100%): blend of unrest chatter and mobilization keywords. ~15% is baseline quiet; 35%+ is elevated watch. Not a civil-war or nuclear-risk score.",
+    "unrestTooltip": "Unrest domain (0–100%): how much recent OSINT text for this city mentions protests, rallies, strikes, riots, or mobilization. Baseline is about 15%.",
+    "protestHitsTooltip": "Protest hits: Reddit/Telegram posts in the last {days} days with explicit protest keywords mapped to this city.",
+    "barTooltip": "Red-to-blue bar = protest potential for this metro. Click the card for costly signals and dossier detail.",
+    "cardTooltip": "{city}: protest potential {potential}, unrest {unrest}, {mentions} protest hits. Click to fly there and open the strategic-risk dossier.",
     "line": "potential {potential} · unrest {unrest} · protest hits {mentions}",
     "mobilization": "{count} mobilization signal(s)",
+    "mobilizationTooltip": "Posts mentioning scheduled actions: direct action, rally at, meet at, mass rally, blockade, etc.",
     "hint": "Scores blend GT unrest with Telegram/Reddit protest + mobilization keywords. Click a city to fly there."
   },
   "gtAlerts": {
