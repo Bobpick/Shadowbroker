@@ -23,6 +23,16 @@ def test_resolve_us_city_from_subreddit():
     assert resolve_us_city(source="r/EyesOnICEBaltimore", text="ICE watch tonight") == "baltimore"
 
 
+def test_resolve_us_city_from_dsa_telegram_chapters():
+    assert resolve_us_city(source="t.me/PhillyDSA", text="Chapter meeting tonight") == "philadelphia"
+    assert resolve_us_city(source="@BostonDSA", text="Direct action briefing") == "boston"
+    assert resolve_us_city(source="SeattleDSA", text="Rally scheduled") == "seattle"
+    assert resolve_us_city(source="BayAreaDSA", text="SF march this weekend") == "san_francisco"
+    assert resolve_us_city(source="sfdsa", text="Bay Area mobilization") == "san_francisco"
+    assert resolve_us_city(source="ATLDsa", text="Atlanta protest watch") == "atlanta"
+    assert resolve_us_city(source="HoustonDSA", text="Houston rally at city hall") == "houston"
+
+
 def test_resolve_us_city_from_text():
     assert resolve_us_city(text="Mass rally scheduled in Chicago this weekend") == "chicago"
 
