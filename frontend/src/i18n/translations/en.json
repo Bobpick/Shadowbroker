@@ -246,8 +246,8 @@
       "feed": "FEED",
       "gt": "GT",
       "mixed": "MIXED",
-      "feedTooltip": "FEED-DRIVEN: protest potential is mostly from Telegram/Reddit protest or mobilization posts mapped to this metro (38% feed layer weight).",
-      "gtTooltip": "GT-DRIVEN: protest potential is mostly from Game Theory unrest/risk language without strong feed confirmation (62% GT layer weight).",
+      "feedTooltip": "FEED-DRIVEN: protest potential is mostly from confirmed Telegram/Reddit protest or mobilization posts — not generic city-name mentions.",
+      "gtTooltip": "GT-DRIVEN: protest potential is mostly from Game Theory unrest/risk language; no confirmed protest or mobilization posts in the last 7 days.",
       "mixedTooltip": "MIXED: Telegram/Reddit feed activity and GT unrest/risk are contributing roughly equally to this score."
     },
     "hint": "Scores blend GT unrest with Telegram/Reddit protest + mobilization keywords. Click a city to fly there.",

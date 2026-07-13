@@ -51,6 +51,14 @@ describe('protestPotentialDriver', () => {
       ),
     ).toBe('gt');
   });
+
+  it('stays gt-driven when only generic city mentions exist', () => {
+    expect(
+      protestPotentialDriver(
+        city({ unrest: 0.34, protestMentions: 0, mentions: 40, protestPotential: 0.54 }),
+      ),
+    ).toBe('gt');
+  });
 });
 
 describe('personalPlanningGuidanceKey', () => {

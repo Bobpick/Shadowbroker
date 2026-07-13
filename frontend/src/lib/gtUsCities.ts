@@ -119,23 +119,27 @@ const DRIVER_MIXED_DELTA = 0.05;
 
 export interface ProtestPotentialComponents {
   feedScore: number;
+  protestFeedScore: number;
   gtScore: number;
   feedContribution: number;
   gtContribution: number;
 }
 
+function protestFeedScore(city: GtUsCityRow): number {
+  return Math.min(1, city.protestMentions * 0.18 + city.mobilizationHits * 0.28);
+}
+
 /** Mirrors backend analytics/us_cities._protest_potential layer math. */
 export function computeProtestPotentialComponents(city: GtUsCityRow): ProtestPotentialComponents {
-  const feedScore = Math.min(
-    1,
-    city.protestMentions * 0.18 + city.mobilizationHits * 0.28 + city.mentions * 0.06,
-  );
+  const protestFeed = protestFeedScore(city);
+  const feedScore = Math.min(1, protestFeed + city.mentions * 0.06);
   const gtScore = Math.min(
     1,
     city.unrest * 0.55 + city.risk * 0.25 + (city.ignition ? 0.12 : 0),
   );
   return {
     feedScore,
+    protestFeedScore: protestFeed,
     gtScore,
     feedContribution: feedScore * FEED_LAYER_WEIGHT,
     gtContribution: gtScore * GT_LAYER_WEIGHT,
@@ -143,10 +147,19 @@ export function computeProtestPotentialComponents(city: GtUsCityRow): ProtestPot
 }
 
 export function protestPotentialDriver(city: GtUsCityRow): 'feed' | 'gt' | 'mixed' {
-  const { feedContribution, gtContribution } = computeProtestPotentialComponents(city);
-  const delta = Math.abs(feedContribution - gtContribution);
+  const { gtScore } = computeProtestPotentialComponents(city);
+  const confirmedFeed = protestFeedScore(city);
+
+  // Badge reflects confirmed protest/mobilization posts — not generic city-name mentions.
+  if (city.protestMentions + city.mobilizationHits === 0) {
+    return 'gt';
+  }
+
+  const gtContribution = gtScore * GT_LAYER_WEIGHT;
+  const protestFeedContribution = confirmedFeed * FEED_LAYER_WEIGHT;
+  const delta = Math.abs(protestFeedContribution - gtContribution);
   if (delta < DRIVER_MIXED_DELTA) return 'mixed';
-  return feedContribution > gtContribution ? 'feed' : 'gt';
+  return protestFeedContribution > gtContribution ? 'feed' : 'gt';
 }
 
 /** i18n key suffix under gtUsCities.personalPlanning.guidance.* */
