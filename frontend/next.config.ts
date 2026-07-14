@@ -37,6 +37,10 @@ const nextConfig: NextConfig = {
   transpilePackages: ['react-map-gl', 'maplibre-gl'],
   output: isDesktopExport ? 'export' : 'standalone',
   devIndicators: false,
+  turbopack: {
+    // Keep workspace root on frontend/ when a parent repo has extra lockfiles or clones.
+    root: __dirname,
+  },
   experimental: isDesktopExport
     ? {
         webpackBuildWorker: false,

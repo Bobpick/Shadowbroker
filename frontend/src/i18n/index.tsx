@@ -31,7 +31,14 @@ export const LOCALES: ReadonlyArray<{ code: Locale; label: string }> = [
   { code: 'fr', label: 'Français' },
 ];
 
-const translations: Record<Locale, Record<string, Record<string, string>>> = { en, 'zh-CN': zhCN, fr };
+/** Nested groups (e.g. gtUsCities.personalPlanning.*) are resolved by dot path. */
+type TranslationTree = { [key: string]: string | TranslationTree };
+
+const translations: Record<Locale, TranslationTree> = {
+  en: en as TranslationTree,
+  'zh-CN': zhCN as TranslationTree,
+  fr: fr as TranslationTree,
+};
 
 function isLocale(value: unknown): value is Locale {
   return typeof value === 'string' && LOCALES.some((entry) => entry.code === value);
