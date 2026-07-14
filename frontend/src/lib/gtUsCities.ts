@@ -132,7 +132,7 @@ function protestFeedScore(city: GtUsCityRow): number {
 /** Mirrors backend analytics/us_cities._protest_potential layer math. */
 export function computeProtestPotentialComponents(city: GtUsCityRow): ProtestPotentialComponents {
   const protestFeed = protestFeedScore(city);
-  const feedScore = Math.min(1, protestFeed + city.mentions * 0.06);
+  const feedScore = protestFeed;
   const gtScore = Math.min(
     1,
     city.unrest * 0.55 + city.risk * 0.25 + (city.ignition ? 0.12 : 0),

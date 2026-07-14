@@ -325,8 +325,10 @@ def _scan_feed_posts(
                 "recent": [],
             },
         )
-        bucket["mentions"] += 1
         narrative = str(post.get("narrative_profile") or "").strip().lower()
+        # City-local subs (r/Tucson, r/nyc, …) are not generic protest volume.
+        if narrative != "local":
+            bucket["mentions"] += 1
         if narrative == "protest" or _PROTEST_HINTS.search(text):
             bucket["protest_mentions"] += 1
         if _MOBILIZATION_HINTS.search(text):
@@ -350,11 +352,10 @@ def _protest_potential(
     unrest: float,
     risk: float,
     ignition: bool,
-    mentions: int,
     protest_mentions: int,
     mobilization_hits: int,
 ) -> float:
-    feed_score = min(1.0, protest_mentions * 0.18 + mobilization_hits * 0.28 + mentions * 0.06)
+    feed_score = min(1.0, protest_mentions * 0.18 + mobilization_hits * 0.28)
     gt_score = min(1.0, unrest * 0.55 + risk * 0.25 + (0.12 if ignition else 0.0))
     return round(min(1.0, gt_score * 0.62 + feed_score * 0.38), 4)
 
@@ -408,7 +409,6 @@ def build_us_city_watch(
             unrest=unrest,
             risk=risk,
             ignition=ignition,
-            mentions=mentions,
             protest_mentions=protest_mentions,
             mobilization_hits=mobilization_hits,
         )

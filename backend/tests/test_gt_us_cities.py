@@ -68,21 +68,77 @@ def test_national_dsa_subreddit_not_mapped_to_dc():
 
 def test_city_local_reddit_does_not_count_as_protest_without_keywords():
     now_iso = "2026-07-10T12:00:00+00:00"
+    local_posts = [
+        {
+            "title": "Anyone know a good Matco rep in town?",
+            "description": "Looking for tool truck recommendations",
+            "published": now_iso,
+            "source": "r/Tucson",
+            "subreddit": "Tucson",
+            "narrative_profile": "local",
+            "link": f"https://reddit.com/r/Tucson/{idx}",
+        }
+        for idx in range(24)
+    ]
     report = build_us_city_watch(
-        gt_risk={"heatmap": {"type": "FeatureCollection", "features": []}},
-        reddit_osint={
-            "posts": [
-                {
-                    "title": "Anyone know a good Matco rep in town?",
-                    "description": "Looking for tool truck recommendations",
-                    "published": now_iso,
-                    "source": "r/Tucson",
-                    "subreddit": "Tucson",
-                    "narrative_profile": "local",
-                    "link": "https://reddit.com/r/Tucson/1",
-                }
-            ]
+        gt_risk={
+            "heatmap": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-110.974, 32.222]},
+                        "properties": {
+                            "region": "tucson",
+                            "risk": 0.15,
+                            "unrest": 0.15,
+                            "conflict": 0.15,
+                        },
+                    }
+                ],
+            }
         },
+        reddit_osint={"posts": local_posts},
+        telegram_osint={"posts": []},
+        lookback_days=7,
+        limit=20,
+    )
+    assert report["active_metros"] == 0
+
+
+def test_city_local_reddit_volume_does_not_elevate_background_gt():
+    now_iso = "2026-07-10T12:00:00+00:00"
+    local_posts = [
+        {
+            "title": f"NYC thread {idx}",
+            "description": "Random neighborhood question",
+            "published": now_iso,
+            "source": "r/nyc",
+            "subreddit": "nyc",
+            "narrative_profile": "local",
+            "link": f"https://reddit.com/r/nyc/{idx}",
+        }
+        for idx in range(29)
+    ]
+    report = build_us_city_watch(
+        gt_risk={
+            "heatmap": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-74.006, 40.712]},
+                        "properties": {
+                            "region": "new_york",
+                            "risk": 0.15,
+                            "unrest": 0.15,
+                            "conflict": 0.15,
+                        },
+                    }
+                ],
+            }
+        },
+        reddit_osint={"posts": local_posts},
         telegram_osint={"posts": []},
         lookback_days=7,
         limit=20,
