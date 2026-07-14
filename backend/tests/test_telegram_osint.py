@@ -141,3 +141,12 @@ def test_parse_telegram_channel_html_skips_posts_older_than_retention():
     """
     posts = telegram_osint.parse_telegram_channel_html(old_html, "osintdefender")
     assert posts == []
+
+
+def test_configured_channels_merges_protest_extras_when_env_override(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_OSINT_CHANNELS", "war_monitor,osintdefender")
+    channels = telegram_osint._configured_channels()
+    lowered = [channel.lower() for channel in channels]
+    assert "war_monitor" in lowered
+    assert "nycdsa" in lowered
+    assert "austindsa" in lowered

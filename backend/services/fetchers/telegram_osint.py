@@ -226,9 +226,10 @@ def protest_watch_enabled() -> bool:
 def _configured_channels() -> list[str]:
     raw = str(os.environ.get("TELEGRAM_OSINT_CHANNELS", "")).strip()
     if raw:
-        return [part.strip().lstrip("@") for part in raw.split(",") if part.strip()]
+        channels = [part.strip().lstrip("@") for part in raw.split(",") if part.strip()]
+    else:
+        channels = list(_DEFAULT_CHANNELS)
 
-    channels = list(_DEFAULT_CHANNELS)
     if not protest_watch_enabled():
         return channels
 

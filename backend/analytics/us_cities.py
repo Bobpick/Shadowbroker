@@ -412,7 +412,15 @@ def build_us_city_watch(
             protest_mentions=protest_mentions,
             mobilization_hits=mobilization_hits,
         )
-        if potential < 0.08 and mentions == 0 and unrest < 0.12:
+        # Hide baseline GT noise (~7% potential / 15% unrest) unless feeds or spikes confirm.
+        if (
+            potential < 0.18
+            and protest_mentions == 0
+            and mobilization_hits == 0
+            and mentions == 0
+            and not ignition
+            and unrest < 0.20
+        ):
             continue
 
         cities.append(

@@ -66,6 +66,34 @@ def test_national_dsa_subreddit_not_mapped_to_dc():
     assert resolve_us_city(source="r/DemocraticSocialism", text="National DSA update") is None
 
 
+def test_build_us_city_watch_hides_baseline_gt_noise():
+    now_iso = "2026-07-10T12:00:00+00:00"
+    report = build_us_city_watch(
+        gt_risk={
+            "heatmap": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [-74.006, 40.712]},
+                        "properties": {
+                            "region": "new_york",
+                            "risk": 0.15,
+                            "unrest": 0.15,
+                            "conflict": 0.15,
+                        },
+                    }
+                ],
+            }
+        },
+        reddit_osint={"posts": []},
+        telegram_osint={"posts": []},
+        lookback_days=7,
+        limit=20,
+    )
+    assert report["active_metros"] == 0
+
+
 def test_build_us_city_watch_ranks_protest_feeds():
     now_iso = "2026-07-10T12:00:00+00:00"
     report = build_us_city_watch(
