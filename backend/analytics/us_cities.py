@@ -8,7 +8,6 @@ from typing import Any
 
 # key, lat_min, lat_max, lng_min, lng_max, centroid_lat, centroid_lng, label
 _US_METROS: tuple[tuple[str, float, float, float, float, float, float, str], ...] = (
-    ("washington_dc", 38.70, 39.10, -77.20, -76.80, 38.907, -77.036, "Washington, DC"),
     ("new_york", 40.40, 41.00, -74.35, -73.60, 40.712, -74.006, "New York City"),
     ("portland", 45.40, 45.65, -122.85, -122.45, 45.515, -122.679, "Portland"),
     ("chicago", 41.60, 42.10, -87.95, -87.50, 41.878, -87.630, "Chicago"),
@@ -52,10 +51,6 @@ _US_METROS: tuple[tuple[str, float, float, float, float, float, float, str], ...
 _US_METRO_BY_KEY = {row[0]: row for row in _US_METROS}
 
 _US_CITY_ALIASES: dict[str, str] = {
-    "dc": "washington_dc",
-    "d.c.": "washington_dc",
-    "washington dc": "washington_dc",
-    "washington, dc": "washington_dc",
     "nyc": "new_york",
     "new york city": "new_york",
     "manhattan": "new_york",
@@ -99,17 +94,9 @@ _SOURCE_CITY_HINTS: dict[str, str] = {
     "houstondsa": "houston",
     "eyesonicebaltimore": "baltimore",
     "eyesoniceoregon": "portland",
-    "eyesonice_protest": "washington_dc",
-    "eyesonice": "washington_dc",
     "nj50501": "new_york",
     "leftcoastriseup": "portland",
-    "climatestrike": "washington_dc",
-    "dsausa": "washington_dc",
     "greenandpleasant": "new_york",
-    "political_revolution": "washington_dc",
-    "demsocialists": "washington_dc",
-    "democraticsocialism": "washington_dc",
-    "dsa": "washington_dc",
     "directaction": "portland",
 }
 

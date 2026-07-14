@@ -88,7 +88,6 @@ def _region_from_hashtags(text: str) -> str | None:
             "belfast",
             "uk",
             "usa",
-            "dc",
             "nyc",
             "portland",
             "chicago",
@@ -114,8 +113,6 @@ def _region_from_hashtags(text: str) -> str | None:
             "memphis",
             "nola",
         }:
-            if tag == "dc":
-                return "washington_dc"
             if tag == "nyc":
                 return "new_york"
             if tag == "nola":

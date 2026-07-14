@@ -1,7 +1,6 @@
 /** Geographic helpers for GT alert display — mirrors backend/analytics/region_geo.py */
 
 const THEATER_LABELS: Record<string, string> = {
-  washington_dc: 'Washington, DC',
   new_york: 'New York City',
   portland: 'Portland',
   chicago: 'Chicago',

@@ -10,8 +10,8 @@ from analytics.us_cities import (
 )
 
 
-def test_us_city_from_coords_dc():
-    assert us_city_from_coords(38.907, -77.036) == "washington_dc"
+def test_us_city_from_coords_dc_bbox_removed():
+    assert us_city_from_coords(38.907, -77.036) is None
 
 
 def test_us_city_from_coords_portland():
@@ -49,26 +49,14 @@ def test_resolve_us_city_houston_detroit_phoenix():
     assert us_city_from_coords(33.45, -112.07) == "phoenix"
 
 
+def test_national_dsa_subreddit_not_mapped_to_dc():
+    assert resolve_us_city(source="r/DemocraticSocialism", text="National DSA update") is None
+
+
 def test_build_us_city_watch_ranks_protest_feeds():
     now_iso = "2026-07-10T12:00:00+00:00"
     report = build_us_city_watch(
-        gt_risk={
-            "heatmap": {
-                "type": "FeatureCollection",
-                "features": [
-                    {
-                        "type": "Feature",
-                        "geometry": {"type": "Point", "coordinates": [-77.036, 38.907]},
-                        "properties": {
-                            "region": "washington_dc",
-                            "risk": 0.22,
-                            "unrest": 0.31,
-                            "conflict": 0.05,
-                        },
-                    }
-                ],
-            }
-        },
+        gt_risk={"heatmap": {"type": "FeatureCollection", "features": []}},
         reddit_osint={
             "posts": [
                 {

@@ -83,7 +83,7 @@ export function extractGtUsCities(gtRisk: GTRiskPayload | null | undefined): GtU
       enabled: true,
       cities: [],
       activeMetros: 0,
-      trackedMetros: 40,
+      trackedMetros: 39,
       lookbackDays: 7,
       timestamp: gtRisk.timestamp ?? null,
     };
