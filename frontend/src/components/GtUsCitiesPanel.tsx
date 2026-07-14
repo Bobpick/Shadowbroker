@@ -11,7 +11,7 @@ import {
   protestPotentialDriver,
   protestPotentialLabel,
 } from '@/lib/gtUsCities';
-import { GT_ICON } from '@/lib/gtTypography';
+import { GT_ICON, GT_TEXT } from '@/lib/gtTypography';
 import type { SelectedEntity } from '@/types/dashboard';
 
 interface Props {
@@ -97,7 +97,7 @@ export default function GtUsCitiesPanel({
       <div className="flex items-center gap-2 border-b border-blue-700/40 bg-[linear-gradient(90deg,rgba(185,28,28,0.35),rgba(248,250,252,0.08),rgba(29,78,216,0.35))] px-2.5 py-1.5">
         <Flag size={GT_ICON.lg} className="shrink-0 text-white" />
         <span
-          className="text-[15px] font-mono font-bold tracking-widest text-white"
+          className={`${GT_TEXT.xs} font-mono font-bold tracking-widest text-white`}
           title={t('gtUsCities.titleTooltip')}
         >
           {t('gtUsCities.title')}
@@ -109,7 +109,7 @@ export default function GtUsCitiesPanel({
             aria-hidden="true"
           />
         </span>
-        <span className="text-[14px] font-mono tracking-wider text-blue-100/75">
+        <span className={`${GT_TEXT.micro} font-mono tracking-wider text-blue-100/75`}>
           {t('gtUsCities.counts')
             .replace('{active}', String(watch.activeMetros))
             .replace('{tracked}', String(watch.trackedMetros))
@@ -118,7 +118,7 @@ export default function GtUsCitiesPanel({
       </div>
 
       {watch.cities.length === 0 ? (
-        <div className="px-2.5 py-2 text-[15px] font-mono tracking-wider text-blue-100/65">
+        <div className={`px-2.5 py-2 ${GT_TEXT.xs} font-mono tracking-wider text-blue-100/65`}>
           {t('gtUsCities.empty')}
         </div>
       ) : (
@@ -151,18 +151,18 @@ export default function GtUsCitiesPanel({
                 }}
               >
                 <div className="flex items-center gap-1">
-                  <span className="truncate text-[15px] font-mono font-bold uppercase text-white">
+                  <span className={`truncate ${GT_TEXT.xs} font-mono font-bold uppercase text-white`}>
                     {city.label}
                   </span>
                   <span
-                    className={`shrink-0 border px-1 text-[10px] font-mono font-bold tracking-wider ${driverBadgeClass(driver)}`}
+                    className={`shrink-0 border px-1 text-[9px] font-mono font-bold tracking-wider ${driverBadgeClass(driver)}`}
                     title={t(`gtUsCities.driver.${driver}Tooltip`)}
                   >
                     {t(`gtUsCities.driver.${driver}`)}
                   </span>
                   {city.ignition && (
                     <span
-                      className="shrink-0 border border-red-300/60 bg-red-900/50 px-1 text-[12px] font-mono text-red-100"
+                      className="shrink-0 border border-red-300/60 bg-red-900/50 px-1 text-[10px] font-mono text-red-100"
                       title={t('gtUsCities.igniteTooltip')}
                     >
                       {t('gtUsCities.ignite')}
@@ -184,7 +184,7 @@ export default function GtUsCitiesPanel({
                   />
                 </div>
 
-                <div className="text-[14px] font-mono tracking-wide text-blue-50/85">
+                <div className={`${GT_TEXT.micro} font-mono tracking-wide text-blue-50/85`}>
                   <span title={t('gtUsCities.potentialTooltip')}>
                     potential {pct(city.protestPotential)}
                   </span>
@@ -200,7 +200,7 @@ export default function GtUsCitiesPanel({
 
                 {city.mobilizationHits > 0 && (
                   <div
-                    className="text-[12px] font-mono uppercase tracking-wider text-red-100/80"
+                    className="text-[10px] font-mono uppercase tracking-wider text-red-100/80"
                     title={t('gtUsCities.mobilizationTooltip')}
                   >
                     {t('gtUsCities.mobilization').replace(
@@ -215,13 +215,13 @@ export default function GtUsCitiesPanel({
         </div>
       )}
 
-      <div className="border-t border-blue-800/30 px-2.5 py-1 text-[12px] font-mono tracking-wider text-blue-100/55">
+      <div className="border-t border-blue-800/30 px-2.5 py-1 text-[10px] font-mono tracking-wider text-blue-100/55">
         {t('gtUsCities.hint')}
       </div>
 
       <details className="group border-t border-blue-800/35 bg-blue-950/20">
         <summary
-          className="cursor-pointer list-none px-2.5 py-1.5 text-[12px] font-mono font-bold uppercase tracking-widest text-blue-100/80 marker:content-none [&::-webkit-details-marker]:hidden"
+          className="cursor-pointer list-none px-2.5 py-1.5 text-[10px] font-mono font-bold uppercase tracking-widest text-blue-100/80 marker:content-none [&::-webkit-details-marker]:hidden"
           title={t('gtUsCities.personalPlanning.titleTooltip')}
         >
           <span className="inline-flex items-center gap-1.5">
@@ -233,7 +233,7 @@ export default function GtUsCitiesPanel({
             />
           </span>
         </summary>
-        <div className="space-y-1.5 border-t border-blue-800/25 px-2.5 py-2 text-[12px] font-mono leading-relaxed tracking-wide text-blue-100/70">
+        <div className="space-y-1.5 border-t border-blue-800/25 px-2.5 py-2 text-[10px] font-mono leading-relaxed tracking-wide text-blue-100/70">
           <p title={t('gtUsCities.personalPlanning.titleTooltip')}>
             {t('gtUsCities.personalPlanning.disclaimer')}
           </p>
