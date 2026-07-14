@@ -44,11 +44,11 @@ export default function GtAnalyticsHud({
         title={t('gtHud.dragHint')}
       >
         <GripVertical size={GT_ICON.lg} className="shrink-0 text-amber-600/80" />
-        <span className={`whitespace-nowrap ${GT_TEXT.sm} font-mono font-bold tracking-widest text-amber-300`}>
+        <span className={`whitespace-nowrap ${GT_TEXT.xs} font-mono font-bold tracking-widest text-amber-300`}>
           {t('gtHud.title')}
         </span>
         {!isMinimized && (
-          <span className={`${GT_TEXT.xs} font-mono tracking-wider text-amber-600/70`}>
+          <span className={`${GT_TEXT.micro} font-mono tracking-wider text-amber-600/70`}>
             {t('gtHud.dragHint')}
           </span>
         )}
