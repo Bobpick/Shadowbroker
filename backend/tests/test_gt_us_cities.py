@@ -66,6 +66,30 @@ def test_national_dsa_subreddit_not_mapped_to_dc():
     assert resolve_us_city(source="r/DemocraticSocialism", text="National DSA update") is None
 
 
+def test_city_local_reddit_does_not_count_as_protest_without_keywords():
+    now_iso = "2026-07-10T12:00:00+00:00"
+    report = build_us_city_watch(
+        gt_risk={"heatmap": {"type": "FeatureCollection", "features": []}},
+        reddit_osint={
+            "posts": [
+                {
+                    "title": "Anyone know a good Matco rep in town?",
+                    "description": "Looking for tool truck recommendations",
+                    "published": now_iso,
+                    "source": "r/Tucson",
+                    "subreddit": "Tucson",
+                    "narrative_profile": "local",
+                    "link": "https://reddit.com/r/Tucson/1",
+                }
+            ]
+        },
+        telegram_osint={"posts": []},
+        lookback_days=7,
+        limit=20,
+    )
+    assert report["active_metros"] == 0
+
+
 def test_build_us_city_watch_hides_baseline_gt_noise():
     now_iso = "2026-07-10T12:00:00+00:00"
     report = build_us_city_watch(

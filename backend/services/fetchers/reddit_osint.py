@@ -56,7 +56,12 @@ _EXTRA_PROTEST_SUBREDDITS: tuple[str, ...] = (
     "DemocraticSocialism",
     "dsa",
     "directaction",
-    # Tier 1 city-local + mobilization aggregators
+    "50501",
+    "wherearetheprotests",
+)
+
+# City-local subs — scanned for metro mentions, but posts are not auto-tagged protest.
+_CITY_LOCAL_SUBREDDITS: tuple[str, ...] = (
     "nyc",
     "brooklyn",
     "chicago",
@@ -65,13 +70,12 @@ _EXTRA_PROTEST_SUBREDDITS: tuple[str, ...] = (
     "minneapolis",
     "philadelphia",
     "boston",
-    "50501",
-    "wherearetheprotests",
     "madisonwi",
     "Tucson",
 )
 
 _PROTEST_SUBREDDITS = frozenset(sub.lower() for sub in _EXTRA_PROTEST_SUBREDDITS)
+_CITY_LOCAL_SUBREDDIT_SET = frozenset(sub.lower() for sub in _CITY_LOCAL_SUBREDDITS)
 
 _ADVERSARIAL_SUBREDDITS = frozenset(
     {
@@ -192,7 +196,7 @@ def _configured_subreddits() -> list[str]:
 
     seen = {sub.lower() for sub in subs}
     if protest_watch_enabled():
-        for sub in _EXTRA_PROTEST_SUBREDDITS:
+        for sub in (*_EXTRA_PROTEST_SUBREDDITS, *_CITY_LOCAL_SUBREDDITS):
             key = sub.lower()
             if key in seen:
                 continue
@@ -211,6 +215,8 @@ def _configured_subreddits() -> list[str]:
 def _narrative_profile(subreddit: str, *, text: str = "") -> str:
     haystack = str(text or "").strip()
     key = str(subreddit or "").strip().lower()
+    if key in _CITY_LOCAL_SUBREDDIT_SET:
+        return "local"
     if key in _PROTEST_SUBREDDITS:
         return "protest"
     if haystack and _PROTEST_HINTS.search(haystack):

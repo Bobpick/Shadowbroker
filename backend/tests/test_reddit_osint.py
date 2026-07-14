@@ -83,6 +83,14 @@ def test_narrative_profile_tags_protest_posts():
     assert posts[0]["narrative_profile"] == "protest"
 
 
+def test_narrative_profile_city_local_sub_is_not_auto_protest():
+    assert reddit_osint._narrative_profile("Tucson", text="Anyone know a good Matco rep?") == "local"
+    assert reddit_osint._narrative_profile(
+        "chicago",
+        text="Protest scheduled Saturday at city hall",
+    ) == "local"
+
+
 def test_parse_reddit_rss_geoparses_titles():
     atom = """<?xml version="1.0" encoding="UTF-8"?>
     <feed xmlns="http://www.w3.org/2005/Atom">
