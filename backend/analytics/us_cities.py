@@ -46,6 +46,12 @@ _US_METROS: tuple[tuple[str, float, float, float, float, float, float, str], ...
     ("memphis", 34.95, 35.35, -90.20, -89.75, 35.150, -90.049, "Memphis"),
     ("salt_lake_city", 40.60, 40.90, -112.10, -111.70, 40.761, -111.891, "Salt Lake City"),
     ("richmond", 37.40, 37.65, -77.60, -77.30, 37.541, -77.436, "Richmond"),
+    ("madison", 43.00, 43.20, -89.55, -89.25, 43.073, -89.401, "Madison"),
+    ("tucson", 32.10, 32.35, -111.10, -110.75, 32.222, -110.974, "Tucson"),
+    ("albuquerque", 35.00, 35.20, -106.85, -106.50, 35.084, -106.651, "Albuquerque"),
+    ("cincinnati", 39.00, 39.25, -84.70, -84.35, 39.103, -84.512, "Cincinnati"),
+    ("orlando", 28.40, 28.65, -81.55, -81.20, 28.538, -81.379, "Orlando"),
+    ("san_jose", 37.25, 37.45, -122.05, -121.75, 37.338, -121.886, "San Jose"),
 )
 
 _US_METRO_BY_KEY = {row[0]: row for row in _US_METROS}
@@ -77,6 +83,25 @@ _US_CITY_ALIASES: dict[str, str] = {
     "dfw": "dallas",
     "queens": "new_york",
     "bronx": "new_york",
+    "san jose": "san_jose",
+    "san josé": "san_jose",
+    "silicon valley": "san_jose",
+    "abq": "albuquerque",
+    "burque": "albuquerque",
+    "cincy": "cincinnati",
+}
+
+_CITY_SUBREDDIT_HINTS: dict[str, str] = {
+    "nyc": "new_york",
+    "brooklyn": "new_york",
+    "chicago": "chicago",
+    "losangeles": "los_angeles",
+    "seattle": "seattle",
+    "minneapolis": "minneapolis",
+    "philadelphia": "philadelphia",
+    "boston": "boston",
+    "madisonwi": "madison",
+    "tucson": "tucson",
 }
 
 _SOURCE_CITY_HINTS: dict[str, str] = {
@@ -92,12 +117,24 @@ _SOURCE_CITY_HINTS: dict[str, str] = {
     "atldsa": "atlanta",
     "atlantadsa": "atlanta",
     "houstondsa": "houston",
+    "austindsa": "austin",
+    "denverdsa": "denver",
+    "detroitdsa": "detroit",
+    "minneapolisdsa": "minneapolis",
+    "twincitiesdsa": "minneapolis",
+    "losangelesdsa": "los_angeles",
+    "ladsa": "los_angeles",
+    "sacramentodsa": "sacramento",
+    "milwaukeedsa": "milwaukee",
+    "oaklanddsa": "oakland",
+    "eastbaydsa": "oakland",
     "eyesonicebaltimore": "baltimore",
     "eyesoniceoregon": "portland",
     "nj50501": "new_york",
     "leftcoastriseup": "portland",
     "greenandpleasant": "new_york",
     "directaction": "portland",
+    **_CITY_SUBREDDIT_HINTS,
 }
 
 _MOBILIZATION_HINTS = re.compile(

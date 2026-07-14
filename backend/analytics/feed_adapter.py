@@ -112,11 +112,24 @@ def _region_from_hashtags(text: str) -> str | None:
             "pittsburgh",
             "memphis",
             "nola",
+            "madison",
+            "tucson",
+            "albuquerque",
+            "cincinnati",
+            "orlando",
+            "sanjose",
+            "losangeles",
+            "sacramento",
+            "milwaukee",
         }:
             if tag == "nyc":
                 return "new_york"
             if tag == "nola":
                 return "new_orleans"
+            if tag == "sanjose":
+                return "san_jose"
+            if tag == "losangeles":
+                return "los_angeles"
             return tag
     return None
 

@@ -49,6 +49,19 @@ def test_resolve_us_city_houston_detroit_phoenix():
     assert us_city_from_coords(33.45, -112.07) == "phoenix"
 
 
+def test_tier1_metros_and_city_subreddit_hints():
+    assert us_city_from_coords(43.07, -89.40) == "madison"
+    assert us_city_from_coords(32.22, -110.97) == "tucson"
+    assert us_city_from_coords(37.34, -121.89) == "san_jose"
+    assert resolve_us_city(source="r/nyc", text="Weekly update") == "new_york"
+    assert resolve_us_city(source="r/LosAngeles", text="March tonight") == "los_angeles"
+    assert resolve_us_city(source="r/madisonwi", text="Capitol rally") == "madison"
+    assert resolve_us_city(source="r/Tucson", text="Border protest watch") == "tucson"
+    assert resolve_us_city(source="t.me/AustinDSA", text="Meet at city hall") == "austin"
+    assert resolve_us_city(source="OaklandDSA", text="East Bay mobilization") == "oakland"
+    assert us_city_label("san_jose") == "San Jose"
+
+
 def test_national_dsa_subreddit_not_mapped_to_dc():
     assert resolve_us_city(source="r/DemocraticSocialism", text="National DSA update") is None
 

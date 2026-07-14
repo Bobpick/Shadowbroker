@@ -56,6 +56,19 @@ _EXTRA_PROTEST_SUBREDDITS: tuple[str, ...] = (
     "DemocraticSocialism",
     "dsa",
     "directaction",
+    # Tier 1 city-local + mobilization aggregators
+    "nyc",
+    "brooklyn",
+    "chicago",
+    "LosAngeles",
+    "seattle",
+    "minneapolis",
+    "philadelphia",
+    "boston",
+    "50501",
+    "wherearetheprotests",
+    "madisonwi",
+    "Tucson",
 )
 
 _PROTEST_SUBREDDITS = frozenset(sub.lower() for sub in _EXTRA_PROTEST_SUBREDDITS)
