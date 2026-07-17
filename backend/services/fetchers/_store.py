@@ -388,7 +388,9 @@ active_layers: dict[str, bool] = {
     "cyber_threats": False,
     "telegram_osint": True,
     "reddit_osint": True,
-    "gt_risk": False,
+    # Default on — matches frontend activeLayersStorage and keeps US Protest Watch
+    # fed through /api/live-data/slow without waiting for the first layer-sync POST.
+    "gt_risk": True,
 }
 
 
