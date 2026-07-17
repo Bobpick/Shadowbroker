@@ -952,7 +952,11 @@ const MaplibreViewer = ({
       if (!map.hasImage(id)) {
         pendingImages[id] = url;
         const img = new Image();
-        img.crossOrigin = 'anonymous';
+        // data: URLs must not set crossOrigin — browsers treat that as a
+        // tainted/failed load, which left AI pin icons permanently missing.
+        if (!url.startsWith('data:')) {
+          img.crossOrigin = 'anonymous';
+        }
         img.src = url;
         img.onload = () => {
           if (!map.hasImage(id)) map.addImage(id, img);
@@ -967,7 +971,9 @@ const MaplibreViewer = ({
       const url = pendingImages[id];
       if (url) {
         const img = new Image();
-        img.crossOrigin = 'anonymous';
+        if (!url.startsWith('data:')) {
+          img.crossOrigin = 'anonymous';
+        }
         img.src = url;
         img.onload = () => {
           if (!map.hasImage(id)) map.addImage(id, img);
@@ -1845,6 +1851,7 @@ const MaplibreViewer = ({
     sarScenesGeoJSON && 'sar-scenes-layer',
     sarAoisGeoJSON && 'sar-aois-fill',
     aiIntelGeoJSON && 'ai-intel-clusters',
+    aiIntelGeoJSON && 'ai-intel-pin-dots',
     aiIntelGeoJSON && 'ai-intel-pin-layer',
     correlationsGeoJSON && 'corr-rf-fill',
     correlationsGeoJSON && 'corr-mil-fill',
@@ -2023,7 +2030,9 @@ const MaplibreViewer = ({
           // AI Intel pin click → open detail popup (takes precedence over entity selection)
           if (e.features && e.features.length > 0) {
             const aiPin = e.features.find(
-              (f) => f.layer?.id === 'ai-intel-pin-layer' && !(f.properties as Record<string, unknown> | null)?.cluster,
+              (f) =>
+                (f.layer?.id === 'ai-intel-pin-layer' || f.layer?.id === 'ai-intel-pin-dots') &&
+                !(f.properties as Record<string, unknown> | null)?.cluster,
             );
             if (aiPin && aiPin.properties?.id) {
               setOpenPinDetailId(String(aiPin.properties.id));
@@ -3552,6 +3561,19 @@ const MaplibreViewer = ({
                 'text-size': 12,
               }}
               paint={{ 'text-color': '#ffffff' }}
+            />
+            {/* Always-visible fallback when category teardrop icons fail to register */}
+            <Layer
+              id="ai-intel-pin-dots"
+              type="circle"
+              filter={['!', ['has', 'point_count']]}
+              paint={{
+                'circle-radius': ['interpolate', ['linear'], ['zoom'], 2, 4, 8, 7, 14, 10],
+                'circle-color': ['coalesce', ['get', 'color'], '#3b82f6'],
+                'circle-opacity': 0.95,
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#ffffff',
+              }}
             />
             <Layer
               id="ai-intel-pin-layer"
