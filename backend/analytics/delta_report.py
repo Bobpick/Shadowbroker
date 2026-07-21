@@ -1002,150 +1002,88 @@ def _html_spark_svg(values: list[float], *, width: int = 120, height: int = 28) 
     )
 
 
-# Cropped equirectangular frame (exclude extreme poles for denser map view)
-_MAP_LNG0, _MAP_LNG1 = -170.0, 190.0
-_MAP_LAT0, _MAP_LAT1 = -58.0, 78.0
+# --- Theater map base: Mercator PNG (transparent ocean) ---
+_MAP_PNG_CACHE: str | None = None
+_MAP_PNG_SIZE: tuple[int, int] | None = None
 
 
-def _ll_to_xy(
-    lng: float,
-    lat: float,
-    w: float,
-    h: float,
-    *,
-    lng0: float = _MAP_LNG0,
-    lng1: float = _MAP_LNG1,
-    lat0: float = _MAP_LAT0,
-    lat1: float = _MAP_LAT1,
-) -> tuple[float, float]:
-    if lng < lng0:
-        lng += 360.0
-    x = (lng - lng0) / (lng1 - lng0) * w
-    y = (lat1 - lat) / (lat1 - lat0) * h
+def _map_png_path() -> Path | None:
+    """Resolve world mercator asset (repo, container, or Downloads)."""
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here / "assets" / "world_mercator.png",
+        here.parent / "data" / "assets" / "world_mercator.png",
+        Path.home() / "Downloads" / "pngegg.png",
+        Path("/app/analytics/assets/world_mercator.png"),
+    ]
+    for p in candidates:
+        try:
+            if p.is_file():
+                return p
+        except OSError:
+            continue
+    return None
+
+
+def _map_png_data_uri() -> tuple[str, int, int]:
+    """Return (data_uri, width, height). Cached after first load."""
+    global _MAP_PNG_CACHE, _MAP_PNG_SIZE
+    if _MAP_PNG_CACHE and _MAP_PNG_SIZE:
+        return _MAP_PNG_CACHE, _MAP_PNG_SIZE[0], _MAP_PNG_SIZE[1]
+
+    import base64
+
+    path = _map_png_path()
+    if path is None:
+        return "", 1280, 946
+    raw = path.read_bytes()
+    w, h = 1280, 946
+    try:
+        from PIL import Image
+        import io
+
+        im = Image.open(io.BytesIO(raw))
+        w, h = im.size
+    except Exception:
+        pass
+    uri = "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
+    _MAP_PNG_CACHE = uri
+    _MAP_PNG_SIZE = (w, h)
+    return uri, w, h
+
+
+def _mercator_xy(lng: float, lat: float, w: float, h: float) -> tuple[float, float]:
+    """Web Mercator into pixel space matching a full-world PNG (transparent ocean)."""
+    import math
+
+    # Clamp to Web Mercator valid range
+    max_lat = 85.05112878
+    lat = max(-max_lat, min(max_lat, lat))
+    x = (float(lng) + 180.0) / 360.0 * w
+    lat_rad = math.radians(lat)
+    # y in [0,1] top→bottom
+    y_norm = (1.0 - math.log(math.tan(math.pi / 4.0 + lat_rad / 2.0)) / math.pi) / 2.0
+    y = y_norm * h
     return x, y
 
 
-def _land_path(coords: list[tuple[float, float]], w: float, h: float) -> str:
-    """Closed polygon path from (lng, lat) rings."""
-    if not coords:
-        return ""
-    parts: list[str] = []
-    for i, (lng, lat) in enumerate(coords):
-        x, y = _ll_to_xy(lng, lat, w, h)
-        parts.append(f"{'M' if i == 0 else 'L'}{x:.1f},{y:.1f}")
-    parts.append("Z")
-    return "".join(parts)
-
-
-def _world_land_rings() -> list[list[tuple[float, float]]]:
-    """Higher-detail schematic land rings (lng, lat) for equirectangular SITREP map."""
-    return [
-        # Alaska + North America
-        [
-            (-168, 54), (-165, 64), (-150, 70), (-140, 70), (-125, 72), (-105, 73),
-            (-90, 72), (-80, 72), (-70, 68), (-65, 60), (-55, 52), (-60, 47),
-            (-65, 45), (-70, 42), (-74, 40), (-80, 32), (-82, 25), (-90, 29),
-            (-97, 26), (-105, 22), (-110, 24), (-115, 32), (-120, 34), (-124, 40),
-            (-125, 48), (-130, 55), (-140, 60), (-150, 60), (-160, 55), (-168, 54),
-        ],
-        # Central America
-        [(-110, 23), (-97, 18), (-90, 16), (-85, 12), (-80, 9), (-78, 8), (-82, 12),
-         (-88, 16), (-95, 18), (-105, 22), (-110, 23)],
-        # Greenland
-        [(-55, 83), (-40, 83), (-20, 80), (-18, 72), (-30, 68), (-45, 60),
-         (-53, 65), (-55, 75), (-55, 83)],
-        # South America
-        [
-            (-80, 12), (-75, 10), (-70, 12), (-60, 8), (-50, 0), (-40, -5),
-            (-35, -10), (-35, -20), (-40, -30), (-50, -40), (-55, -50),
-            (-65, -55), (-72, -52), (-75, -40), (-78, -20), (-80, -5), (-80, 12),
-        ],
-        # Western Europe
-        [
-            (-10, 43), (-9, 52), (-5, 58), (0, 59), (5, 58), (8, 54), (5, 50),
-            (2, 47), (-1, 43), (-5, 36), (-9, 37), (-10, 43),
-        ],
-        # Scandinavia + Baltics
-        [(5, 58), (10, 60), (15, 69), (25, 71), (30, 70), (30, 60), (25, 56),
-         (20, 55), (12, 55), (5, 58)],
-        # British Isles
-        [(-8, 50), (-6, 58), (-2, 58), (1, 52), (-2, 50), (-5, 50), (-8, 50)],
-        # Africa (separate from Europe)
-        [
-            (-17, 15), (-10, 32), (-5, 35), (10, 37), (25, 32), (32, 31),
-            (35, 28), (43, 12), (51, 12), (48, 0), (42, -15), (40, -25),
-            (32, -30), (20, -35), (15, -30), (12, -18), (10, 0), (0, 5),
-            (-10, 5), (-15, 10), (-17, 15),
-        ],
-        # Arabian peninsula
-        [(35, 30), (40, 30), (48, 28), (56, 25), (59, 22), (55, 17), (48, 14),
-         (43, 16), (38, 20), (35, 25), (35, 30)],
-        # Asia mainland
-        [
-            (30, 70), (45, 72), (70, 75), (100, 76), (130, 72), (160, 68),
-            (175, 62), (180, 55), (170, 50), (150, 45), (142, 40), (135, 35),
-            (130, 32), (122, 30), (120, 25), (110, 20), (105, 15), (100, 10),
-            (98, 8), (92, 22), (85, 22), (78, 28), (72, 22), (68, 24),
-            (60, 25), (55, 30), (50, 36), (45, 42), (40, 48), (35, 55),
-            (32, 60), (30, 70),
-        ],
-        # Indian subcontinent
-        [(68, 24), (72, 22), (78, 22), (88, 22), (92, 22), (90, 15), (85, 10),
-         (80, 8), (76, 10), (72, 15), (70, 20), (68, 24)],
-        # SE Asia
-        [(95, 20), (105, 20), (110, 15), (108, 5), (105, 0), (115, 0),
-         (120, 5), (118, 12), (112, 15), (105, 18), (98, 18), (95, 20)],
-        [(100, -5), (110, -5), (120, -5), (125, 0), (118, 5), (110, 2), (100, -2), (100, -5)],
-        [(110, -8), (120, -8), (125, -10), (120, -12), (110, -10), (110, -8)],
-        # Japan
-        [(130, 45), (140, 45), (145, 43), (142, 35), (138, 33), (132, 33), (130, 38), (130, 45)],
-        # Philippines
-        [(120, 18), (125, 18), (126, 10), (124, 6), (120, 8), (120, 18)],
-        # Australia
-        [
-            (113, -22), (120, -15), (130, -12), (140, -12), (150, -15),
-            (153, -25), (150, -35), (145, -38), (135, -35), (125, -33),
-            (115, -32), (113, -25), (113, -22),
-        ],
-        # New Zealand
-        [(166, -41), (174, -38), (178, -40), (176, -46), (168, -47), (166, -44), (166, -41)],
-        # Madagascar
-        [(43, -12), (50, -13), (50, -25), (44, -25), (43, -18), (43, -12)],
-        # Iceland
-        [(-25, 66), (-14, 66), (-13, 64), (-22, 63), (-25, 65), (-25, 66)],
-    ]
-
-
 def _html_world_map(fps: list[dict[str, Any]]) -> str:
-    """Equirectangular world map + flashpoint hotspots (self-contained SVG)."""
-    w, h = 960.0, 480.0
+    """Mercator basemap (pngegg/world_mercator.png) + projected flashpoint hotspots."""
+    uri, iw, ih = _map_png_data_uri()
+    w, h = float(iw), float(ih)
 
-    land_paths = []
-    for ring in _world_land_rings():
-        d = _land_path(ring, w, h)
-        if d:
-            land_paths.append(
-                f'<path d="{d}" fill="#1a3352" stroke="#3d5a80" stroke-width="0.8" '
-                f'stroke-linejoin="round"/>'
-            )
-
-    grid_parts: list[str] = []
-    for lat in range(-60, 90, 30):
-        x0, y = _ll_to_xy(_MAP_LNG0, float(lat), w, h)
-        x1, _ = _ll_to_xy(_MAP_LNG1, float(lat), w, h)
-        grid_parts.append(
-            f'<line x1="{x0:.1f}" y1="{y:.1f}" x2="{x1:.1f}" y2="{y:.1f}" '
-            f'stroke="#152238" stroke-width="0.6"/>'
-        )
-    for lng in range(-150, 181, 30):
-        x, y0 = _ll_to_xy(float(lng), _MAP_LAT1, w, h)
-        _, y1 = _ll_to_xy(float(lng), _MAP_LAT0, w, h)
-        grid_parts.append(
-            f'<line x1="{x:.1f}" y1="{y0:.1f}" x2="{x:.1f}" y2="{y1:.1f}" '
-            f'stroke="#152238" stroke-width="0.6"/>'
+    if not uri:
+        # Fallback notice if asset missing
+        return (
+            f'<svg class="worldmap" viewBox="0 0 640 360" width="100%" role="img">'
+            f'<rect width="640" height="360" fill="#0a1628"/>'
+            f'<text x="320" y="180" fill="#f87171" text-anchor="middle" '
+            f'font-family="ui-monospace,monospace" font-size="14">'
+            f"Map asset missing — place world_mercator.png in analytics/assets/"
+            f"</text></svg>"
         )
 
-    placed = []
+    placed: list[tuple[float, float, dict[str, Any]]] = []
     for f in fps:
         try:
             lat = float(f.get("lat"))
@@ -1157,9 +1095,9 @@ def _html_world_map(fps: list[dict[str, Any]]) -> str:
 
     dots: list[str] = []
     for idx, (lng, lat, f) in enumerate(placed):
-        x, y = _ll_to_xy(lng, lat, w, h)
-        x = max(8.0, min(w - 8.0, x))
-        y = max(8.0, min(h - 28.0, y))
+        x, y = _mercator_xy(lng, lat, w, h)
+        x = max(6.0, min(w - 6.0, x))
+        y = max(6.0, min(h - 6.0, y))
         level = str(f.get("alert_level") or "YELLOW")
         fill = {
             "GREEN": "#22c55e",
@@ -1168,42 +1106,46 @@ def _html_world_map(fps: list[dict[str, Any]]) -> str:
             "RED": "#ef4444",
             "BLACK": "#f8fafc",
         }.get(level, "#f59e0b")
-        r = 8 if level in {"RED", "BLACK"} else 6
+        r = 10 if level in {"RED", "BLACK"} else 8
         label = _esc(str(f.get("label") or "")[:24])
+        # Stagger callouts
         above = idx % 2 == 0
-        right = idx % 3 != 0
-        lx = x + (52 if right else -52)
-        ly = y + (-24 if above else 28)
-        lx = max(12.0, min(w - 170.0, lx))
-        ly = max(14.0, min(h - 30.0, ly))
-        box_w = min(168.0, 10 + len(label) * 5.4)
+        right = (idx % 3) != 1
+        lx = x + (70 if right else -70)
+        ly = y + (-28 if above else 32)
+        lx = max(8.0, min(w - 180.0, lx))
+        ly = max(16.0, min(h - 12.0, ly))
+        box_w = min(176.0, 12 + len(label) * 6.0)
         dots.append(
             f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{lx:.1f}" y2="{ly:.1f}" '
-            f'stroke="#64748b" stroke-width="0.9" opacity="0.75"/>'
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r + 4}" fill="{fill}" opacity="0.18"/>'
+            f'stroke="#94a3b8" stroke-width="1.2" opacity="0.85"/>'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r + 6}" fill="{fill}" opacity="0.22"/>'
             f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="{fill}" stroke="#020617" '
-            f'stroke-width="1.4"><title>{label}</title></circle>'
-            f'<rect x="{lx - 3:.1f}" y="{ly - 11:.1f}" width="{box_w:.0f}" height="14" rx="1" '
-            f'fill="#0b1220ee" stroke="#334155" stroke-width="0.6"/>'
-            f'<text x="{lx:.1f}" y="{ly:.1f}" fill="#e2e8f0" font-size="10" '
+            f'stroke-width="1.6"><title>{label}</title></circle>'
+            f'<rect x="{lx - 4:.1f}" y="{ly - 12:.1f}" width="{box_w:.0f}" height="16" rx="2" '
+            f'fill="#0b1220f2" stroke="#475569" stroke-width="0.8"/>'
+            f'<text x="{lx:.1f}" y="{ly:.1f}" fill="#f1f5f9" font-size="11" '
             f'font-family="ui-monospace,Menlo,monospace" text-anchor="start">{label}</text>'
         )
 
-    ocean = (
-        f'<rect width="{w}" height="{h}" fill="#071018" stroke="#1e293b"/>'
-        f'<rect x="1" y="1" width="{w - 2}" height="{h - 2}" fill="none" stroke="#0f2744" stroke-width="2"/>'
+    # Dark plate behind transparent PNG so land stands out
+    bg = (
+        f'<rect width="{w:.0f}" height="{h:.0f}" fill="#050a12"/>'
+        f'<image href="{uri}" x="0" y="0" width="{w:.0f}" height="{h:.0f}" '
+        f'preserveAspectRatio="none"/>'
     )
     legend = (
         f'<g transform="translate(12,{h - 14})">'
-        f'<text x="0" y="0" fill="#64748b" font-size="9" font-family="ui-monospace,monospace">'
-        f"Equirectangular · schematic coastlines · hotspot color = alert band "
+        f'<text x="0" y="0" fill="#94a3b8" font-size="11" font-family="ui-monospace,monospace">'
+        f"Web Mercator basemap · hotspot color = alert band "
         f"(green stable · yellow watch · orange fragile · red/black critical)"
         f"</text></g>"
     )
+
     return (
         f'<svg class="worldmap" viewBox="0 0 {w:.0f} {h:.0f}" width="100%" role="img" '
-        f'aria-label="World map with flashpoint hotspots">'
-        f"{ocean}{''.join(grid_parts)}{''.join(land_paths)}{''.join(dots)}{legend}"
+        f'aria-label="Mercator world map with flashpoint hotspots">'
+        f"{bg}{''.join(dots)}{legend}"
         f"</svg>"
     )
 
@@ -1468,7 +1410,7 @@ body {{
       <section class="panel" style="margin-top:12px">
         <h2>Theater map · hotspots</h2>
         <div class="map-wrap">{_html_world_map(fps)}</div>
-        <div class="muted" style="margin-top:6px">Schematic world map (equirectangular). Hotspot color = alert band; callouts name each flashpoint.</div>
+        <div class="muted" style="margin-top:6px">Web Mercator basemap · hotspot color = alert band · callouts name each flashpoint.</div>
       </section>
 
       <section class="panel" style="margin-top:12px">
