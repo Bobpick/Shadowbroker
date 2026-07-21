@@ -1002,8 +1002,27 @@ def _html_spark_svg(values: list[float], *, width: int = 120, height: int = 28) 
     )
 
 
-def _ll_to_xy(lng: float, lat: float, w: float, h: float) -> tuple[float, float]:
-    return ((lng + 180.0) / 360.0 * w, (90.0 - lat) / 180.0 * h)
+# Cropped equirectangular frame (exclude extreme poles for denser map view)
+_MAP_LNG0, _MAP_LNG1 = -170.0, 190.0
+_MAP_LAT0, _MAP_LAT1 = -58.0, 78.0
+
+
+def _ll_to_xy(
+    lng: float,
+    lat: float,
+    w: float,
+    h: float,
+    *,
+    lng0: float = _MAP_LNG0,
+    lng1: float = _MAP_LNG1,
+    lat0: float = _MAP_LAT0,
+    lat1: float = _MAP_LAT1,
+) -> tuple[float, float]:
+    if lng < lng0:
+        lng += 360.0
+    x = (lng - lng0) / (lng1 - lng0) * w
+    y = (lat1 - lat) / (lat1 - lat0) * h
+    return x, y
 
 
 def _land_path(coords: list[tuple[float, float]], w: float, h: float) -> str:
@@ -1018,91 +1037,129 @@ def _land_path(coords: list[tuple[float, float]], w: float, h: float) -> str:
     return "".join(parts)
 
 
-def _html_world_map(fps: list[dict[str, Any]]) -> str:
-    """Equirectangular world silhouette + flashpoint hotspots (self-contained SVG)."""
-    w, h = 840.0, 420.0  # 2× for sharper render; CSS scales width 100%
-
-    # Simplified landmass outlines (lng, lat) — schematic, not survey-grade.
-    lands: list[list[tuple[float, float]]] = [
-        # North America
+def _world_land_rings() -> list[list[tuple[float, float]]]:
+    """Higher-detail schematic land rings (lng, lat) for equirectangular SITREP map."""
+    return [
+        # Alaska + North America
         [
-            (-168, 65), (-140, 70), (-105, 72), (-80, 73), (-60, 60), (-55, 48),
-            (-65, 45), (-75, 40), (-80, 25), (-97, 18), (-110, 23), (-125, 35),
-            (-130, 50), (-155, 58), (-168, 65),
+            (-168, 54), (-165, 64), (-150, 70), (-140, 70), (-125, 72), (-105, 73),
+            (-90, 72), (-80, 72), (-70, 68), (-65, 60), (-55, 52), (-60, 47),
+            (-65, 45), (-70, 42), (-74, 40), (-80, 32), (-82, 25), (-90, 29),
+            (-97, 26), (-105, 22), (-110, 24), (-115, 32), (-120, 34), (-124, 40),
+            (-125, 48), (-130, 55), (-140, 60), (-150, 60), (-160, 55), (-168, 54),
         ],
+        # Central America
+        [(-110, 23), (-97, 18), (-90, 16), (-85, 12), (-80, 9), (-78, 8), (-82, 12),
+         (-88, 16), (-95, 18), (-105, 22), (-110, 23)],
         # Greenland
-        [(-55, 83), (-20, 80), (-20, 70), (-45, 60), (-55, 70), (-55, 83)],
+        [(-55, 83), (-40, 83), (-20, 80), (-18, 72), (-30, 68), (-45, 60),
+         (-53, 65), (-55, 75), (-55, 83)],
         # South America
         [
-            (-80, 12), (-60, 10), (-35, -5), (-35, -30), (-55, -55), (-70, -55),
-            (-75, -40), (-80, -5), (-80, 12),
+            (-80, 12), (-75, 10), (-70, 12), (-60, 8), (-50, 0), (-40, -5),
+            (-35, -10), (-35, -20), (-40, -30), (-50, -40), (-55, -50),
+            (-65, -55), (-72, -52), (-75, -40), (-78, -20), (-80, -5), (-80, 12),
         ],
-        # Europe + Africa
+        # Western Europe
         [
-            (-10, 60), (10, 70), (30, 70), (40, 65), (40, 45), (35, 35),
-            (40, 12), (50, 12), (50, -5), (40, -35), (20, -35), (10, -20),
-            (-10, 5), (-15, 20), (-10, 35), (-10, 45), (-5, 55), (-10, 60),
+            (-10, 43), (-9, 52), (-5, 58), (0, 59), (5, 58), (8, 54), (5, 50),
+            (2, 47), (-1, 43), (-5, 36), (-9, 37), (-10, 43),
         ],
-        # UK / Scandinavia accent
-        [(-8, 60), (2, 59), (2, 50), (-6, 50), (-8, 55), (-8, 60)],
-        [(5, 71), (25, 71), (30, 60), (20, 55), (5, 58), (5, 71)],
-        # Asia
+        # Scandinavia + Baltics
+        [(5, 58), (10, 60), (15, 69), (25, 71), (30, 70), (30, 60), (25, 56),
+         (20, 55), (12, 55), (5, 58)],
+        # British Isles
+        [(-8, 50), (-6, 58), (-2, 58), (1, 52), (-2, 50), (-5, 50), (-8, 50)],
+        # Africa (separate from Europe)
         [
-            (40, 70), (60, 75), (100, 75), (140, 70), (170, 65), (175, 55),
-            (145, 45), (140, 35), (130, 30), (120, 20), (100, 10), (95, 5),
-            (80, 8), (70, 20), (60, 25), (50, 30), (45, 40), (40, 50), (40, 70),
+            (-17, 15), (-10, 32), (-5, 35), (10, 37), (25, 32), (32, 31),
+            (35, 28), (43, 12), (51, 12), (48, 0), (42, -15), (40, -25),
+            (32, -30), (20, -35), (15, -30), (12, -18), (10, 0), (0, 5),
+            (-10, 5), (-15, 10), (-17, 15),
         ],
-        # India / SE Asia
-        [(70, 30), (90, 28), (95, 15), (100, 5), (105, -5), (115, 5), (120, 15),
-         (105, 20), (95, 22), (80, 20), (70, 25), (70, 30)],
+        # Arabian peninsula
+        [(35, 30), (40, 30), (48, 28), (56, 25), (59, 22), (55, 17), (48, 14),
+         (43, 16), (38, 20), (35, 25), (35, 30)],
+        # Asia mainland
+        [
+            (30, 70), (45, 72), (70, 75), (100, 76), (130, 72), (160, 68),
+            (175, 62), (180, 55), (170, 50), (150, 45), (142, 40), (135, 35),
+            (130, 32), (122, 30), (120, 25), (110, 20), (105, 15), (100, 10),
+            (98, 8), (92, 22), (85, 22), (78, 28), (72, 22), (68, 24),
+            (60, 25), (55, 30), (50, 36), (45, 42), (40, 48), (35, 55),
+            (32, 60), (30, 70),
+        ],
+        # Indian subcontinent
+        [(68, 24), (72, 22), (78, 22), (88, 22), (92, 22), (90, 15), (85, 10),
+         (80, 8), (76, 10), (72, 15), (70, 20), (68, 24)],
+        # SE Asia
+        [(95, 20), (105, 20), (110, 15), (108, 5), (105, 0), (115, 0),
+         (120, 5), (118, 12), (112, 15), (105, 18), (98, 18), (95, 20)],
+        [(100, -5), (110, -5), (120, -5), (125, 0), (118, 5), (110, 2), (100, -2), (100, -5)],
+        [(110, -8), (120, -8), (125, -10), (120, -12), (110, -10), (110, -8)],
         # Japan
-        [(130, 45), (145, 44), (142, 32), (130, 33), (130, 45)],
+        [(130, 45), (140, 45), (145, 43), (142, 35), (138, 33), (132, 33), (130, 38), (130, 45)],
+        # Philippines
+        [(120, 18), (125, 18), (126, 10), (124, 6), (120, 8), (120, 18)],
         # Australia
         [
-            (115, -15), (135, -12), (150, -15), (153, -30), (145, -40),
-            (130, -35), (115, -32), (115, -15),
+            (113, -22), (120, -15), (130, -12), (140, -12), (150, -15),
+            (153, -25), (150, -35), (145, -38), (135, -35), (125, -33),
+            (115, -32), (113, -25), (113, -22),
         ],
-        # NZ
-        [(165, -35), (175, -35), (175, -45), (167, -47), (165, -40), (165, -35)],
-        # Antarctica strip
-        [(-180, -70), (180, -70), (180, -85), (-180, -85), (-180, -70)],
+        # New Zealand
+        [(166, -41), (174, -38), (178, -40), (176, -46), (168, -47), (166, -44), (166, -41)],
+        # Madagascar
+        [(43, -12), (50, -13), (50, -25), (44, -25), (43, -18), (43, -12)],
+        # Iceland
+        [(-25, 66), (-14, 66), (-13, 64), (-22, 63), (-25, 65), (-25, 66)],
     ]
 
+
+def _html_world_map(fps: list[dict[str, Any]]) -> str:
+    """Equirectangular world map + flashpoint hotspots (self-contained SVG)."""
+    w, h = 960.0, 480.0
+
     land_paths = []
-    for ring in lands:
-        if not ring or not isinstance(ring[0], tuple):
-            continue
+    for ring in _world_land_rings():
         d = _land_path(ring, w, h)
         if d:
             land_paths.append(
-                f'<path d="{d}" fill="#1e3a5f" stroke="#334155" stroke-width="0.6"/>'
+                f'<path d="{d}" fill="#1a3352" stroke="#3d5a80" stroke-width="0.8" '
+                f'stroke-linejoin="round"/>'
             )
 
-    # Theater labels (subtle)
-    labels = [
-        (-100, 40, "N. AMERICA"),
-        (-60, -20, "S. AMERICA"),
-        (15, 20, "AFRICA / EU"),
-        (100, 40, "ASIA"),
-        (135, -25, "AUS"),
-        (50, 55, "EUR"),
-    ]
-    label_svg = []
-    for lng, lat, text in labels:
-        x, y = _ll_to_xy(lng, lat, w, h)
-        label_svg.append(
-            f'<text x="{x:.1f}" y="{y:.1f}" fill="#475569" font-size="9" '
-            f'font-family="ui-monospace,monospace" text-anchor="middle">{text}</text>'
+    grid_parts: list[str] = []
+    for lat in range(-60, 90, 30):
+        x0, y = _ll_to_xy(_MAP_LNG0, float(lat), w, h)
+        x1, _ = _ll_to_xy(_MAP_LNG1, float(lat), w, h)
+        grid_parts.append(
+            f'<line x1="{x0:.1f}" y1="{y:.1f}" x2="{x1:.1f}" y2="{y:.1f}" '
+            f'stroke="#152238" stroke-width="0.6"/>'
+        )
+    for lng in range(-150, 181, 30):
+        x, y0 = _ll_to_xy(float(lng), _MAP_LAT1, w, h)
+        _, y1 = _ll_to_xy(float(lng), _MAP_LAT0, w, h)
+        grid_parts.append(
+            f'<line x1="{x:.1f}" y1="{y0:.1f}" x2="{x:.1f}" y2="{y1:.1f}" '
+            f'stroke="#152238" stroke-width="0.6"/>'
         )
 
-    dots = []
+    placed = []
     for f in fps:
         try:
             lat = float(f.get("lat"))
             lng = float(f.get("lng"))
         except (TypeError, ValueError):
             continue
+        placed.append((lng, lat, f))
+    placed.sort(key=lambda t: t[0])
+
+    dots: list[str] = []
+    for idx, (lng, lat, f) in enumerate(placed):
         x, y = _ll_to_xy(lng, lat, w, h)
+        x = max(8.0, min(w - 8.0, x))
+        y = max(8.0, min(h - 28.0, y))
         level = str(f.get("alert_level") or "YELLOW")
         fill = {
             "GREEN": "#22c55e",
@@ -1111,32 +1168,45 @@ def _html_world_map(fps: list[dict[str, Any]]) -> str:
             "RED": "#ef4444",
             "BLACK": "#f8fafc",
         }.get(level, "#f59e0b")
-        r = 7 if level in {"RED", "BLACK"} else 5.5
-        label = _esc(str(f.get("label") or "")[:22])
-        # Halo + core
+        r = 8 if level in {"RED", "BLACK"} else 6
+        label = _esc(str(f.get("label") or "")[:24])
+        above = idx % 2 == 0
+        right = idx % 3 != 0
+        lx = x + (52 if right else -52)
+        ly = y + (-24 if above else 28)
+        lx = max(12.0, min(w - 170.0, lx))
+        ly = max(14.0, min(h - 30.0, ly))
+        box_w = min(168.0, 10 + len(label) * 5.4)
         dots.append(
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r + 3}" fill="{fill}" opacity="0.2"/>'
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="{fill}" stroke="#0b1220" '
-            f'stroke-width="1.2"><title>{label}</title></circle>'
-            f'<text x="{x:.1f}" y="{y - r - 4:.1f}" fill="#cbd5e1" font-size="8" '
-            f'font-family="ui-monospace,monospace" text-anchor="middle">{label}</text>'
+            f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{lx:.1f}" y2="{ly:.1f}" '
+            f'stroke="#64748b" stroke-width="0.9" opacity="0.75"/>'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r + 4}" fill="{fill}" opacity="0.18"/>'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="{fill}" stroke="#020617" '
+            f'stroke-width="1.4"><title>{label}</title></circle>'
+            f'<rect x="{lx - 3:.1f}" y="{ly - 11:.1f}" width="{box_w:.0f}" height="14" rx="1" '
+            f'fill="#0b1220ee" stroke="#334155" stroke-width="0.6"/>'
+            f'<text x="{lx:.1f}" y="{ly:.1f}" fill="#e2e8f0" font-size="10" '
+            f'font-family="ui-monospace,Menlo,monospace" text-anchor="start">{label}</text>'
         )
 
-    ocean = f'<rect width="{w}" height="{h}" fill="#0a1628" stroke="#1e293b"/>'
-    grid = "".join(
-        f'<line x1="0" y1="{h * i / 6}" x2="{w}" y2="{h * i / 6}" stroke="#132033" stroke-width="0.5"/>'
-        for i in range(1, 6)
-    ) + "".join(
-        f'<line x1="{w * i / 12}" y1="0" x2="{w * i / 12}" y2="{h}" stroke="#132033" stroke-width="0.5"/>'
-        for i in range(1, 12)
+    ocean = (
+        f'<rect width="{w}" height="{h}" fill="#071018" stroke="#1e293b"/>'
+        f'<rect x="1" y="1" width="{w - 2}" height="{h - 2}" fill="none" stroke="#0f2744" stroke-width="2"/>'
     )
-
+    legend = (
+        f'<g transform="translate(12,{h - 14})">'
+        f'<text x="0" y="0" fill="#64748b" font-size="9" font-family="ui-monospace,monospace">'
+        f"Equirectangular · schematic coastlines · hotspot color = alert band "
+        f"(green stable · yellow watch · orange fragile · red/black critical)"
+        f"</text></g>"
+    )
     return (
         f'<svg class="worldmap" viewBox="0 0 {w:.0f} {h:.0f}" width="100%" role="img" '
         f'aria-label="World map with flashpoint hotspots">'
-        f"{ocean}{grid}{''.join(land_paths)}{''.join(label_svg)}{''.join(dots)}"
+        f"{ocean}{''.join(grid_parts)}{''.join(land_paths)}{''.join(dots)}{legend}"
         f"</svg>"
     )
+
 
 
 def render_html(markdown_body: str, *, title: str) -> str:
@@ -1398,7 +1468,7 @@ body {{
       <section class="panel" style="margin-top:12px">
         <h2>Theater map · hotspots</h2>
         <div class="map-wrap">{_html_world_map(fps)}</div>
-        <div class="muted" style="margin-top:6px">Dot color = alert band (green→black). Larger dots = RED/BLACK.</div>
+        <div class="muted" style="margin-top:6px">Schematic world map (equirectangular). Hotspot color = alert band; callouts name each flashpoint.</div>
       </section>
 
       <section class="panel" style="margin-top:12px">
