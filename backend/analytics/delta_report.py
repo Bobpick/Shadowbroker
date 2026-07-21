@@ -1002,9 +1002,99 @@ def _html_spark_svg(values: list[float], *, width: int = 120, height: int = 28) 
     )
 
 
+def _ll_to_xy(lng: float, lat: float, w: float, h: float) -> tuple[float, float]:
+    return ((lng + 180.0) / 360.0 * w, (90.0 - lat) / 180.0 * h)
+
+
+def _land_path(coords: list[tuple[float, float]], w: float, h: float) -> str:
+    """Closed polygon path from (lng, lat) rings."""
+    if not coords:
+        return ""
+    parts: list[str] = []
+    for i, (lng, lat) in enumerate(coords):
+        x, y = _ll_to_xy(lng, lat, w, h)
+        parts.append(f"{'M' if i == 0 else 'L'}{x:.1f},{y:.1f}")
+    parts.append("Z")
+    return "".join(parts)
+
+
 def _html_world_map(fps: list[dict[str, Any]]) -> str:
-    """Compact equirectangular SVG with flashpoint hotspots."""
-    w, h = 420, 210
+    """Equirectangular world silhouette + flashpoint hotspots (self-contained SVG)."""
+    w, h = 840.0, 420.0  # 2× for sharper render; CSS scales width 100%
+
+    # Simplified landmass outlines (lng, lat) — schematic, not survey-grade.
+    lands: list[list[tuple[float, float]]] = [
+        # North America
+        [
+            (-168, 65), (-140, 70), (-105, 72), (-80, 73), (-60, 60), (-55, 48),
+            (-65, 45), (-75, 40), (-80, 25), (-97, 18), (-110, 23), (-125, 35),
+            (-130, 50), (-155, 58), (-168, 65),
+        ],
+        # Greenland
+        [(-55, 83), (-20, 80), (-20, 70), (-45, 60), (-55, 70), (-55, 83)],
+        # South America
+        [
+            (-80, 12), (-60, 10), (-35, -5), (-35, -30), (-55, -55), (-70, -55),
+            (-75, -40), (-80, -5), (-80, 12),
+        ],
+        # Europe + Africa
+        [
+            (-10, 60), (10, 70), (30, 70), (40, 65), (40, 45), (35, 35),
+            (40, 12), (50, 12), (50, -5), (40, -35), (20, -35), (10, -20),
+            (-10, 5), (-15, 20), (-10, 35), (-10, 45), (-5, 55), (-10, 60),
+        ],
+        # UK / Scandinavia accent
+        [(-8, 60), (2, 59), (2, 50), (-6, 50), (-8, 55), (-8, 60)],
+        [(5, 71), (25, 71), (30, 60), (20, 55), (5, 58), (5, 71)],
+        # Asia
+        [
+            (40, 70), (60, 75), (100, 75), (140, 70), (170, 65), (175, 55),
+            (145, 45), (140, 35), (130, 30), (120, 20), (100, 10), (95, 5),
+            (80, 8), (70, 20), (60, 25), (50, 30), (45, 40), (40, 50), (40, 70),
+        ],
+        # India / SE Asia
+        [(70, 30), (90, 28), (95, 15), (100, 5), (105, -5), (115, 5), (120, 15),
+         (105, 20), (95, 22), (80, 20), (70, 25), (70, 30)],
+        # Japan
+        [(130, 45), (145, 44), (142, 32), (130, 33), (130, 45)],
+        # Australia
+        [
+            (115, -15), (135, -12), (150, -15), (153, -30), (145, -40),
+            (130, -35), (115, -32), (115, -15),
+        ],
+        # NZ
+        [(165, -35), (175, -35), (175, -45), (167, -47), (165, -40), (165, -35)],
+        # Antarctica strip
+        [(-180, -70), (180, -70), (180, -85), (-180, -85), (-180, -70)],
+    ]
+
+    land_paths = []
+    for ring in lands:
+        if not ring or not isinstance(ring[0], tuple):
+            continue
+        d = _land_path(ring, w, h)
+        if d:
+            land_paths.append(
+                f'<path d="{d}" fill="#1e3a5f" stroke="#334155" stroke-width="0.6"/>'
+            )
+
+    # Theater labels (subtle)
+    labels = [
+        (-100, 40, "N. AMERICA"),
+        (-60, -20, "S. AMERICA"),
+        (15, 20, "AFRICA / EU"),
+        (100, 40, "ASIA"),
+        (135, -25, "AUS"),
+        (50, 55, "EUR"),
+    ]
+    label_svg = []
+    for lng, lat, text in labels:
+        x, y = _ll_to_xy(lng, lat, w, h)
+        label_svg.append(
+            f'<text x="{x:.1f}" y="{y:.1f}" fill="#475569" font-size="9" '
+            f'font-family="ui-monospace,monospace" text-anchor="middle">{text}</text>'
+        )
+
     dots = []
     for f in fps:
         try:
@@ -1012,8 +1102,7 @@ def _html_world_map(fps: list[dict[str, Any]]) -> str:
             lng = float(f.get("lng"))
         except (TypeError, ValueError):
             continue
-        x = (lng + 180.0) / 360.0 * w
-        y = (90.0 - lat) / 180.0 * h
+        x, y = _ll_to_xy(lng, lat, w, h)
         level = str(f.get("alert_level") or "YELLOW")
         fill = {
             "GREEN": "#22c55e",
@@ -1022,27 +1111,31 @@ def _html_world_map(fps: list[dict[str, Any]]) -> str:
             "RED": "#ef4444",
             "BLACK": "#f8fafc",
         }.get(level, "#f59e0b")
-        r = 5 if level in {"RED", "BLACK"} else 4
-        label = _esc(str(f.get("label") or "")[:18])
+        r = 7 if level in {"RED", "BLACK"} else 5.5
+        label = _esc(str(f.get("label") or "")[:22])
+        # Halo + core
         dots.append(
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r + 3}" fill="{fill}" opacity="0.2"/>'
             f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="{fill}" stroke="#0b1220" '
-            f'stroke-width="1"><title>{label}</title></circle>'
+            f'stroke-width="1.2"><title>{label}</title></circle>'
+            f'<text x="{x:.1f}" y="{y - r - 4:.1f}" fill="#cbd5e1" font-size="8" '
+            f'font-family="ui-monospace,monospace" text-anchor="middle">{label}</text>'
         )
-    grid = (
-        f'<rect width="{w}" height="{h}" fill="#0f172a" stroke="#1e293b"/>'
-        # simple lat/lng grid
-        + "".join(
-            f'<line x1="0" y1="{h * i / 4}" x2="{w}" y2="{h * i / 4}" stroke="#1e293b" stroke-width="0.5"/>'
-            for i in range(1, 4)
-        )
-        + "".join(
-            f'<line x1="{w * i / 6}" y1="0" x2="{w * i / 6}" y2="{h}" stroke="#1e293b" stroke-width="0.5"/>'
-            for i in range(1, 6)
-        )
+
+    ocean = f'<rect width="{w}" height="{h}" fill="#0a1628" stroke="#1e293b"/>'
+    grid = "".join(
+        f'<line x1="0" y1="{h * i / 6}" x2="{w}" y2="{h * i / 6}" stroke="#132033" stroke-width="0.5"/>'
+        for i in range(1, 6)
+    ) + "".join(
+        f'<line x1="{w * i / 12}" y1="0" x2="{w * i / 12}" y2="{h}" stroke="#132033" stroke-width="0.5"/>'
+        for i in range(1, 12)
     )
+
     return (
-        f'<svg class="worldmap" viewBox="0 0 {w} {h}" width="100%" role="img" '
-        f'aria-label="Flashpoint heat map">{grid}{"".join(dots)}</svg>'
+        f'<svg class="worldmap" viewBox="0 0 {w:.0f} {h:.0f}" width="100%" role="img" '
+        f'aria-label="World map with flashpoint hotspots">'
+        f"{ocean}{grid}{''.join(land_paths)}{''.join(label_svg)}{''.join(dots)}"
+        f"</svg>"
     )
 
 
