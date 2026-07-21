@@ -25,12 +25,39 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Payoff cells are (row_player_payoff, col_player_payoff). Higher = preferred.
-# Strategies: 0 = Cooperate / Status Quo, 1 = Escalate / Defect.
+# 2×2 strategies: 0 = Status Quo / Cooperate, 1 = Escalate / Defect.
 
 _DEFAULT_2X2 = [
     [(3.0, 3.0), (1.0, 4.0)],  # C,C | C,D
     [(4.0, 1.0), (2.0, 2.0)],  # D,C | D,D  — classic PD-ish
 ]
+
+# 3×3 bloc ladder: D = De-escalate, C = Compete (under-threshold), P = Pressure/compel.
+# Stylized net strategic value — presented only when live conditions justify it.
+_BLOC_LADDER_STRATEGIES = ("D", "C", "P")
+_BLOC_LADDER_LABELS = {
+    "D": "De-escalate",
+    "C": "Compete",
+    "P": "Pressure",
+}
+_DEFAULT_3X3 = [
+    # L\\W     D         C         P
+    [(4.0, 4.0), (2.0, 5.0), (1.0, 6.0)],  # D
+    [(5.0, 2.0), (3.0, 3.0), (2.0, 4.0)],  # C
+    [(6.0, 1.0), (4.0, 2.0), (3.0, 3.0)],  # P
+]
+
+# Flashpoints that are inherently two-bloc theaters (eligible for 3×3 ladder).
+_BLOC_LADDER_FLASHPOINT_IDS = frozenset(
+    {
+        "taiwan_strait",
+        "south_china_sea",
+        "strait_of_hormuz",
+        "ukraine_borders",
+        "korean_peninsula",
+        "baltic_nato",
+    }
+)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -53,88 +80,128 @@ def nash_deterrence_enabled() -> bool:
         return False
 
 
+def bloc_ladder_enabled() -> bool:
+    """Optional 3×3 D/C/P ladder — defaults on when Nash/deterrence is on."""
+    raw = str(os.environ.get("NASH_BLOC_LADDER_ENABLED", "")).strip().lower()
+    if raw:
+        return raw not in {"0", "false", "no", "off"}
+    return nash_deterrence_enabled()
+
+
+def _preset(
+    *,
+    id: str,
+    label: str,
+    lat: float,
+    lng: float,
+    gt_regions: list[str],
+    row_actor: str,
+    col_actor: str,
+    row_strategies: list[str],
+    col_strategies: list[str],
+    payoffs: list[list[tuple[float, float]]],
+    keywords: list[str],
+    bloc_ladder: bool = True,
+) -> dict[str, Any]:
+    return {
+        "id": id,
+        "label": label,
+        "lat": lat,
+        "lng": lng,
+        "gt_regions": gt_regions,
+        "row_actor": row_actor,
+        "col_actor": col_actor,
+        "row_strategies": row_strategies,
+        "col_strategies": col_strategies,
+        "payoffs": copy.deepcopy(payoffs),
+        "payoffs_3x3": copy.deepcopy(_DEFAULT_3X3),
+        "bloc_ladder_eligible": bloc_ladder,
+        "keywords": keywords,
+    }
+
+
 FLASHPOINT_PRESETS: list[dict[str, Any]] = [
-    {
-        "id": "taiwan_strait",
-        "label": "Taiwan Strait",
-        "lat": 24.0,
-        "lng": 119.5,
-        "gt_regions": ["taiwan", "china", "united_states"],
-        "row_actor": "PRC",
-        "col_actor": "US / Taiwan",
-        "row_strategies": ["Status Quo", "Escalate"],
-        "col_strategies": ["Status Quo", "Escalate"],
-        "payoffs": copy.deepcopy(_DEFAULT_2X2),
-        "keywords": ["taiwan", "strait", "pla navy", "carrier", "adiz"],
-    },
-    {
-        "id": "south_china_sea",
-        "label": "South China Sea",
-        "lat": 12.0,
-        "lng": 114.0,
-        "gt_regions": ["china", "philippines", "vietnam"],
-        "row_actor": "PRC",
-        "col_actor": "ASEAN claimants",
-        "row_strategies": ["Restraint", "Assert"],
-        "col_strategies": ["Restraint", "Assert"],
-        "payoffs": copy.deepcopy(_DEFAULT_2X2),
-        "keywords": ["south china sea", "spratly", "nine-dash", "militia"],
-    },
-    {
-        "id": "strait_of_hormuz",
-        "label": "Strait of Hormuz",
-        "lat": 26.5,
-        "lng": 56.5,
-        "gt_regions": ["iran", "saudi_arabia", "united_arab_emirates"],
-        "row_actor": "Iran",
-        "col_actor": "US / Gulf",
-        "row_strategies": ["Open transit", "Harass / close"],
-        "col_strategies": ["Patrol", "Strike posture"],
-        "payoffs": [
+    _preset(
+        id="taiwan_strait",
+        label="Taiwan Strait",
+        lat=24.0,
+        lng=119.5,
+        gt_regions=["taiwan", "china", "united_states"],
+        row_actor="PRC",
+        col_actor="US / Taiwan",
+        row_strategies=["Status Quo", "Escalate"],
+        col_strategies=["Status Quo", "Escalate"],
+        payoffs=_DEFAULT_2X2,
+        keywords=["taiwan", "strait", "pla navy", "carrier", "adiz"],
+    ),
+    _preset(
+        id="south_china_sea",
+        label="South China Sea",
+        lat=12.0,
+        lng=114.0,
+        gt_regions=["china", "philippines", "vietnam"],
+        row_actor="PRC",
+        col_actor="ASEAN claimants",
+        row_strategies=["Restraint", "Assert"],
+        col_strategies=["Restraint", "Assert"],
+        payoffs=_DEFAULT_2X2,
+        keywords=["south china sea", "spratly", "nine-dash", "militia"],
+    ),
+    _preset(
+        id="strait_of_hormuz",
+        label="Strait of Hormuz",
+        lat=26.5,
+        lng=56.5,
+        gt_regions=["iran", "saudi_arabia", "united_arab_emirates"],
+        row_actor="Iran",
+        col_actor="US / Gulf",
+        row_strategies=["Open transit", "Harass / close"],
+        col_strategies=["Patrol", "Strike posture"],
+        payoffs=[
             [(4.0, 4.0), (1.0, 3.0)],
             [(2.0, 1.0), (0.0, 0.0)],
         ],
-        "keywords": ["hormuz", "tanker", "iran navy", "strait", "oil"],
-    },
-    {
-        "id": "ukraine_borders",
-        "label": "Ukraine Borders",
-        "lat": 48.5,
-        "lng": 37.5,
-        "gt_regions": ["ukraine", "russia", "poland"],
-        "row_actor": "Russia",
-        "col_actor": "Ukraine / NATO",
-        "row_strategies": ["Freeze line", "Offensive"],
-        "col_strategies": ["Hold", "Counter-offensive"],
-        "payoffs": copy.deepcopy(_DEFAULT_2X2),
-        "keywords": ["ukraine", "donbas", "kharkiv", "mobilization", "artillery"],
-    },
-    {
-        "id": "korean_peninsula",
-        "label": "Korean Peninsula",
-        "lat": 38.0,
-        "lng": 127.0,
-        "gt_regions": ["north_korea", "south_korea", "united_states"],
-        "row_actor": "DPRK",
-        "col_actor": "ROK / US",
-        "row_strategies": ["Deter", "Missile test"],
-        "col_strategies": ["Deter", "Exercises"],
-        "payoffs": copy.deepcopy(_DEFAULT_2X2),
-        "keywords": ["dprk", "north korea", "icbm", "thaad", "dmz"],
-    },
-    {
-        "id": "baltic_nato",
-        "label": "Baltic / NATO Flank",
-        "lat": 56.0,
-        "lng": 24.0,
-        "gt_regions": ["russia", "poland", "estonia", "latvia", "lithuania"],
-        "row_actor": "Russia",
-        "col_actor": "NATO",
-        "row_strategies": ["Probe", "Escalate"],
-        "col_strategies": ["Tripwire", "Reinforce"],
-        "payoffs": copy.deepcopy(_DEFAULT_2X2),
-        "keywords": ["baltic", "kaliningrad", "suwalki", "nato"],
-    },
+        keywords=["hormuz", "tanker", "iran navy", "strait", "oil"],
+    ),
+    _preset(
+        id="ukraine_borders",
+        label="Ukraine Borders",
+        lat=48.5,
+        lng=37.5,
+        gt_regions=["ukraine", "russia", "poland"],
+        row_actor="Russia",
+        col_actor="Ukraine / NATO",
+        row_strategies=["Freeze line", "Offensive"],
+        col_strategies=["Hold", "Counter-offensive"],
+        payoffs=_DEFAULT_2X2,
+        keywords=["ukraine", "donbas", "kharkiv", "mobilization", "artillery"],
+    ),
+    _preset(
+        id="korean_peninsula",
+        label="Korean Peninsula",
+        lat=38.0,
+        lng=127.0,
+        gt_regions=["north_korea", "south_korea", "united_states"],
+        row_actor="DPRK",
+        col_actor="ROK / US",
+        row_strategies=["Deter", "Missile test"],
+        col_strategies=["Deter", "Exercises"],
+        payoffs=_DEFAULT_2X2,
+        keywords=["dprk", "north korea", "icbm", "thaad", "dmz"],
+    ),
+    _preset(
+        id="baltic_nato",
+        label="Baltic / NATO Flank",
+        lat=56.0,
+        lng=24.0,
+        gt_regions=["russia", "poland", "estonia", "latvia", "lithuania"],
+        row_actor="Russia",
+        col_actor="NATO",
+        row_strategies=["Probe", "Escalate"],
+        col_strategies=["Tripwire", "Reinforce"],
+        payoffs=_DEFAULT_2X2,
+        keywords=["baltic", "kaliningrad", "suwalki", "nato"],
+    ),
 ]
 
 
@@ -202,11 +269,16 @@ def nash_stability_score(
     return round(max(0.0, min(100.0, score)), 1)
 
 
-def _normalize_payoffs(raw: Any) -> list[list[tuple[float, float]]]:
+def _normalize_payoffs(
+    raw: Any,
+    *,
+    fallback: list[list[tuple[float, float]]] | None = None,
+) -> list[list[tuple[float, float]]]:
     """Accept nested lists of [r,c] pairs or tuples."""
+    default = fallback if fallback is not None else _DEFAULT_2X2
     out: list[list[tuple[float, float]]] = []
     if not isinstance(raw, list):
-        return copy.deepcopy(_DEFAULT_2X2)
+        return copy.deepcopy(default)
     for row in raw:
         if not isinstance(row, list):
             continue
@@ -218,7 +290,62 @@ def _normalize_payoffs(raw: Any) -> list[list[tuple[float, float]]]:
                 out_row.append((0.0, 0.0))
         if out_row:
             out.append(out_row)
-    return out if out else copy.deepcopy(_DEFAULT_2X2)
+    return out if out else copy.deepcopy(default)
+
+
+def bloc_ladder_should_present(
+    *,
+    eligible: bool,
+    keyword_hits: int,
+    gt_scores: dict[str, float],
+    det_band: str,
+    nash_band: str,
+    entity_boost: float = 0.0,
+) -> tuple[bool, str]:
+    """
+    Only surface 3×3 bloc-ladder results when live conditions look like a
+    contested two-bloc theater — not quiet baseline or empty feeds.
+
+    Returns (present, reason_code).
+    """
+    if not bloc_ladder_enabled():
+        return False, "ladder_disabled"
+    if not eligible:
+        return False, "not_bloc_theater"
+
+    max_gt = max(gt_scores.values()) if gt_scores else 0.0
+    has_gt = bool(gt_scores) and max_gt >= 0.28
+    strong_gt = max_gt >= 0.45
+    has_feed = keyword_hits >= 2
+    strong_feed = keyword_hits >= 4
+    has_entity = entity_boost >= 1.5
+    stressed = det_band in {"fragile", "contested"} or nash_band in {"watch", "unstable"}
+
+    # Strong single signal is enough; otherwise need two independent cues.
+    if strong_gt or strong_feed:
+        parts = []
+        if strong_gt:
+            parts.append("elevated_gt")
+        if strong_feed:
+            parts.append("feed_heat")
+        if stressed:
+            parts.append("stressed_posture")
+        return True, "+".join(parts) or "strong_signal"
+
+    cues = sum([has_gt, has_feed, has_entity, stressed and (has_gt or has_feed)])
+    if cues >= 2:
+        parts = []
+        if has_gt:
+            parts.append("gt_signal")
+        if has_feed:
+            parts.append("feed_hits")
+        if has_entity:
+            parts.append("entity_links")
+        if stressed:
+            parts.append("stressed_posture")
+        return True, "+".join(parts)
+
+    return False, "insufficient_bloc_conditions"
 
 
 # ---------------------------------------------------------------------------
@@ -315,12 +442,22 @@ def infer_current_strategies(
     gt_scores: dict[str, float],
     keyword_hits: int,
 ) -> tuple[int, int]:
-    """Heuristic: high risk / feed heat → escalate (strategy index 1)."""
+    """Map live heat onto strategy indices (2×2 or 3×3 ladder)."""
     max_gt = max(gt_scores.values()) if gt_scores else 0.0
-    escalate = max_gt >= 0.45 or keyword_hits >= 4
-    idx = 1 if escalate else 0
     rows = max(1, len(payoffs))
     cols = max(1, len(payoffs[0]) if payoffs else 1)
+
+    if rows >= 3 and cols >= 3:
+        # D=0, C=1, P=2
+        if max_gt >= 0.55 or keyword_hits >= 6:
+            idx = 2
+        elif max_gt >= 0.35 or keyword_hits >= 3:
+            idx = 1
+        else:
+            idx = 0
+    else:
+        idx = 1 if (max_gt >= 0.45 or keyword_hits >= 4) else 0
+
     return (min(idx, rows - 1), min(idx, cols - 1))
 
 
@@ -379,7 +516,30 @@ def _load() -> None:
     _save()
 
 
+def _ensure_bloc_ladder_fields(fp: dict[str, Any]) -> dict[str, Any]:
+    """Backfill 3×3 fields on older persisted flashpoints."""
+    fp_id = str(fp.get("id") or "")
+    if "bloc_ladder_eligible" not in fp:
+        fp["bloc_ladder_eligible"] = fp_id in _BLOC_LADDER_FLASHPOINT_IDS or bool(
+            fp.get("bloc_ladder")
+        )
+    if not fp.get("payoffs_3x3"):
+        fp["payoffs_3x3"] = copy.deepcopy(_DEFAULT_3X3)
+    return fp
+
+
 _load()
+# One-shot backfill for existing on-disk presets
+with _lock:
+    changed = False
+    for i, fp in enumerate(_flashpoints):
+        before = json.dumps(fp.get("payoffs_3x3"), sort_keys=True) if fp.get("payoffs_3x3") else ""
+        _flashpoints[i] = _ensure_bloc_ladder_fields(fp)
+        after = json.dumps(_flashpoints[i].get("payoffs_3x3"), sort_keys=True) if _flashpoints[i].get("payoffs_3x3") else ""
+        if before != after or "bloc_ladder_eligible" not in fp:
+            changed = True
+    if changed:
+        _save()
 
 
 def list_flashpoints() -> list[dict[str, Any]]:
@@ -408,6 +568,8 @@ def upsert_flashpoint(body: dict[str, Any]) -> dict[str, Any]:
             "row_strategies": ["Cooperate", "Escalate"],
             "col_strategies": ["Cooperate", "Escalate"],
             "payoffs": copy.deepcopy(_DEFAULT_2X2),
+            "payoffs_3x3": copy.deepcopy(_DEFAULT_3X3),
+            "bloc_ladder_eligible": True,
             "gt_regions": [],
             "keywords": [],
             "current_row": 0,
@@ -417,7 +579,7 @@ def upsert_flashpoint(body: dict[str, Any]) -> dict[str, Any]:
         for key in (
             "label", "lat", "lng", "row_actor", "col_actor",
             "row_strategies", "col_strategies", "gt_regions", "keywords",
-            "current_row", "current_col", "locked_strategies",
+            "current_row", "current_col", "locked_strategies", "bloc_ladder_eligible",
         ):
             if key in body and body[key] is not None:
                 base[key] = body[key]
@@ -425,6 +587,13 @@ def upsert_flashpoint(body: dict[str, Any]) -> dict[str, Any]:
             base["payoffs"] = _normalize_payoffs(body["payoffs"])
         else:
             base["payoffs"] = _normalize_payoffs(base.get("payoffs"))
+        if "payoffs_3x3" in body and body["payoffs_3x3"] is not None:
+            base["payoffs_3x3"] = _normalize_payoffs(body["payoffs_3x3"], fallback=_DEFAULT_3X3)
+        else:
+            base["payoffs_3x3"] = _normalize_payoffs(
+                base.get("payoffs_3x3"), fallback=_DEFAULT_3X3
+            )
+        base = _ensure_bloc_ladder_fields(base)
         base["id"] = fp_id
         base["updated_at"] = now
         if existing is None:
@@ -518,6 +687,43 @@ def _entity_boost_for(fp_id: str) -> float:
     return min(12.0, boost)
 
 
+def _matrix_bundle(
+    payoffs: list[list[tuple[float, float]]],
+    *,
+    row_strategies: list[str],
+    col_strategies: list[str],
+    gt_scores: dict[str, float],
+    keyword_hits: int,
+    locked: bool,
+    locked_row: int = 0,
+    locked_col: int = 0,
+) -> dict[str, Any]:
+    eqs = pure_nash_equilibria(payoffs)
+    if locked:
+        cur_r = max(0, min(len(payoffs) - 1, locked_row))
+        cur_c = max(0, min(len(payoffs[0]) - 1 if payoffs else 0, locked_col))
+    else:
+        cur_r, cur_c = infer_current_strategies(payoffs, gt_scores, keyword_hits)
+    nash = nash_stability_score(payoffs, cur_r, cur_c, eqs)
+    arrow: dict[str, Any] = {"from": [cur_r, cur_c], "to": [cur_r, cur_c], "label": "at_play"}
+    if eqs and (cur_r, cur_c) not in eqs:
+        target = min(eqs, key=lambda e: abs(e[0] - cur_r) + abs(e[1] - cur_c))
+        arrow = {"from": [cur_r, cur_c], "to": [target[0], target[1]], "label": "toward_eq"}
+    elif (cur_r, cur_c) in eqs:
+        arrow["label"] = "equilibrium"
+    return {
+        "row_strategies": row_strategies,
+        "col_strategies": col_strategies,
+        "payoffs": [[list(cell) for cell in row] for row in payoffs],
+        "equilibria": [[i, j] for i, j in eqs],
+        "current_row": cur_r,
+        "current_col": cur_c,
+        "nash_score": nash,
+        "nash_band": "stable" if nash >= 70 else ("watch" if nash >= 45 else "unstable"),
+        "arrow": arrow,
+    }
+
+
 def analyze_flashpoint(
     fp: dict[str, Any],
     *,
@@ -525,38 +731,74 @@ def analyze_flashpoint(
     telegram: dict[str, Any] | None = None,
     reddit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Full analysis payload for one flashpoint."""
+    """Full analysis payload for one flashpoint (2×2 always; 3×3 when gated)."""
+    fp = _ensure_bloc_ladder_fields(copy.deepcopy(fp))
     payoffs = _normalize_payoffs(fp.get("payoffs"))
-    eqs = pure_nash_equilibria(payoffs)
     gt_scores = _region_gt_scores(gt_risk, list(fp.get("gt_regions") or []))
     hits = _feed_keyword_hits(telegram, reddit, list(fp.get("keywords") or []))
+    entity_boost = _entity_boost_for(str(fp.get("id") or ""))
 
-    if fp.get("locked_strategies"):
-        cur_r = int(fp.get("current_row") or 0)
-        cur_c = int(fp.get("current_col") or 0)
-    else:
-        cur_r, cur_c = infer_current_strategies(payoffs, gt_scores, hits)
-
-    nash = nash_stability_score(payoffs, cur_r, cur_c, eqs)
-    det = deterrence_strength(
-        nash_score=nash,
+    primary = _matrix_bundle(
+        payoffs,
+        row_strategies=list(fp.get("row_strategies") or ["Status Quo", "Escalate"]),
+        col_strategies=list(fp.get("col_strategies") or ["Status Quo", "Escalate"]),
         gt_scores=gt_scores,
         keyword_hits=hits,
-        entity_boost=_entity_boost_for(str(fp.get("id") or "")),
+        locked=bool(fp.get("locked_strategies")),
+        locked_row=int(fp.get("current_row") or 0),
+        locked_col=int(fp.get("current_col") or 0),
     )
 
-    # Arrow: preferred move from current toward nearest equilibrium
-    arrow = {"from": [cur_r, cur_c], "to": [cur_r, cur_c], "label": "at_play"}
-    if eqs and (cur_r, cur_c) not in eqs:
-        # Pick equilibrium minimizing strategy distance
-        target = min(eqs, key=lambda e: abs(e[0] - cur_r) + abs(e[1] - cur_c))
-        arrow = {
-            "from": [cur_r, cur_c],
-            "to": [target[0], target[1]],
-            "label": "toward_eq",
-        }
-    elif (cur_r, cur_c) in eqs:
-        arrow["label"] = "equilibrium"
+    det = deterrence_strength(
+        nash_score=float(primary["nash_score"]),
+        gt_scores=gt_scores,
+        keyword_hits=hits,
+        entity_boost=entity_boost,
+    )
+
+    eligible = bool(fp.get("bloc_ladder_eligible"))
+    present, present_reason = bloc_ladder_should_present(
+        eligible=eligible,
+        keyword_hits=hits,
+        gt_scores=gt_scores,
+        det_band=str(det.get("band") or ""),
+        nash_band=str(primary.get("nash_band") or ""),
+        entity_boost=entity_boost,
+    )
+
+    bloc_ladder: dict[str, Any] = {
+        "eligible": eligible,
+        "presented": False,
+        "reason": present_reason,
+        "strategies": list(_BLOC_LADDER_STRATEGIES),
+        "strategy_labels": dict(_BLOC_LADDER_LABELS),
+        "disclaimer": (
+            "Stylized 3×3 bloc-vs-bloc ladder (D/C/P). Pure-strategy Nash of "
+            "illustrative incentives — not a forecast of world politics."
+        ),
+    }
+    if present:
+        pay3 = _normalize_payoffs(fp.get("payoffs_3x3"), fallback=_DEFAULT_3X3)
+        # Ensure square 3×3
+        if len(pay3) < 3 or any(len(r) < 3 for r in pay3):
+            pay3 = copy.deepcopy(_DEFAULT_3X3)
+        labels = [f"{s} · {_BLOC_LADDER_LABELS[s]}" for s in _BLOC_LADDER_STRATEGIES]
+        ladder = _matrix_bundle(
+            pay3,
+            row_strategies=labels,
+            col_strategies=labels,
+            gt_scores=gt_scores,
+            keyword_hits=hits,
+            locked=False,
+        )
+        bloc_ladder.update(
+            {
+                "presented": True,
+                "row_actor": fp.get("row_actor"),
+                "col_actor": fp.get("col_actor"),
+                **ladder,
+            }
+        )
 
     return {
         "id": fp.get("id"),
@@ -565,19 +807,20 @@ def analyze_flashpoint(
         "lng": fp.get("lng"),
         "row_actor": fp.get("row_actor"),
         "col_actor": fp.get("col_actor"),
-        "row_strategies": list(fp.get("row_strategies") or []),
-        "col_strategies": list(fp.get("col_strategies") or []),
-        "payoffs": [[list(cell) for cell in row] for row in payoffs],
-        "equilibria": [[i, j] for i, j in eqs],
-        "current_row": cur_r,
-        "current_col": cur_c,
+        "row_strategies": primary["row_strategies"],
+        "col_strategies": primary["col_strategies"],
+        "payoffs": primary["payoffs"],
+        "equilibria": primary["equilibria"],
+        "current_row": primary["current_row"],
+        "current_col": primary["current_col"],
         "locked_strategies": bool(fp.get("locked_strategies")),
-        "nash_score": nash,
-        "nash_band": "stable" if nash >= 70 else ("watch" if nash >= 45 else "unstable"),
+        "nash_score": primary["nash_score"],
+        "nash_band": primary["nash_band"],
         "deterrence": det,
         "gt_scores": gt_scores,
         "keyword_hits": hits,
-        "arrow": arrow,
+        "arrow": primary["arrow"],
+        "bloc_ladder": bloc_ladder,
         "source": fp.get("source"),
         "updated_at": fp.get("updated_at"),
     }
@@ -606,6 +849,9 @@ def build_strategic_analysis(
         for fp in fps
     ]
     analyzed.sort(key=lambda a: (a.get("deterrence") or {}).get("score", 50))
+    ladders_on = sum(
+        1 for a in analyzed if (a.get("bloc_ladder") or {}).get("presented")
+    )
     return {
         "enabled": True,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -616,4 +862,6 @@ def build_strategic_analysis(
             1 for a in analyzed if (a.get("deterrence") or {}).get("band") == "fragile"
         ),
         "unstable_count": sum(1 for a in analyzed if a.get("nash_band") == "unstable"),
+        "bloc_ladders_presented": ladders_on,
+        "bloc_ladder_enabled": bloc_ladder_enabled(),
     }

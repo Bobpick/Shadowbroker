@@ -17,6 +17,26 @@ export interface StrategicArrow {
   label: string;
 }
 
+export interface BlocLadderMatrix {
+  eligible?: boolean;
+  presented?: boolean;
+  reason?: string;
+  strategies?: string[];
+  strategy_labels?: Record<string, string>;
+  disclaimer?: string;
+  row_actor?: string;
+  col_actor?: string;
+  row_strategies?: string[];
+  col_strategies?: string[];
+  payoffs?: number[][][];
+  equilibria?: number[][];
+  current_row?: number;
+  current_col?: number;
+  nash_score?: number;
+  nash_band?: string;
+  arrow?: StrategicArrow;
+}
+
 export interface StrategicFlashpoint {
   id: string;
   label: string;
@@ -37,6 +57,8 @@ export interface StrategicFlashpoint {
   keyword_hits?: number;
   arrow?: StrategicArrow;
   gt_scores?: Record<string, number>;
+  /** 3×3 D/C/P ladder — only when presented=true */
+  bloc_ladder?: BlocLadderMatrix | null;
 }
 
 export interface StrategicAnalysisPayload {

@@ -238,7 +238,9 @@
     "deltaNever": "No report generated yet on this node.",
     "preview": "PREVIEW",
     "generateNow": "GENERATE NOW",
-    "hint": "Click a flashpoint to fly the map. Green matrix cells are pure Nash equilibria; ringed cell is inferred current play from GT risk + feed keywords. Entity links via POST /api/analytics/strategic/entity-hint."
+    "hint": "Click a flashpoint to fly the map. Green matrix cells are pure Nash equilibria; ringed cell is inferred current play from GT risk + feed keywords. Entity links via POST /api/analytics/strategic/entity-hint.",
+    "blocLadderDisclaimer": "Stylized 3×3 bloc ladder (D=de-escalate, C=compete, P=pressure). Shown only when live GT/feed conditions look like a contested two-bloc theater — not a world-politics forecast.",
+    "blocLadderHidden": "3×3 ladder available for this theater but hidden ({reason}). Needs elevated GT risk, feed hits, or stressed posture."
   },
   "gtUsCities": {
     "title": "US PROTEST WATCH",

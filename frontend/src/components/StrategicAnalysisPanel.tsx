@@ -26,32 +26,63 @@ interface Props {
   onFlyTo?: (lat: number, lng: number) => void;
 }
 
-function PayoffMatrix({ fp }: { fp: StrategicFlashpoint }) {
-  const payoffs = fp.payoffs || [];
-  const rowS = fp.row_strategies || ['C', 'D'];
-  const colS = fp.col_strategies || ['C', 'D'];
-  const eqs = new Set((fp.equilibria || []).map(([r, c]) => `${r},${c}`));
-  const cur = `${fp.current_row ?? 0},${fp.current_col ?? 0}`;
+function PayoffMatrix({
+  rowActor,
+  colActor,
+  rowStrategies,
+  colStrategies,
+  payoffs,
+  equilibria,
+  currentRow,
+  currentCol,
+  arrow,
+  title,
+  compact,
+}: {
+  rowActor?: string;
+  colActor?: string;
+  rowStrategies?: string[];
+  colStrategies?: string[];
+  payoffs?: number[][][];
+  equilibria?: number[][];
+  currentRow?: number;
+  currentCol?: number;
+  arrow?: StrategicFlashpoint['arrow'];
+  title?: string;
+  compact?: boolean;
+}) {
+  const matrix = payoffs || [];
+  const rowS = rowStrategies || ['C', 'D'];
+  const colS = colStrategies || ['C', 'D'];
+  const eqs = new Set((equilibria || []).map(([r, c]) => `${r},${c}`));
+  const cur = `${currentRow ?? 0},${currentCol ?? 0}`;
+  const cellPad = compact ? 'p-0.5' : 'p-1';
+  const font = compact ? 'text-[9px]' : 'text-[10px]';
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-[10px] font-mono">
+      {title ? (
+        <div className="mb-1 text-[9px] font-mono font-bold uppercase tracking-wider text-cyan-300/90">
+          {title}
+        </div>
+      ) : null}
+      <table className={`w-full border-collapse font-mono ${font}`}>
         <thead>
           <tr>
-            <th className="p-1 text-left text-amber-600/70">
-              {fp.row_actor || 'Row'} \\ {fp.col_actor || 'Col'}
+            <th className={`${cellPad} text-left text-amber-600/70`}>
+              {rowActor || 'Row'} \\ {colActor || 'Col'}
             </th>
             {colS.map((c) => (
-              <th key={c} className="p-1 text-amber-500/80 font-normal">
+              <th key={c} className={`${cellPad} text-amber-500/80 font-normal`}>
                 {c}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {payoffs.map((row, ri) => (
+          {matrix.map((row, ri) => (
             <tr key={ri}>
-              <td className="p-1 text-amber-500/80">{rowS[ri] ?? ri}</td>
+              <td className={`${cellPad} text-amber-500/80`}>{rowS[ri] ?? ri}</td>
               {row.map((cell, ci) => {
                 const key = `${ri},${ci}`;
                 const isEq = eqs.has(key);
@@ -59,7 +90,7 @@ function PayoffMatrix({ fp }: { fp: StrategicFlashpoint }) {
                 return (
                   <td
                     key={ci}
-                    className={`border p-1 text-center ${
+                    className={`border ${cellPad} text-center ${
                       isEq
                         ? 'border-emerald-500/60 bg-emerald-950/40 text-emerald-100'
                         : 'border-amber-800/35 text-amber-100/85'
@@ -83,10 +114,9 @@ function PayoffMatrix({ fp }: { fp: StrategicFlashpoint }) {
         </tbody>
       </table>
       <div className="mt-1 text-[9px] font-mono text-amber-600/65">
-        ring = current · green cell = pure Nash · arrow:{' '}
-        {fp.arrow?.label || '—'}
-        {fp.arrow && fp.arrow.label === 'toward_eq'
-          ? ` (${fp.arrow.from?.[0]},${fp.arrow.from?.[1]} → ${fp.arrow.to?.[0]},${fp.arrow.to?.[1]})`
+        ring = current · green = pure Nash · arrow: {arrow?.label || '—'}
+        {arrow && arrow.label === 'toward_eq'
+          ? ` (${arrow.from?.[0]},${arrow.from?.[1]} → ${arrow.to?.[0]},${arrow.to?.[1]})`
           : ''}
       </div>
     </div>
@@ -251,7 +281,50 @@ export default function StrategicAnalysisPanel({
                   </div>
                 </div>
 
-                <PayoffMatrix fp={selected} />
+                <PayoffMatrix
+                  rowActor={selected.row_actor}
+                  colActor={selected.col_actor}
+                  rowStrategies={selected.row_strategies}
+                  colStrategies={selected.col_strategies}
+                  payoffs={selected.payoffs}
+                  equilibria={selected.equilibria}
+                  currentRow={selected.current_row}
+                  currentCol={selected.current_col}
+                  arrow={selected.arrow}
+                  title="2×2 primary"
+                />
+
+                {selected.bloc_ladder?.presented ? (
+                  <div className="mt-2 border-t border-amber-800/30 pt-2">
+                    <PayoffMatrix
+                      rowActor={selected.bloc_ladder.row_actor || selected.row_actor}
+                      colActor={selected.bloc_ladder.col_actor || selected.col_actor}
+                      rowStrategies={selected.bloc_ladder.row_strategies}
+                      colStrategies={selected.bloc_ladder.col_strategies}
+                      payoffs={selected.bloc_ladder.payoffs}
+                      equilibria={selected.bloc_ladder.equilibria}
+                      currentRow={selected.bloc_ladder.current_row}
+                      currentCol={selected.bloc_ladder.current_col}
+                      arrow={selected.bloc_ladder.arrow}
+                      title={`3×3 bloc ladder · Nash ${
+                        selected.bloc_ladder.nash_score?.toFixed?.(0) ??
+                        selected.bloc_ladder.nash_score
+                      } · ${selected.bloc_ladder.nash_band} · ${selected.bloc_ladder.reason || ''}`}
+                      compact
+                    />
+                    <p className="mt-1 text-[8px] font-mono leading-snug text-amber-600/55">
+                      {selected.bloc_ladder.disclaimer ||
+                        t('strategicAnalysis.blocLadderDisclaimer')}
+                    </p>
+                  </div>
+                ) : selected.bloc_ladder?.eligible ? (
+                  <p className="mt-2 text-[8px] font-mono text-amber-700/50">
+                    {t('strategicAnalysis.blocLadderHidden').replace(
+                      '{reason}',
+                      selected.bloc_ladder.reason || 'insufficient_bloc_conditions',
+                    )}
+                  </p>
+                ) : null}
               </div>
             )}
 
