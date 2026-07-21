@@ -413,18 +413,7 @@ def compute_deltas(
     us_cities = (gt_risk or {}).get("us_cities") or {}
     cities = list(us_cities.get("cities") or [])[:8]
 
-    tg_posts = len((telegram or {}).get("posts") or [])
-    rd_posts = len((reddit or {}).get("posts") or [])
-    gt_feats = len(((gt_risk or {}).get("heatmap") or {}).get("features") or [])
-    feed_health = {
-        "telegram_posts": tg_posts,
-        "reddit_posts": rd_posts,
-        "gt_features": gt_feats,
-        "gt_enabled": bool((gt_risk or {}).get("enabled")),
-        "telegram_status": "ok" if tg_posts > 0 else "sparse",
-        "reddit_status": "ok" if rd_posts > 0 else "sparse",
-        "gt_status": "ok" if gt_feats > 0 else "sparse",
-    }
+    feed_health = _build_feed_health(gt_risk, telegram, reddit)
 
     has_signal = bool(shifts[:5] or fp_shifts or any(c.get("ignition") for c in shifts))
 
@@ -444,7 +433,150 @@ def compute_deltas(
     }
 
 
-# ── Briefing assembly ───────────────────────────────────────────────────────
+# ── Feed health + live snapshot helpers ─────────────────────────────────────
+
+
+def _feed_post_count(payload: dict[str, Any] | None) -> int:
+    """Prefer explicit total, fall back to posts list length."""
+    if not isinstance(payload, dict):
+        return 0
+    try:
+        total = int(payload.get("total") or 0)
+    except (TypeError, ValueError):
+        total = 0
+    posts = payload.get("posts") or []
+    n_posts = len(posts) if isinstance(posts, list) else 0
+    return max(total, n_posts)
+
+
+def _feed_status(count: int, *, ok_at: int = 1, healthy_at: int = 20) -> str:
+    if count >= healthy_at:
+        return "ok"
+    if count >= ok_at:
+        return "limited"
+    return "sparse"
+
+
+def _build_feed_health(
+    gt_risk: dict[str, Any] | None,
+    telegram: dict[str, Any] | None,
+    reddit: dict[str, Any] | None,
+) -> dict[str, Any]:
+    tg = telegram if isinstance(telegram, dict) else {}
+    rd = reddit if isinstance(reddit, dict) else {}
+    gt = gt_risk if isinstance(gt_risk, dict) else {}
+
+    tg_posts = _feed_post_count(tg)
+    rd_posts = _feed_post_count(rd)
+    try:
+        tg_geo = int(tg.get("geolocated") or 0)
+    except (TypeError, ValueError):
+        tg_geo = 0
+    try:
+        rd_geo = int(rd.get("geolocated") or 0)
+    except (TypeError, ValueError):
+        rd_geo = 0
+
+    channels = tg.get("channels") or []
+    subs = rd.get("subreddits") or []
+    n_channels = len(channels) if isinstance(channels, list) else 0
+    n_subs = len(subs) if isinstance(subs, list) else 0
+
+    gt_feats = len((gt.get("heatmap") or {}).get("features") or [])
+    try:
+        gt_regions = int(gt.get("regions") or gt_feats or 0)
+    except (TypeError, ValueError):
+        gt_regions = gt_feats
+    try:
+        gt_processed = int(gt.get("processed") or 0)
+    except (TypeError, ValueError):
+        gt_processed = 0
+
+    return {
+        "telegram_posts": tg_posts,
+        "telegram_geolocated": tg_geo,
+        "telegram_channels": n_channels,
+        "telegram_status": _feed_status(tg_posts, healthy_at=15),
+        "telegram_timestamp": tg.get("timestamp"),
+        "reddit_posts": rd_posts,
+        "reddit_geolocated": rd_geo,
+        "reddit_subreddits": n_subs,
+        "reddit_status": _feed_status(rd_posts, healthy_at=20),
+        "reddit_timestamp": rd.get("timestamp"),
+        "gt_features": max(gt_feats, gt_regions),
+        "gt_processed": gt_processed,
+        "gt_enabled": bool(gt.get("enabled")),
+        "gt_status": "ok" if gt_feats > 0 or gt_regions > 0 else "sparse",
+        "gt_timestamp": gt.get("timestamp"),
+    }
+
+
+def _http_get_json(url: str, *, timeout: float = 45.0) -> dict[str, Any] | None:
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Shadowbroker-DeltaReport/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else None
+    except Exception as exc:
+        logger.debug("feed snapshot HTTP fetch failed %s: %s", url, exc)
+        return None
+
+
+def _snapshot_intel_layers(
+    *,
+    gt_risk: dict[str, Any] | None = None,
+    telegram: dict[str, Any] | None = None,
+    reddit: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """
+    Load GT + Telegram + Reddit for reporting.
+
+    Prefer the live in-process store (API worker). If empty (e.g. one-shot
+    docker exec script), fall back to localhost /api/live-data.
+    """
+    store_gt: dict[str, Any] = {}
+    store_tg: dict[str, Any] = {}
+    store_rd: dict[str, Any] = {}
+    try:
+        from services.fetchers._store import latest_data
+
+        store_gt = dict(latest_data.get("gt_risk") or {})
+        store_tg = dict(latest_data.get("telegram_osint") or {})
+        store_rd = dict(latest_data.get("reddit_osint") or {})
+    except Exception:
+        pass
+
+    out_gt = gt_risk if isinstance(gt_risk, dict) and gt_risk else store_gt
+    out_tg = telegram if isinstance(telegram, dict) and telegram else store_tg
+    out_rd = reddit if isinstance(reddit, dict) and reddit else store_rd
+
+    need_http = (
+        _feed_post_count(out_tg) == 0
+        or _feed_post_count(out_rd) == 0
+        or not ((out_gt.get("heatmap") or {}).get("features"))
+    )
+    if need_http:
+        live = None
+        for base in (
+            "http://127.0.0.1:8000/api/live-data",
+            "http://127.0.0.1:3050/api/live-data",
+            "http://localhost:8000/api/live-data",
+        ):
+            live = _http_get_json(base)
+            if live:
+                break
+        if live:
+            if _feed_post_count(out_tg) == 0 and isinstance(live.get("telegram_osint"), dict):
+                out_tg = dict(live["telegram_osint"])
+            if _feed_post_count(out_rd) == 0 and isinstance(live.get("reddit_osint"), dict):
+                out_rd = dict(live["reddit_osint"])
+            if not ((out_gt.get("heatmap") or {}).get("features")) and isinstance(
+                live.get("gt_risk"), dict
+            ):
+                out_gt = dict(live["gt_risk"])
+
+    return out_gt or {}, out_tg or {}, out_rd or {}
 
 
 def _global_risk_score(delta: dict[str, Any]) -> float:
@@ -1216,18 +1348,33 @@ def render_html_dashboard(
         for f in emerging
     ) or '<div class="muted">No elevated flashpoints</div>'
 
-    def feed_row(name: str, status: str, count: Any) -> str:
-        ok = status == "ok"
+    def feed_row(name: str, status: str, detail: str) -> str:
+        st = str(status or "sparse")
+        cls = "ok" if st == "ok" else ("mid" if st == "limited" else "bad")
         return (
-            f'<div class="feed-row"><span class="feed-dot {"ok" if ok else "bad"}"></span>'
+            f'<div class="feed-row"><span class="feed-dot {cls}"></span>'
             f"<span>{_esc(name)}</span>"
-            f'<span class="muted">{_esc(status)} · {_esc(count)}</span></div>'
+            f'<span class="muted">{_esc(st)} · {_esc(detail)}</span></div>'
         )
 
+    tg_detail = (
+        f"{int(feed.get('telegram_posts') or 0)} posts"
+        f" · {int(feed.get('telegram_geolocated') or 0)} geo"
+        f" · {int(feed.get('telegram_channels') or 0)} ch"
+    )
+    rd_detail = (
+        f"{int(feed.get('reddit_posts') or 0)} posts"
+        f" · {int(feed.get('reddit_geolocated') or 0)} geo"
+        f" · {int(feed.get('reddit_subreddits') or 0)} subs"
+    )
+    gt_detail = (
+        f"{int(feed.get('gt_features') or 0)} regions"
+        f" · {int(feed.get('gt_processed') or 0)} updates"
+    )
     feed_html = (
-        feed_row("Telegram OSINT", str(feed.get("telegram_status") or "sparse"), feed.get("telegram_posts", 0))
-        + feed_row("Reddit OSINT", str(feed.get("reddit_status") or "sparse"), feed.get("reddit_posts", 0))
-        + feed_row("GT heatmap", str(feed.get("gt_status") or "sparse"), feed.get("gt_features", 0))
+        feed_row("Telegram OSINT", str(feed.get("telegram_status") or "sparse"), tg_detail)
+        + feed_row("Reddit OSINT", str(feed.get("reddit_status") or "sparse"), rd_detail)
+        + feed_row("GT heatmap", str(feed.get("gt_status") or "sparse"), gt_detail)
     )
 
     cards = []
@@ -1369,8 +1516,9 @@ body {{
 .exec {{ color: #cbd5e1; font-size: 0.85rem; line-height: 1.55; }}
 .map-wrap {{ margin-top: 8px; border: 1px solid var(--border); background: #0a1020; padding: 6px; }}
 .feed-row {{ display: flex; align-items: center; gap: 8px; padding: 3px 0; }}
-.feed-dot {{ width: 7px; height: 7px; border-radius: 50%; background: #64748b; }}
+.feed-dot {{ width: 7px; height: 7px; border-radius: 50%; background: #64748b; flex-shrink: 0; }}
 .feed-dot.ok {{ background: var(--green); box-shadow: 0 0 6px #22c55e88; }}
+.feed-dot.mid {{ background: var(--yellow); box-shadow: 0 0 6px #eab30866; }}
 .feed-dot.bad {{ background: var(--orange); }}
 .footer {{ margin-top: 16px; color: var(--muted); font-size: 0.68rem; letter-spacing: 0.04em; }}
 .stat-row {{ display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0; }}
@@ -1571,6 +1719,8 @@ def generate_delta_report(
     force: bool = False,
     preview: bool = False,
     gt_risk: dict[str, Any] | None = None,
+    telegram: dict[str, Any] | None = None,
+    reddit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a delta brief. Skip write/send if no meaningful change (unless force/preview)."""
     global _last_run_iso, _last_report_meta
@@ -1578,23 +1728,9 @@ def generate_delta_report(
     if not delta_report_enabled() and not force and not preview:
         return {"enabled": False, "skipped": True, "reason": "disabled"}
 
-    if gt_risk is None:
-        try:
-            from services.fetchers._store import latest_data
-
-            gt_risk = dict(latest_data.get("gt_risk") or {})
-        except Exception:
-            gt_risk = {}
-
-    telegram = None
-    reddit = None
-    try:
-        from services.fetchers._store import latest_data as _ld
-
-        telegram = dict(_ld.get("telegram_osint") or {})
-        reddit = dict(_ld.get("reddit_osint") or {})
-    except Exception:
-        pass
+    gt_risk, telegram, reddit = _snapshot_intel_layers(
+        gt_risk=gt_risk, telegram=telegram, reddit=reddit
+    )
 
     state = _load_state()
     previous = state.get("last_snapshot")
