@@ -188,10 +188,10 @@ def stability_bar(score_0_100: float, width: int = 24) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
-def sparkline(values: list[float], width: int = 8) -> str:
-    """Tiny unicode sparkline from a series of 0–100 scores."""
+def sparkline(values: list[float], width: int = 30) -> str:
+    """Tiny unicode sparkline from a series of 0–100 scores (default ~30 cycles)."""
     if not values:
-        return "·" * width
+        return "·" * min(8, width)
     blocks = "▁▂▃▄▅▆▇█"
     series = values[-width:]
     lo, hi = min(series), max(series)
@@ -201,6 +201,37 @@ def sparkline(values: list[float], width: int = 8) -> str:
         idx = int(round((v - lo) / span * (len(blocks) - 1)))
         out.append(blocks[max(0, min(len(blocks) - 1, idx))])
     return "".join(out)
+
+
+def confidence_dots(level: str) -> str:
+    """●●●○○ style data-quality indicator."""
+    filled = {"High": 5, "Medium": 3, "Low": 1}.get(str(level), 2)
+    filled = max(0, min(5, filled))
+    return "●" * filled + "○" * (5 - filled)
+
+
+def alert_icon(level: str) -> str:
+    return {
+        "GREEN": "✓",
+        "YELLOW": "▲",
+        "ORANGE": "⚠",
+        "RED": "⚠",
+        "BLACK": "⛔",
+    }.get(str(level), "·")
+
+
+def change_badge(delta: float, *, first_run: bool = False) -> str:
+    if first_run:
+        return "NEW"
+    if abs(delta) < 0.5:
+        return "—"
+    sign = "▲" if delta > 0 else "▼"
+    return f"{sign} {delta:+.0f}"
+
+
+def progress_bar_ascii(score_0_100: float, width: int = 20) -> str:
+    filled = int(round((max(0.0, min(100.0, score_0_100)) / 100.0) * width))
+    return "█" * filled + "░" * (width - filled)
 
 
 def trend_arrows(delta: float, *, step: float = 5.0) -> str:
@@ -285,6 +316,9 @@ def _flashpoint_priority_key(fp: dict[str, Any]) -> tuple:
 def compute_deltas(
     gt_risk: dict[str, Any] | None,
     previous_snapshot: dict[str, Any] | None,
+    *,
+    telegram: dict[str, Any] | None = None,
+    reddit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compare current GT heatmap + strategic analysis to last report snapshot."""
     threshold = delta_threshold()
@@ -316,17 +350,23 @@ def compute_deltas(
 
     from analytics.nash_deterrence import build_strategic_analysis
 
-    strategic = build_strategic_analysis(gt_risk=gt_risk)
+    strategic = build_strategic_analysis(
+        gt_risk=gt_risk, telegram=telegram, reddit=reddit
+    )
     prev_fp = {
         f.get("id"): f
         for f in ((previous_snapshot or {}).get("flashpoints") or [])
         if isinstance(f, dict)
     }
-    # Historical series per flashpoint from prior snapshot
-    history_map: dict[str, list[float]] = dict((previous_snapshot or {}).get("det_history") or {})
+    # ~30 samples (~days if daily; cycles if 6h reports)
+    history_map: dict[str, list[float]] = {
+        str(k): list(v) if isinstance(v, list) else []
+        for k, v in dict((previous_snapshot or {}).get("det_history") or {}).items()
+    }
 
     enriched_fps: list[dict[str, Any]] = []
     fp_shifts: list[dict[str, Any]] = []
+    first_run = not previous_snapshot
     for fp in strategic.get("flashpoints") or []:
         pid = str(fp.get("id") or "")
         old = prev_fp.get(pid) or {}
@@ -338,7 +378,7 @@ def compute_deltas(
         nash_delta = round(new_nash - old_nash, 1)
         series = list(history_map.get(pid) or [])
         series.append(new_det)
-        series = series[-8:]
+        series = series[-30:]
         history_map[pid] = series
         level = alert_level(new_det, new_nash, str(fp.get("nash_band") or ""))
         conf = confidence_word(
@@ -355,9 +395,12 @@ def compute_deltas(
             "alert_level": level,
             "alert_label": alert_label(level),
             "confidence": conf,
+            "confidence_dots": confidence_dots(conf),
+            "alert_icon": alert_icon(level),
+            "change_badge": change_badge(det_delta, first_run=first_run or not old),
             "drivers": _fp_drivers(fp, old),
             "det_history": series,
-            "sparkline": sparkline(series),
+            "sparkline": sparkline(series, width=30),
             "theater": _THEATER_MAP.get(pid, "Other"),
         }
         enriched_fps.append(row)
@@ -370,8 +413,20 @@ def compute_deltas(
     us_cities = (gt_risk or {}).get("us_cities") or {}
     cities = list(us_cities.get("cities") or [])[:8]
 
+    tg_posts = len((telegram or {}).get("posts") or [])
+    rd_posts = len((reddit or {}).get("posts") or [])
+    gt_feats = len(((gt_risk or {}).get("heatmap") or {}).get("features") or [])
+    feed_health = {
+        "telegram_posts": tg_posts,
+        "reddit_posts": rd_posts,
+        "gt_features": gt_feats,
+        "gt_enabled": bool((gt_risk or {}).get("enabled")),
+        "telegram_status": "ok" if tg_posts > 0 else "sparse",
+        "reddit_status": "ok" if rd_posts > 0 else "sparse",
+        "gt_status": "ok" if gt_feats > 0 else "sparse",
+    }
+
     has_signal = bool(shifts[:5] or fp_shifts or any(c.get("ignition") for c in shifts))
-    first_run = not previous_snapshot
 
     return {
         "has_meaningful_change": has_signal or first_run,
@@ -385,6 +440,7 @@ def compute_deltas(
         "threshold": threshold,
         "det_history": history_map,
         "previous_generated_at": (previous_snapshot or {}).get("generated_at"),
+        "feed_health": feed_health,
     }
 
 
@@ -626,15 +682,22 @@ def _flashpoint_watch(delta: dict[str, Any]) -> list[str]:
         prev = float(f.get("prev_deterrence") or det)
         nash = float(f.get("nash_score") or 0)
         d_det = float(f.get("det_delta") or 0)
+        badge = f.get("change_badge") or change_badge(d_det, first_run=bool(delta.get("first_run")))
+        icon = f.get("alert_icon") or alert_icon(str(f.get("alert_level") or ""))
+        dots = f.get("confidence_dots") or confidence_dots(str(f.get("confidence") or "Low"))
         lines += [
-            f"Priority {i}  ·  {f.get('label')}",
+            f"Priority {i}  ·  {icon} {f.get('label')}  [{badge}]",
             "─" * 40,
             f"Alert:        {f.get('alert_level')} — {f.get('alert_label')}",
-            f"Deterrence:   {prev:.0f} → {det:.0f}  {trend_arrows(d_det)}{abs(d_det):.0f}"
-            if not delta.get("first_run")
-            else f"Deterrence:   {det:.0f}  (baseline)",
-            f"Nash:         {nash:.0f} ({f.get('nash_band')})  conf={f.get('confidence')}",
-            f"Trend:        {f.get('sparkline')}  (recent cycles)",
+            f"Deterrence:   {progress_bar_ascii(det)} {det:.0f}"
+            + (
+                f"  ({prev:.0f} → {det:.0f}  {trend_arrows(d_det)}{abs(d_det):.0f})"
+                if not delta.get("first_run")
+                else "  (baseline)"
+            ),
+            f"Nash:         {progress_bar_ascii(nash)} {nash:.0f} ({f.get('nash_band')})",
+            f"Confidence:   {dots}  {f.get('confidence')}",
+            f"Trend (30):   {f.get('sparkline')}",
             "",
             "Primary Drivers",
         ]
@@ -864,21 +927,428 @@ def render_markdown(delta: dict[str, Any], *, generated_at: str) -> str:
     return "\n".join(sections)
 
 
-def render_html(markdown_body: str, *, title: str) -> str:
-    body = (
-        markdown_body.replace("&", "&amp;")
+def _esc(s: Any) -> str:
+    return (
+        str(s if s is not None else "")
+        .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
-        .replace("\n", "<br>\n")
+        .replace('"', "&quot;")
     )
+
+
+def _risk_banner_class(word: str) -> str:
+    return {
+        "LOW": "banner-low",
+        "GUARDED": "banner-guarded",
+        "ELEVATED": "banner-elevated",
+        "HIGH": "banner-high",
+        "CRITICAL": "banner-critical",
+    }.get(word, "banner-elevated")
+
+
+def _level_class(level: str) -> str:
+    return {
+        "GREEN": "lvl-green",
+        "YELLOW": "lvl-yellow",
+        "ORANGE": "lvl-orange",
+        "RED": "lvl-red",
+        "BLACK": "lvl-black",
+    }.get(str(level), "lvl-yellow")
+
+
+def _badge_class(badge: str) -> str:
+    if badge.startswith("▲") or "+" in badge:
+        return "badge-up"
+    if badge.startswith("▼") or badge.startswith("-"):
+        return "badge-down"
+    if badge == "NEW":
+        return "badge-new"
+    return "badge-flat"
+
+
+def _html_progress(score: float, kind: str = "det") -> str:
+    s = max(0.0, min(100.0, float(score)))
+    # Deterrence: high=good (green); risk: high=bad (red) — invert color for det
+    if kind == "det":
+        color = "#22c55e" if s >= 65 else ("#f59e0b" if s >= 40 else "#ef4444")
+    else:
+        color = "#ef4444" if s >= 65 else ("#f59e0b" if s >= 40 else "#22c55e")
+    return (
+        f'<div class="pbar"><div class="pbar-fill" style="width:{s:.1f}%;background:{color}"></div>'
+        f'<span class="pbar-label">{s:.0f}</span></div>'
+    )
+
+
+def _html_spark_svg(values: list[float], *, width: int = 120, height: int = 28) -> str:
+    if not values:
+        return f'<svg class="spark" width="{width}" height="{height}"></svg>'
+    series = [float(v) for v in values[-30:]]
+    lo, hi = min(series), max(series)
+    span = hi - lo if hi > lo else 1.0
+    n = len(series)
+    pts = []
+    for i, v in enumerate(series):
+        x = 2 + (width - 4) * (i / max(1, n - 1))
+        y = height - 3 - ((v - lo) / span) * (height - 6)
+        pts.append(f"{x:.1f},{y:.1f}")
+    poly = " ".join(pts)
+    last = series[-1]
+    color = "#ef4444" if last < 40 else ("#f59e0b" if last < 65 else "#22c55e")
+    return (
+        f'<svg class="spark" width="{width}" height="{height}" viewBox="0 0 {width} {height}">'
+        f'<polyline fill="none" stroke="{color}" stroke-width="1.5" points="{poly}"/>'
+        f"</svg>"
+    )
+
+
+def _html_world_map(fps: list[dict[str, Any]]) -> str:
+    """Compact equirectangular SVG with flashpoint hotspots."""
+    w, h = 420, 210
+    dots = []
+    for f in fps:
+        try:
+            lat = float(f.get("lat"))
+            lng = float(f.get("lng"))
+        except (TypeError, ValueError):
+            continue
+        x = (lng + 180.0) / 360.0 * w
+        y = (90.0 - lat) / 180.0 * h
+        level = str(f.get("alert_level") or "YELLOW")
+        fill = {
+            "GREEN": "#22c55e",
+            "YELLOW": "#eab308",
+            "ORANGE": "#f97316",
+            "RED": "#ef4444",
+            "BLACK": "#f8fafc",
+        }.get(level, "#f59e0b")
+        r = 5 if level in {"RED", "BLACK"} else 4
+        label = _esc(str(f.get("label") or "")[:18])
+        dots.append(
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="{fill}" stroke="#0b1220" '
+            f'stroke-width="1"><title>{label}</title></circle>'
+        )
+    grid = (
+        f'<rect width="{w}" height="{h}" fill="#0f172a" stroke="#1e293b"/>'
+        # simple lat/lng grid
+        + "".join(
+            f'<line x1="0" y1="{h * i / 4}" x2="{w}" y2="{h * i / 4}" stroke="#1e293b" stroke-width="0.5"/>'
+            for i in range(1, 4)
+        )
+        + "".join(
+            f'<line x1="{w * i / 6}" y1="0" x2="{w * i / 6}" y2="{h}" stroke="#1e293b" stroke-width="0.5"/>'
+            for i in range(1, 6)
+        )
+    )
+    return (
+        f'<svg class="worldmap" viewBox="0 0 {w} {h}" width="100%" role="img" '
+        f'aria-label="Flashpoint heat map">{grid}{"".join(dots)}</svg>'
+    )
+
+
+def render_html(markdown_body: str, *, title: str) -> str:
+    """Legacy wrapper — prefer render_html_dashboard when delta payload is available."""
+    body = _esc(markdown_body).replace("\n", "<br>\n")
     return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>{title}</title>
+<html><head><meta charset="utf-8"><title>{_esc(title)}</title>
 <style>
 body {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background:#0b1220; color:#e2e8f0;
   padding:28px; max-width:920px; margin:auto; line-height:1.45; font-size:13px; }}
 h1 {{ color:#fbbf24; font-size:1.35rem; letter-spacing:0.04em; }}
 </style></head><body>
 {body}
+</body></html>"""
+
+
+def render_html_dashboard(
+    delta: dict[str, Any],
+    *,
+    generated_at: str,
+    title: str,
+) -> str:
+    """NOC / executive SITREP HTML — Bloomberg-dark + Palantir-adjacent."""
+    risk = _global_risk_score(delta)
+    word = risk_word(risk)
+    fps = delta.get("flashpoints_ranked") or []
+    feed = delta.get("feed_health") or {}
+    first = bool(delta.get("first_run"))
+
+    # Side panel: top movers
+    improve = sorted(
+        [f for f in fps if float(f.get("det_delta") or 0) >= 3],
+        key=lambda f: float(f.get("det_delta") or 0),
+        reverse=True,
+    )[:4]
+    worsen = sorted(
+        [f for f in fps if float(f.get("det_delta") or 0) <= -3],
+        key=lambda f: float(f.get("det_delta") or 0),
+    )[:4]
+    emerging = [f for f in fps if f.get("alert_level") in {"ORANGE", "RED", "BLACK"}][:5]
+
+    def mover_row(f: dict[str, Any]) -> str:
+        d = float(f.get("det_delta") or 0)
+        badge = _esc(f.get("change_badge") or change_badge(d, first_run=first))
+        return (
+            f'<div class="mover"><span class="mover-name">{_esc(f.get("label"))}</span>'
+            f'<span class="badge {_badge_class(badge)}">{badge}</span></div>'
+        )
+
+    movers_html = ""
+    if first:
+        movers_html = '<div class="muted">Baseline cycle — no prior deltas.</div>'
+    else:
+        movers_html = (
+            '<div class="subhead">▲ Improvements</div>'
+            + ("".join(mover_row(f) for f in improve) or '<div class="muted">None</div>')
+            + '<div class="subhead">▼ Deteriorations</div>'
+            + ("".join(mover_row(f) for f in worsen) or '<div class="muted">None</div>')
+        )
+
+    emerging_html = "".join(
+        f'<div class="mover"><span class="icon">{_esc(f.get("alert_icon"))}</span> '
+        f'<span class="mover-name">{_esc(f.get("label"))}</span>'
+        f'<span class="lvl {_level_class(str(f.get("alert_level")))}">{_esc(f.get("alert_level"))}</span></div>'
+        for f in emerging
+    ) or '<div class="muted">No elevated flashpoints</div>'
+
+    def feed_row(name: str, status: str, count: Any) -> str:
+        ok = status == "ok"
+        return (
+            f'<div class="feed-row"><span class="feed-dot {"ok" if ok else "bad"}"></span>'
+            f"<span>{_esc(name)}</span>"
+            f'<span class="muted">{_esc(status)} · {_esc(count)}</span></div>'
+        )
+
+    feed_html = (
+        feed_row("Telegram OSINT", str(feed.get("telegram_status") or "sparse"), feed.get("telegram_posts", 0))
+        + feed_row("Reddit OSINT", str(feed.get("reddit_status") or "sparse"), feed.get("reddit_posts", 0))
+        + feed_row("GT heatmap", str(feed.get("gt_status") or "sparse"), feed.get("gt_features", 0))
+    )
+
+    cards = []
+    for i, f in enumerate(fps, 1):
+        det = float((f.get("deterrence") or {}).get("score") or 0)
+        nash = float(f.get("nash_score") or 0)
+        badge = _esc(f.get("change_badge") or "—")
+        drivers = "".join(f"<li>{_esc(d)}</li>" for d in (f.get("drivers") or [])[:3])
+        hist = list(f.get("det_history") or [])
+        cards.append(
+            f"""
+<article class="fp-card {_level_class(str(f.get("alert_level")))}">
+  <header>
+    <span class="pri">P{i}</span>
+    <span class="icon">{_esc(f.get("alert_icon"))}</span>
+    <h3>{_esc(f.get("label"))}</h3>
+    <span class="badge {_badge_class(badge)}">{badge}</span>
+  </header>
+  <div class="fp-meta">
+    <span class="lvl {_level_class(str(f.get("alert_level")))}">{_esc(f.get("alert_level"))} · {_esc(f.get("alert_label"))}</span>
+    <span class="conf" title="Data confidence">{_esc(f.get("confidence_dots"))} {_esc(f.get("confidence"))}</span>
+  </div>
+  <div class="metrics">
+    <div class="metric"><label>Deterrence</label>{_html_progress(det, "det")}</div>
+    <div class="metric"><label>Nash</label>{_html_progress(nash, "det")}</div>
+  </div>
+  <div class="spark-row">
+    <span class="muted">30-cycle trend</span>
+    {_html_spark_svg(hist)}
+    <code class="spark-txt">{_esc(f.get("sparkline"))}</code>
+  </div>
+  <ul class="drivers">{drivers}</ul>
+</article>"""
+        )
+
+    # Executive paragraph (plain text from helper)
+    exec_lines = _executive_assessment(delta, risk)
+    exec_para = next((ln for ln in exec_lines if ln and not ln.isupper() and "─" not in ln), "")
+
+    outlook_lines = _outlook(delta, risk)
+    outlook_bits = [ln for ln in outlook_lines if ":" in ln]
+
+    return f"""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>{_esc(title)}</title>
+<style>
+:root {{
+  --bg: #070b14;
+  --panel: #0d1424;
+  --panel2: #111b2e;
+  --border: #1e2a44;
+  --text: #e2e8f0;
+  --muted: #64748b;
+  --amber: #fbbf24;
+  --cyan: #22d3ee;
+  --green: #22c55e;
+  --yellow: #eab308;
+  --orange: #f97316;
+  --red: #ef4444;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px; line-height: 1.45;
+}}
+.wrap {{ max-width: 1180px; margin: 0 auto; padding: 16px 18px 40px; }}
+.banner {{
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 16px 20px; border: 1px solid var(--border); border-radius: 2px;
+  margin-bottom: 14px; letter-spacing: 0.12em; font-weight: 700; font-size: 1.15rem;
+}}
+.banner-low {{ background: linear-gradient(90deg,#052e16,#0b1220); color: #86efac; border-color: #166534; }}
+.banner-guarded {{ background: linear-gradient(90deg,#1e3a5f,#0b1220); color: #93c5fd; border-color: #1d4ed8; }}
+.banner-elevated {{ background: linear-gradient(90deg,#422006,#0b1220); color: #fcd34d; border-color: #b45309; }}
+.banner-high {{ background: linear-gradient(90deg,#450a0a,#0b1220); color: #fca5a5; border-color: #b91c1c; }}
+.banner-critical {{ background: linear-gradient(90deg,#450a0a,#1a0505); color: #fecaca; border-color: #ef4444;
+  box-shadow: 0 0 24px rgba(239,68,68,0.25); }}
+.banner .sub {{ font-size: 0.72rem; font-weight: 500; letter-spacing: 0.06em; opacity: 0.85; }}
+.grid {{ display: grid; grid-template-columns: 1fr 280px; gap: 12px; }}
+@media (max-width: 900px) {{ .grid {{ grid-template-columns: 1fr; }} }}
+.panel {{
+  background: var(--panel); border: 1px solid var(--border); border-radius: 2px; padding: 12px 14px;
+}}
+.panel h2 {{
+  margin: 0 0 10px; font-size: 0.7rem; letter-spacing: 0.16em; color: var(--amber);
+  font-weight: 700; text-transform: uppercase;
+}}
+.side {{ display: flex; flex-direction: column; gap: 12px; }}
+.muted {{ color: var(--muted); }}
+.subhead {{ margin: 8px 0 4px; font-size: 0.65rem; letter-spacing: 0.14em; color: var(--cyan); text-transform: uppercase; }}
+.mover {{ display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid #152038; }}
+.mover-name {{ flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.badge {{
+  font-size: 0.68rem; padding: 1px 6px; border-radius: 2px; border: 1px solid var(--border);
+  letter-spacing: 0.04em; white-space: nowrap;
+}}
+.badge-up {{ color: #86efac; border-color: #166534; background: #052e1688; }}
+.badge-down {{ color: #fca5a5; border-color: #991b1b; background: #450a0a88; }}
+.badge-new {{ color: #67e8f9; border-color: #0e7490; background: #08334488; }}
+.badge-flat {{ color: var(--muted); }}
+.lvl {{ font-size: 0.65rem; letter-spacing: 0.08em; padding: 1px 5px; border-radius: 2px; }}
+.lvl-green {{ color: #86efac; }}
+.lvl-yellow {{ color: #fde047; }}
+.lvl-orange {{ color: #fdba74; }}
+.lvl-red {{ color: #fca5a5; }}
+.lvl-black {{ color: #f8fafc; background: #1e1b1b; }}
+.pbar {{
+  position: relative; height: 14px; background: #0a1020; border: 1px solid #1e293b;
+  border-radius: 1px; overflow: hidden; flex: 1;
+}}
+.pbar-fill {{ height: 100%; opacity: 0.9; }}
+.pbar-label {{
+  position: absolute; right: 4px; top: 0; bottom: 0; display: flex; align-items: center;
+  font-size: 0.65rem; color: #f8fafc; text-shadow: 0 0 3px #000;
+}}
+.metric {{ display: flex; align-items: center; gap: 8px; margin: 4px 0; }}
+.metric label {{ width: 72px; color: var(--muted); font-size: 0.68rem; letter-spacing: 0.06em; }}
+.fp-card {{
+  border: 1px solid var(--border); background: var(--panel2); padding: 10px 12px; margin-bottom: 8px;
+  border-left-width: 3px;
+}}
+.fp-card.lvl-green {{ border-left-color: var(--green); }}
+.fp-card.lvl-yellow {{ border-left-color: var(--yellow); }}
+.fp-card.lvl-orange {{ border-left-color: var(--orange); }}
+.fp-card.lvl-red {{ border-left-color: var(--red); }}
+.fp-card.lvl-black {{ border-left-color: #f8fafc; }}
+.fp-card header {{ display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }}
+.fp-card h3 {{ margin: 0; flex: 1; font-size: 0.95rem; letter-spacing: 0.04em; }}
+.pri {{ color: var(--cyan); font-size: 0.7rem; }}
+.fp-meta {{ display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }}
+.conf {{ color: #94a3b8; letter-spacing: 0.08em; font-size: 0.75rem; }}
+.spark-row {{ display: flex; align-items: center; gap: 8px; margin: 6px 0; flex-wrap: wrap; }}
+.spark-txt {{ color: #64748b; font-size: 0.65rem; }}
+.drivers {{ margin: 6px 0 0; padding-left: 16px; color: #94a3b8; }}
+.drivers li {{ margin: 2px 0; }}
+.exec {{ color: #cbd5e1; font-size: 0.85rem; line-height: 1.55; }}
+.map-wrap {{ margin-top: 8px; border: 1px solid var(--border); background: #0a1020; padding: 6px; }}
+.feed-row {{ display: flex; align-items: center; gap: 8px; padding: 3px 0; }}
+.feed-dot {{ width: 7px; height: 7px; border-radius: 50%; background: #64748b; }}
+.feed-dot.ok {{ background: var(--green); box-shadow: 0 0 6px #22c55e88; }}
+.feed-dot.bad {{ background: var(--orange); }}
+.footer {{ margin-top: 16px; color: var(--muted); font-size: 0.68rem; letter-spacing: 0.04em; }}
+.stat-row {{ display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0; }}
+.stat {{
+  background: #0a1020; border: 1px solid var(--border); padding: 6px 10px; min-width: 88px;
+}}
+.stat b {{ display: block; font-size: 1.1rem; color: var(--amber); }}
+.stat span {{ color: var(--muted); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="banner {_risk_banner_class(word)}">
+    <div>
+      <div>GLOBAL RISK: {_esc(word)}</div>
+      <div class="sub">{_esc(_trend_word(delta))} · {risk:.0f}/100 · {_esc('BASELINE' if first else 'DELTA')}</div>
+    </div>
+    <div class="sub" style="text-align:right">
+      SHADOWBROKER SITREP<br/>{_esc(generated_at)}
+    </div>
+  </div>
+
+  <div class="grid">
+    <main>
+      <section class="panel">
+        <h2>Executive assessment</h2>
+        <p class="exec">{_esc(exec_para)}</p>
+        <div class="stat-row">
+          <div class="stat"><b>{len(fps)}</b><span>Monitored</span></div>
+          <div class="stat"><b>{sum(1 for f in fps if f.get('alert_level') in {'RED','BLACK'})}</b><span>Critical</span></div>
+          <div class="stat"><b>{sum(1 for f in fps if float(f.get('det_delta') or 0) <= -3)}</b><span>Worsening</span></div>
+          <div class="stat"><b>{sum(1 for f in fps if float(f.get('det_delta') or 0) >= 3)}</b><span>Improving</span></div>
+          <div class="stat"><b>{sum(1 for f in fps if f.get('alert_level') == 'GREEN')}</b><span>Stable</span></div>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top:12px">
+        <h2>Theater map · hotspots</h2>
+        <div class="map-wrap">{_html_world_map(fps)}</div>
+        <div class="muted" style="margin-top:6px">Dot color = alert band (green→black). Larger dots = RED/BLACK.</div>
+      </section>
+
+      <section class="panel" style="margin-top:12px">
+        <h2>Flashpoint watch · priority order</h2>
+        {"".join(cards) if cards else '<div class="muted">No flashpoints</div>'}
+      </section>
+
+      <section class="panel" style="margin-top:12px">
+        <h2>24-hour outlook</h2>
+        {"".join(f'<div>{_esc(ln)}</div>' for ln in outlook_bits)}
+      </section>
+    </main>
+
+    <aside class="side">
+      <section class="panel">
+        <h2>Top movers</h2>
+        {movers_html}
+      </section>
+      <section class="panel">
+        <h2>Emerging risks</h2>
+        {emerging_html}
+      </section>
+      <section class="panel">
+        <h2>Data feed health</h2>
+        {feed_html}
+      </section>
+      <section class="panel">
+        <h2>Domestic watch</h2>
+        {"".join(
+            f'<div class="mover"><span class="mover-name">{_esc(c.get("label"))}</span>'
+            f'<span class="muted">{float(c.get("protest_potential") or 0):.0%}</span></div>'
+            for c in (delta.get("us_cities") or [])[:5]
+        ) or '<div class="muted">No elevated metros</div>'}
+      </section>
+    </aside>
+  </div>
+
+  <div class="footer">
+    Self-hosted · Nash pure-strategy 2×2 · Deterrence = stability − GT risk − feed heat ·
+    Confidence dots reflect feed density, not certainty of outcomes ·
+    Compared to {_esc(delta.get("previous_generated_at") or "none")}
+  </div>
+</div>
 </body></html>"""
 
 
@@ -914,6 +1384,16 @@ def _deliver_local(md: str, html: str, stamp: str) -> dict[str, str]:
     except OSError:
         try:
             latest.write_text(md, encoding="utf-8")
+        except OSError:
+            pass
+    latest_html = _REPORT_DIR / "latest.html"
+    try:
+        if latest_html.is_symlink() or latest_html.exists():
+            latest_html.unlink()
+        latest_html.symlink_to(html_path.name)
+    except OSError:
+        try:
+            latest_html.write_text(html, encoding="utf-8")
         except OSError:
             pass
     paths = {"markdown": str(md_path), "html": str(html_path)}
@@ -1001,9 +1481,24 @@ def generate_delta_report(
         except Exception:
             gt_risk = {}
 
+    telegram = None
+    reddit = None
+    try:
+        from services.fetchers._store import latest_data as _ld
+
+        telegram = dict(_ld.get("telegram_osint") or {})
+        reddit = dict(_ld.get("reddit_osint") or {})
+    except Exception:
+        pass
+
     state = _load_state()
     previous = state.get("last_snapshot")
-    delta = compute_deltas(gt_risk, previous if isinstance(previous, dict) else None)
+    delta = compute_deltas(
+        gt_risk,
+        previous if isinstance(previous, dict) else None,
+        telegram=telegram,
+        reddit=reddit,
+    )
 
     if not force and not preview and not delta.get("has_meaningful_change"):
         return {
@@ -1018,7 +1513,9 @@ def generate_delta_report(
     stamp = now.strftime("%Y%m%d_%H%M%S")
     generated_at = now.isoformat()
     md = render_markdown(delta, generated_at=generated_at)
-    html = render_html(md, title=f"Strategic Delta Brief {stamp}")
+    html = render_html_dashboard(
+        delta, generated_at=generated_at, title=f"Strategic Delta SITREP {stamp}"
+    )
     digest = hashlib.sha256(md.encode("utf-8")).hexdigest()[:16]
     summary = _exec_summary(delta)
 

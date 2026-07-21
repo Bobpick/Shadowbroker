@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from analytics.delta_report import (
     alert_level,
+    change_badge,
     compute_deltas,
+    confidence_dots,
+    render_html_dashboard,
     render_markdown,
     risk_word,
     sparkline,
@@ -67,6 +70,11 @@ def test_alert_levels_and_risk_words():
     assert alert_level(32, 20, "unstable") == "RED"
     assert risk_word(70) == "HIGH"
     assert "█" in sparkline([10, 20, 40, 80, 50])
+    assert confidence_dots("High") == "●●●●●"
+    assert confidence_dots("Low") == "●○○○○"
+    assert "▲" in change_badge(12)
+    assert change_badge(-22).startswith("▼")
+    assert change_badge(0, first_run=True) == "NEW"
 
 
 def test_render_markdown_decision_support_structure():
@@ -160,5 +168,16 @@ def test_render_markdown_decision_support_structure():
     ):
         assert needle in md, f"missing section: {needle}"
     assert "▼" in md or "▲" in md
-    meter = "\n".join(threat_meter_line(63))
-    assert "63" in meter or "63" in md
+
+    html = render_html_dashboard(delta, generated_at="2026-07-21T00:00:00+00:00", title="test")
+    for needle in (
+        "GLOBAL RISK:",
+        "Top movers",
+        "Emerging risks",
+        "Data feed health",
+        "Flashpoint watch",
+        "Theater map",
+        "pbar-fill",
+        "worldmap",
+    ):
+        assert needle in html, f"missing HTML: {needle}"
