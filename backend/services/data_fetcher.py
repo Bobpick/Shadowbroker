@@ -1066,6 +1066,44 @@ def start_scheduler():
                 id="gt_rolling_startup_auto_label",
                 max_instances=1,
             )
+            # Strategic delta reports (GT + Nash) — interval from DELTA_REPORT_INTERVAL_HOURS
+            try:
+                from analytics.delta_report import (
+                    delta_report_enabled,
+                    delta_report_interval_hours,
+                    maybe_run_scheduled_delta_report,
+                )
+
+                if delta_report_enabled():
+                    hours = delta_report_interval_hours()
+
+                    def _run_delta_report() -> None:
+                        try:
+                            result = maybe_run_scheduled_delta_report()
+                            if not result.get("skipped"):
+                                logger.info(
+                                    "Delta report generated stamp=%s",
+                                    result.get("stamp"),
+                                )
+                            else:
+                                logger.debug(
+                                    "Delta report skipped: %s",
+                                    result.get("reason"),
+                                )
+                        except Exception as exc:  # noqa: BLE001
+                            logger.error("Delta report job failed: %s", exc)
+
+                    _scheduler.add_job(
+                        _run_delta_report,
+                        "interval",
+                        hours=hours,
+                        id="gt_delta_report",
+                        max_instances=1,
+                        misfire_grace_time=3600,
+                        next_run_time=datetime.utcnow() + timedelta(minutes=12),
+                    )
+            except Exception as exc:
+                logger.warning("Delta report scheduler not registered: %s", exc)
     except Exception as exc:
         logger.warning("GT Louvain scheduler not registered: %s", exc)
     _scheduler.add_job(

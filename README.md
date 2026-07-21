@@ -63,6 +63,8 @@ ShadowBroker includes an optional **Shodan connector** for operator-supplied API
 * **Toggle malware C2 hotspots** — abuse.ch Feodo Tracker + URLhaus feeds mapped by country (opt-in layer)
 * **Monitor Telegram OSINT channels** — public `t.me/s` war/conflict feeds (OSINTdefender, NEXTA, etc.) scraped hourly, risk-scored, geoparsed to metro anchors, and plotted as clickable map pins with inline media
 * **Overlay global submarine cables** — static TeleGeography-derived cable routes (opt-in layer)
+* **Nash / Deterrence flashpoints** — 2×2 payoff matrices, pure-strategy Nash stability (0–100), and a live deterrence meter fused from GT region risk + Telegram/Reddit keywords (Taiwan Strait, South China Sea, Hormuz, Ukraine, Korean Peninsula, Baltic). Inside the Game Theory HUD when `gt_risk` is on.
+* **Automated strategic delta reports** — every N hours (default 6), only if GT risk or flashpoint deterrence moved past a threshold; Markdown + HTML under `backend/data/delta_reports/`, optional SMTP/webhook delivery, Preview / Generate Now in the HUD
 
 
 ---
@@ -1071,6 +1073,33 @@ OPENCLAW_ACCESS_TIER=restricted               # OpenClaw agent tier: "restricted
 GFW_API_TOKEN=your_gfw_token                  # Global Fishing Watch — fishing_activity layer (Settings → Maritime)
 TELEGRAM_OSINT_ENABLED=true                   # Telegram OSINT layer (default on)
 TELEGRAM_OSINT_CHANNELS=osintdefender,...     # Comma-separated public channel slugs (see .env.example)
+
+# --- Strategic Analysis (Nash / Deterrence + Delta Reports) ---
+# Empty NASH_DETERRENCE_ENABLED / DELTA_REPORT_ENABLED follow GT_ANALYTICS_ENABLED.
+GT_ANALYTICS_ENABLED=true
+# NASH_DETERRENCE_ENABLED=true
+# DELTA_REPORT_ENABLED=true
+# DELTA_REPORT_INTERVAL_HOURS=6
+# DELTA_REPORT_GT_THRESHOLD=0.08          # |Δ region risk| to treat as meaningful
+# DELTA_REPORT_WEBHOOK_URL=               # Discord/Slack/Telegram webhook (optional)
+# DELTA_REPORT_SMTP_HOST=                 # optional email delivery
+# DELTA_REPORT_SMTP_PORT=587
+# DELTA_REPORT_SMTP_USER=
+# DELTA_REPORT_SMTP_PASSWORD=
+# DELTA_REPORT_SMTP_FROM=
+# DELTA_REPORT_SMTP_TO=
+# DELTA_REPORT_SMTP_TLS=true
+
+# API (local operator for writes):
+#   GET  /api/analytics/strategic
+#   POST /api/analytics/strategic/flashpoints
+#   POST /api/analytics/strategic/entity-hint
+#   GET  /api/analytics/delta-report
+#   POST /api/analytics/delta-report  { "force": true } | { "preview": true }
+#
+# Screenshot description: GT HUD → “NASH / DETERRENCE” section shows flashpoint chips,
+# a color-coded Nash score, deterrence meter bar, editable 2×2 payoff table (green =
+# pure equilibrium), and Delta Report Preview / Generate Now with markdown preview.
 
 # Private-lane privacy-core pinning (required when Arti or RNS is enabled)
 PRIVACY_CORE_MIN_VERSION=0.1.0

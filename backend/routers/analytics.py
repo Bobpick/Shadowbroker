@@ -31,6 +31,22 @@ from analytics.rolling_backtest import (
 )
 from analytics.weekly_store import load_week
 from analytics.settings import gt_analytics_enabled
+from analytics.nash_deterrence import (
+    build_strategic_analysis,
+    delete_flashpoint,
+    get_flashpoint,
+    list_flashpoints,
+    nash_deterrence_enabled,
+    record_entity_hint,
+    reset_presets,
+    upsert_flashpoint,
+)
+from analytics.delta_report import (
+    delta_report_enabled,
+    generate_delta_report,
+    get_last_report_meta,
+    list_recent_reports,
+)
 from services.fetchers._store import _data_lock, get_latest_data_subset_refs, latest_data
 
 logger = logging.getLogger(__name__)
@@ -64,6 +80,37 @@ class RollingLabelRequest(BaseModel):
 class RollingAutoLabelRequest(BaseModel):
     label_delay_days: int | None = None
     force_now: bool = False
+
+
+class FlashpointUpsertRequest(BaseModel):
+    id: str | None = None
+    label: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+    row_actor: str | None = None
+    col_actor: str | None = None
+    row_strategies: list[str] | None = None
+    col_strategies: list[str] | None = None
+    payoffs: list[list[list[float]]] | None = None
+    gt_regions: list[str] | None = None
+    keywords: list[str] | None = None
+    current_row: int | None = None
+    current_col: int | None = None
+    locked_strategies: bool | None = None
+
+
+class EntityHintRequest(BaseModel):
+    entity_type: str = ""
+    entity_id: str = ""
+    label: str = ""
+    lat: float
+    lng: float
+    flashpoint_id: str = ""
+
+
+class DeltaReportRequest(BaseModel):
+    force: bool = False
+    preview: bool = False
 
 
 def _empty_heatmap() -> dict[str, Any]:
@@ -408,3 +455,148 @@ async def analytics_rolling_label(
         raise HTTPException(status_code=404, detail=result.get("detail", "Label failed"))
     result["enabled"] = True
     return result
+
+
+# ── Nash / Deterrence (Strategic Analysis) ──────────────────────────────────
+
+
+@router.get("/api/analytics/strategic")
+@limiter.limit("30/minute")
+async def strategic_analysis_get(request: Request) -> dict[str, Any]:
+    """Nash / deterrence snapshot for all flashpoints."""
+    if not nash_deterrence_enabled():
+        return {
+            "enabled": False,
+            "flashpoints": [],
+            "message": "Nash / Deterrence is disabled (NASH_DETERRENCE_ENABLED).",
+        }
+    with _data_lock:
+        gt_snap = dict(latest_data.get("gt_risk") or {})
+        telegram_snap = dict(latest_data.get("telegram_osint") or {})
+        reddit_snap = dict(latest_data.get("reddit_osint") or {})
+    return build_strategic_analysis(
+        gt_risk=gt_snap,
+        telegram=telegram_snap,
+        reddit=reddit_snap,
+    )
+
+
+@router.get("/api/analytics/strategic/flashpoints")
+@limiter.limit("30/minute")
+async def strategic_flashpoints_list(request: Request) -> dict[str, Any]:
+    if not nash_deterrence_enabled():
+        return {"enabled": False, "flashpoints": []}
+    return {"enabled": True, "flashpoints": list_flashpoints()}
+
+
+@router.get("/api/analytics/strategic/flashpoints/{fp_id}")
+@limiter.limit("30/minute")
+async def strategic_flashpoint_get(request: Request, fp_id: str) -> dict[str, Any]:
+    if not nash_deterrence_enabled():
+        raise HTTPException(status_code=503, detail="Nash / Deterrence disabled")
+    fp = get_flashpoint(fp_id)
+    if not fp:
+        raise HTTPException(status_code=404, detail="Flashpoint not found")
+    with _data_lock:
+        gt_snap = dict(latest_data.get("gt_risk") or {})
+        telegram_snap = dict(latest_data.get("telegram_osint") or {})
+        reddit_snap = dict(latest_data.get("reddit_osint") or {})
+    from analytics.nash_deterrence import analyze_flashpoint
+
+    return {
+        "enabled": True,
+        "flashpoint": analyze_flashpoint(
+            fp, gt_risk=gt_snap, telegram=telegram_snap, reddit=reddit_snap
+        ),
+    }
+
+
+@router.post("/api/analytics/strategic/flashpoints", dependencies=[Depends(require_local_operator)])
+@limiter.limit("20/minute")
+async def strategic_flashpoint_upsert(
+    request: Request,
+    body: FlashpointUpsertRequest,
+) -> dict[str, Any]:
+    if not nash_deterrence_enabled():
+        raise HTTPException(status_code=503, detail="Nash / Deterrence disabled")
+    fp = upsert_flashpoint(body.model_dump(exclude_none=True))
+    return {"ok": True, "flashpoint": fp}
+
+
+@router.delete(
+    "/api/analytics/strategic/flashpoints/{fp_id}",
+    dependencies=[Depends(require_local_operator)],
+)
+@limiter.limit("20/minute")
+async def strategic_flashpoint_delete(request: Request, fp_id: str) -> dict[str, Any]:
+    if not nash_deterrence_enabled():
+        raise HTTPException(status_code=503, detail="Nash / Deterrence disabled")
+    ok = delete_flashpoint(fp_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Flashpoint not found")
+    return {"ok": True}
+
+
+@router.post(
+    "/api/analytics/strategic/reset-presets",
+    dependencies=[Depends(require_local_operator)],
+)
+@limiter.limit("5/minute")
+async def strategic_reset_presets(request: Request) -> dict[str, Any]:
+    if not nash_deterrence_enabled():
+        raise HTTPException(status_code=503, detail="Nash / Deterrence disabled")
+    return {"ok": True, "flashpoints": reset_presets()}
+
+
+@router.post(
+    "/api/analytics/strategic/entity-hint",
+    dependencies=[Depends(require_local_operator)],
+)
+@limiter.limit("30/minute")
+async def strategic_entity_hint(request: Request, body: EntityHintRequest) -> dict[str, Any]:
+    """Attach a map entity click to the nearest (or specified) flashpoint."""
+    if not nash_deterrence_enabled():
+        raise HTTPException(status_code=503, detail="Nash / Deterrence disabled")
+    hint = record_entity_hint(
+        entity_type=body.entity_type,
+        entity_id=body.entity_id,
+        label=body.label,
+        lat=body.lat,
+        lng=body.lng,
+        flashpoint_id=body.flashpoint_id,
+    )
+    return {"ok": True, "hint": hint}
+
+
+# ── Delta reports ───────────────────────────────────────────────────────────
+
+
+@router.get("/api/analytics/delta-report")
+@limiter.limit("20/minute")
+async def delta_report_status(request: Request) -> dict[str, Any]:
+    return {
+        "enabled": delta_report_enabled(),
+        "last": get_last_report_meta(),
+        "history": list_recent_reports(10),
+    }
+
+
+@router.post(
+    "/api/analytics/delta-report",
+    dependencies=[Depends(require_local_operator)],
+)
+@limiter.limit("10/minute")
+async def delta_report_generate(
+    request: Request,
+    body: DeltaReportRequest,
+) -> dict[str, Any]:
+    """Generate (or preview) a strategic delta report now."""
+    if not delta_report_enabled() and not body.force and not body.preview:
+        raise HTTPException(status_code=503, detail="Delta reports disabled")
+    with _data_lock:
+        gt_snap = dict(latest_data.get("gt_risk") or {})
+    return generate_delta_report(
+        force=body.force or body.preview,
+        preview=body.preview,
+        gt_risk=gt_snap,
+    )

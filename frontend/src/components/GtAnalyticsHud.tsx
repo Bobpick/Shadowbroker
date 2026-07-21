@@ -7,6 +7,7 @@ import { useFloatingPanel } from '@/hooks/useFloatingPanel';
 import GtBacktestPanel from '@/components/GtBacktestPanel';
 import GtTopAlertsStrip from '@/components/GtTopAlertsStrip';
 import GtUsCitiesPanel from '@/components/GtUsCitiesPanel';
+import StrategicAnalysisPanel from '@/components/StrategicAnalysisPanel';
 import { GT_ICON, GT_TEXT } from '@/lib/gtTypography';
 import type { SelectedEntity } from '@/types/dashboard';
 
@@ -69,6 +70,11 @@ export default function GtAnalyticsHud({
             layerEnabled={layerEnabled}
             onFlyTo={onFlyTo}
             onSelectEntity={onSelectEntity}
+            embedded
+          />
+          <StrategicAnalysisPanel
+            layerEnabled={layerEnabled}
+            onFlyTo={onFlyTo}
             embedded
           />
           <GtBacktestPanel layerEnabled={layerEnabled} embedded />
