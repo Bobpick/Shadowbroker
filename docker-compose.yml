@@ -123,12 +123,17 @@ services:
       - DELTA_REPORT_SMTP_FROM=${DELTA_REPORT_SMTP_FROM:-}
       - DELTA_REPORT_SMTP_TO=${DELTA_REPORT_SMTP_TO:-}
       - DELTA_REPORT_SMTP_TLS=${DELTA_REPORT_SMTP_TLS:-true}
+      - DELTA_REPORT_DESKTOP_DIR=/export/daily_inspiration
       - OPENCLAW_HMAC_SECRET=${OPENCLAW_HMAC_SECRET:-}
       # WastewaterSCAN samples often lag 1–2 weeks into a new month; keep June
       # data valid until July upstream points publish.
       - WASTEWATER_MAX_SAMPLE_AGE_DAYS=${WASTEWATER_MAX_SAMPLE_AGE_DAYS:-45}
     volumes:
       - backend_data:/app/data
+      # Host-visible SITREP HTML/MD (Desktop symlink target)
+      - ${DELTA_REPORT_HOST_DIR:-./backend/data/delta_reports}:/app/data/delta_reports
+      # Real file export for Snap Firefox (no multi-hop symlinks)
+      - ${DELTA_REPORT_DESKTOP_DIR:-${HOME}/Desktop/Daily_Inspiration}:/export/daily_inspiration
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]

@@ -1066,7 +1066,7 @@ def start_scheduler():
                 id="gt_rolling_startup_auto_label",
                 max_instances=1,
             )
-            # Strategic delta reports (GT + Nash) — interval from DELTA_REPORT_INTERVAL_HOURS
+            # Strategic delta reports (GT + Nash) — every DELTA_REPORT_INTERVAL_HOURS (default 6)
             try:
                 from analytics.delta_report import (
                     delta_report_enabled,
@@ -1079,20 +1079,31 @@ def start_scheduler():
 
                     def _run_delta_report() -> None:
                         try:
-                            result = maybe_run_scheduled_delta_report()
+                            result = maybe_run_scheduled_delta_report(force_write=True)
                             if not result.get("skipped"):
+                                paths = (result.get("delivery") or {}).get("local") or {}
                                 logger.info(
-                                    "Delta report generated stamp=%s",
+                                    "Delta report generated stamp=%s html=%s md=%s",
                                     result.get("stamp"),
+                                    paths.get("html"),
+                                    paths.get("markdown"),
                                 )
                             else:
-                                logger.debug(
+                                logger.info(
                                     "Delta report skipped: %s",
                                     result.get("reason"),
                                 )
                         except Exception as exc:  # noqa: BLE001
                             logger.error("Delta report job failed: %s", exc)
 
+                    # First file ~15 min after startup (feeds warm), then every N hours
+                    _scheduler.add_job(
+                        _run_delta_report,
+                        "date",
+                        run_date=datetime.utcnow() + timedelta(minutes=15),
+                        id="gt_delta_report_startup",
+                        max_instances=1,
+                    )
                     _scheduler.add_job(
                         _run_delta_report,
                         "interval",
@@ -1100,7 +1111,11 @@ def start_scheduler():
                         id="gt_delta_report",
                         max_instances=1,
                         misfire_grace_time=3600,
-                        next_run_time=datetime.utcnow() + timedelta(minutes=12),
+                        next_run_time=datetime.utcnow() + timedelta(hours=hours),
+                    )
+                    logger.info(
+                        "Delta report scheduler registered: first in 15m, then every %sh",
+                        hours,
                     )
             except Exception as exc:
                 logger.warning("Delta report scheduler not registered: %s", exc)

@@ -1622,34 +1622,77 @@ def _try_pdf(html: str, path: Path) -> bool:
         return False
 
 
+def _desktop_export_dir() -> Path | None:
+    """
+    Host-visible export folder for browsers (esp. Snap Firefox).
+
+    Snap Firefox often cannot open multi-hop symlinks under ~/Shadowbroker.
+    Writing real files under ~/Desktop/Daily_Inspiration avoids that.
+    """
+    raw = str(os.environ.get("DELTA_REPORT_DESKTOP_DIR", "")).strip()
+    if raw:
+        return Path(raw).expanduser()
+    # Prefer host home when running as container user with /home/bob mounted
+    for candidate in (
+        Path.home() / "Desktop" / "Daily_Inspiration",
+        Path("/home/bob/Desktop/Daily_Inspiration"),
+    ):
+        try:
+            if candidate.parent.is_dir() or candidate.is_dir():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
+def _write_export_copy(path: Path, content: str) -> bool:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_symlink() or path.exists():
+            path.unlink()
+        path.write_text(content, encoding="utf-8")
+        try:
+            path.chmod(0o644)
+        except OSError:
+            pass
+        return True
+    except OSError as exc:
+        logger.warning("delta_report export write failed %s: %s", path, exc)
+        return False
+
+
 def _deliver_local(md: str, html: str, stamp: str) -> dict[str, str]:
     _REPORT_DIR.mkdir(parents=True, exist_ok=True)
     md_path = _REPORT_DIR / f"delta_{stamp}.md"
     html_path = _REPORT_DIR / f"delta_{stamp}.html"
     md_path.write_text(md, encoding="utf-8")
     html_path.write_text(html, encoding="utf-8")
-    # Maintain latest.md for Desktop symlinks
-    latest = _REPORT_DIR / "latest.md"
     try:
-        if latest.is_symlink() or latest.exists():
-            latest.unlink()
-        latest.symlink_to(md_path.name)
+        md_path.chmod(0o644)
+        html_path.chmod(0o644)
     except OSError:
-        try:
-            latest.write_text(md, encoding="utf-8")
-        except OSError:
-            pass
+        pass
+
+    # Real files (not symlinks) so file managers / Snap Firefox can open them
+    latest_md = _REPORT_DIR / "latest.md"
     latest_html = _REPORT_DIR / "latest.html"
-    try:
-        if latest_html.is_symlink() or latest_html.exists():
-            latest_html.unlink()
-        latest_html.symlink_to(html_path.name)
-    except OSError:
-        try:
-            latest_html.write_text(html, encoding="utf-8")
-        except OSError:
-            pass
-    paths = {"markdown": str(md_path), "html": str(html_path)}
+    _write_export_copy(latest_md, md)
+    _write_export_copy(latest_html, html)
+
+    paths: dict[str, str] = {"markdown": str(md_path), "html": str(html_path)}
+    desk = _desktop_export_dir()
+    if desk is not None:
+        # Stable names on Desktop — real copies, no symlink hop
+        desk_html = desk / "Shadowbroker_Strategic_Delta.html"
+        desk_md = desk / "Shadowbroker_Strategic_Delta.md"
+        if _write_export_copy(desk_html, html):
+            paths["desktop_html"] = str(desk_html)
+        if _write_export_copy(desk_md, md):
+            paths["desktop_md"] = str(desk_md)
+        # Also timestamped archive copy on Desktop (optional short name)
+        stamp_html = desk / f"Shadowbroker_Delta_{stamp}.html"
+        _write_export_copy(stamp_html, html)
+
     pdf_path = _REPORT_DIR / f"delta_{stamp}.pdf"
     if _try_pdf(html, pdf_path):
         paths["pdf"] = str(pdf_path)
@@ -1821,9 +1864,15 @@ def generate_delta_report(
     return result
 
 
-def maybe_run_scheduled_delta_report() -> dict[str, Any]:
+def maybe_run_scheduled_delta_report(*, force_write: bool = True) -> dict[str, Any]:
+    """
+    Scheduler entry for the 6-hour SITREP.
+
+    By default force_write=True so Markdown/HTML are always produced on schedule
+    (even when risk deltas are small). Interval gating still prevents double-runs.
+    """
     if not delta_report_enabled():
-        return {"enabled": False, "skipped": True}
+        return {"enabled": False, "skipped": True, "reason": "disabled"}
 
     state = _load_state()
     last = str(state.get("last_report_at") or "").strip()
@@ -1845,7 +1894,8 @@ def maybe_run_scheduled_delta_report() -> dict[str, Any]:
         except ValueError:
             pass
 
-    return generate_delta_report(force=False, preview=False)
+    # Always write files on the schedule so Desktop/NOC links stay fresh.
+    return generate_delta_report(force=force_write, preview=False)
 
 
 def list_recent_reports(limit: int = 10) -> list[dict[str, Any]]:
