@@ -1645,20 +1645,65 @@ def _desktop_export_dir() -> Path | None:
     return None
 
 
+def _host_uid_gid() -> tuple[int | None, int | None]:
+    """UID/GID for host user so Snap Firefox can open exported files."""
+    try:
+        uid_raw = str(os.environ.get("HOST_UID", "1000")).strip() or "1000"
+        gid_raw = str(os.environ.get("HOST_GID", "1000")).strip() or "1000"
+        return int(uid_raw), int(gid_raw)
+    except ValueError:
+        return 1000, 1000
+
+
+def _fix_ownership(path: Path) -> None:
+    """chown/chmod so the host user + Snap Firefox can open the file."""
+    try:
+        path.chmod(0o644)
+    except OSError:
+        pass
+    uid, gid = _host_uid_gid()
+    if uid is None:
+        return
+    try:
+        os.chown(path, uid, gid if gid is not None else -1)
+    except OSError:
+        # May lack CAP_CHOWN in container — still leave world-readable 644
+        pass
+
+
 def _write_export_copy(path: Path, content: str) -> bool:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.is_symlink() or path.exists():
             path.unlink()
         path.write_text(content, encoding="utf-8")
-        try:
-            path.chmod(0o644)
-        except OSError:
-            pass
+        _fix_ownership(path)
         return True
     except OSError as exc:
         logger.warning("delta_report export write failed %s: %s", path, exc)
         return False
+
+
+def latest_report_html_path() -> Path | None:
+    """Best path to the most recent HTML sitrep on disk."""
+    candidates = [
+        _REPORT_DIR / "latest.html",
+    ]
+    try:
+        stamped = sorted(_REPORT_DIR.glob("delta_*.html"), key=lambda p: p.stat().st_mtime, reverse=True)
+        candidates.extend(stamped[:3])
+    except OSError:
+        pass
+    desk = _desktop_export_dir()
+    if desk is not None:
+        candidates.insert(0, desk / "Shadowbroker_Strategic_Delta.html")
+    for p in candidates:
+        try:
+            if p.is_file() and p.stat().st_size > 100:
+                return p
+        except OSError:
+            continue
+    return None
 
 
 def _deliver_local(md: str, html: str, stamp: str) -> dict[str, str]:
@@ -1689,9 +1734,7 @@ def _deliver_local(md: str, html: str, stamp: str) -> dict[str, str]:
             paths["desktop_html"] = str(desk_html)
         if _write_export_copy(desk_md, md):
             paths["desktop_md"] = str(desk_md)
-        # Also timestamped archive copy on Desktop (optional short name)
-        stamp_html = desk / f"Shadowbroker_Delta_{stamp}.html"
-        _write_export_copy(stamp_html, html)
+        # Fixed names only on Desktop — no timestamped copies (disk clutter).
 
     pdf_path = _REPORT_DIR / f"delta_{stamp}.pdf"
     if _try_pdf(html, pdf_path):

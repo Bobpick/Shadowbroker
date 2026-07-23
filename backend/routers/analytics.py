@@ -578,7 +578,44 @@ async def delta_report_status(request: Request) -> dict[str, Any]:
         "enabled": delta_report_enabled(),
         "last": get_last_report_meta(),
         "history": list_recent_reports(10),
+        "view_url": "/api/analytics/delta-report/view",
     }
+
+
+@router.get("/api/analytics/delta-report/view")
+@limiter.limit("60/minute")
+async def delta_report_view(request: Request):
+    """
+    Serve the latest SITREP HTML over HTTP.
+
+    Prefer this over file:// — Snap Firefox often blocks local files written
+    by the Docker backend (uid 1001) even when world-readable.
+    """
+    from fastapi.responses import FileResponse, HTMLResponse
+
+    from analytics.delta_report import latest_report_html_path
+
+    path = latest_report_html_path()
+    if path is None:
+        # Auto-generate once if missing
+        if delta_report_enabled() or True:
+            with _data_lock:
+                gt_snap = dict(latest_data.get("gt_risk") or {})
+            generate_delta_report(force=True, preview=False, gt_risk=gt_snap)
+            path = latest_report_html_path()
+    if path is None:
+        return HTMLResponse(
+            "<html><body style='background:#0b1220;color:#e2e8f0;font-family:monospace;padding:2rem'>"
+            "<h1>No SITREP yet</h1><p>Enable GT analytics and POST /api/analytics/delta-report "
+            "with {\"force\":true}, or wait for the 6-hour scheduler.</p></body></html>",
+            status_code=404,
+        )
+    return FileResponse(
+        path,
+        media_type="text/html; charset=utf-8",
+        filename="Shadowbroker_Strategic_Delta.html",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @router.post(

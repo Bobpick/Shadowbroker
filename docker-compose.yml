@@ -124,6 +124,9 @@ services:
       - DELTA_REPORT_SMTP_TO=${DELTA_REPORT_SMTP_TO:-}
       - DELTA_REPORT_SMTP_TLS=${DELTA_REPORT_SMTP_TLS:-true}
       - DELTA_REPORT_DESKTOP_DIR=/export/daily_inspiration
+      # Host user for chown on exported SITREP files (Snap Firefox needs user-owned files)
+      - HOST_UID=${HOST_UID:-1000}
+      - HOST_GID=${HOST_GID:-1000}
       - OPENCLAW_HMAC_SECRET=${OPENCLAW_HMAC_SECRET:-}
       # WastewaterSCAN samples often lag 1–2 weeks into a new month; keep June
       # data valid until July upstream points publish.
