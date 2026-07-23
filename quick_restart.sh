@@ -47,6 +47,28 @@ log "Stopping stack (preserving volumes)…"
 log "Removing orphaned shadowbroker containers if any…"
 docker ps -aq --filter name=shadowbroker 2>/dev/null | xargs -r docker rm -f 2>/dev/null || true
 
+# Host processes (e.g. leftover next-server) can steal 3000/3050 from Docker
+free_port() {
+  local port="$1"
+  local pids=""
+  if command -v fuser >/dev/null 2>&1; then
+    pids="$(fuser "${port}/tcp" 2>/dev/null || true)"
+  fi
+  if [[ -z "${pids// /}" ]] && command -v lsof >/dev/null 2>&1; then
+    pids="$(lsof -t -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)"
+  fi
+  if [[ -n "${pids// /}" ]]; then
+    warn "Port ${port} in use by PID(s): $pids — stopping host listeners…"
+    # shellcheck disable=SC2086
+    kill $pids 2>/dev/null || true
+    sleep 1
+    # shellcheck disable=SC2086
+    kill -9 $pids 2>/dev/null || true
+  fi
+}
+free_port "$FRONTEND_PORT"
+free_port "$BACKEND_PORT"
+
 log "Starting stack…"
 "${COMPOSE[@]}" up -d
 
