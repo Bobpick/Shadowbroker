@@ -41,6 +41,14 @@ OUT_DIR = Path(
 ).expanduser()
 OUT_MD = OUT_DIR / "shadowbroker_24h_brief.md"
 OUT_HTML = OUT_DIR / "shadowbroker_24h_brief.html"
+# Fixed-name rolling history (last 3 calendar days) — overwritten in place, no dated copies
+HISTORY_JSON = Path(
+    os.environ.get(
+        "DAILY_BRIEF_HISTORY_JSON",
+        str(OUT_DIR / "pat_labs_threat_history_3d.json"),
+    )
+).expanduser()
+HISTORY_DAYS = max(1, int(os.environ.get("DAILY_BRIEF_HISTORY_DAYS", "3") or "3"))
 DELTA_MD_CANDIDATES = [
     Path.home() / "Desktop" / "Daily_Inspiration" / "Shadowbroker_Strategic_Delta.md",
     Path("/home/bob/Desktop/Daily_Inspiration/Shadowbroker_Strategic_Delta.md"),
@@ -269,6 +277,338 @@ def collect_context() -> dict[str, Any]:
     }
 
 
+# ── 3-day rolling history ───────────────────────────────────────────────────
+
+
+def _parse_delta_metrics(delta_md: str) -> dict[str, Any]:
+    """Pull coarse strategic metrics from delta markdown (no invention)."""
+    out: dict[str, Any] = {
+        "overall_risk_word": None,
+        "overall_risk_score": None,
+        "trend": None,
+        "critical_flashpoints": None,
+        "priorities": [],
+        "region_shifts": [],
+        "domestic_watch": None,
+    }
+    if not delta_md:
+        return out
+    for line in delta_md.splitlines():
+        s = line.strip()
+        m = re.match(r"(?i)overall risk:\s*(\w+)", s)
+        if m:
+            out["overall_risk_word"] = m.group(1).upper()
+        m = re.search(r"(?i)(\d+)\s*/\s*100", s)
+        if m and out.get("overall_risk_score") is None and "risk" in s.lower():
+            try:
+                out["overall_risk_score"] = int(m.group(1))
+            except ValueError:
+                pass
+        # Global Strategic Risk gauge often sits on its own line: "65 / 100"
+        m = re.match(r"^(\d+)\s*/\s*100\s*$", s)
+        if m:
+            try:
+                out["overall_risk_score"] = int(m.group(1))
+            except ValueError:
+                pass
+        m = re.match(r"(?i)trend:\s*(.+)$", s)
+        if m:
+            out["trend"] = m.group(1).strip()
+        m = re.match(r"(?i)critical flashpoints:\s*(\d+)", s)
+        if m:
+            try:
+                out["critical_flashpoints"] = int(m.group(1))
+            except ValueError:
+                pass
+        m = re.search(r"(?i)domestic watch:\s*([^.;]+)", s)
+        if m:
+            out["domestic_watch"] = m.group(1).strip()
+        m = re.search(
+            r"(?i)priority\s+(\d+)\s*[·•\-]\s*(?:⛔|⚠|⚠️)?\s*(.+?)(?:\s*\[([^\]]*)\])?\s*$",
+            s,
+        )
+        if m:
+            region = re.sub(r"^[⛔⚠⚠️▲▼↑↓·\-\s]+", "", m.group(2).strip())
+            out["priorities"].append(
+                {
+                    "rank": int(m.group(1)),
+                    "region": region,
+                    "delta": (m.group(3) or "").strip(),
+                }
+            )
+        m = re.match(r"(?i)[•\-]\s*Region\s+(\S+)\s+risk\s+(\d+)%\s*→\s*(\d+)%", s)
+        if m:
+            out["region_shifts"].append(
+                {
+                    "region": m.group(1),
+                    "from": int(m.group(2)),
+                    "to": int(m.group(3)),
+                    "delta": int(m.group(3)) - int(m.group(2)),
+                }
+            )
+    out["priorities"] = out["priorities"][:6]
+    out["region_shifts"] = out["region_shifts"][:10]
+    return out
+
+
+def _parse_mil_flights(threat: dict[str, Any], delta_md: str) -> int | None:
+    for d in threat.get("drivers") or []:
+        m = re.search(r"(?i)military flight[s]?[^0-9]*(\d+)", str(d))
+        if m:
+            return int(m.group(1))
+    m = re.search(r"(?i)military flight[s]?[^0-9]*(\d+)", delta_md or "")
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def build_day_snapshot(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Compact one-day record for the rolling history JSON."""
+    when = _now_local()
+    day = when.date().isoformat()
+    threat = ctx.get("threat_level") if isinstance(ctx.get("threat_level"), dict) else {}
+    ww = ctx.get("wastewater") if isinstance(ctx.get("wastewater"), dict) else {}
+    sc = ctx.get("source_counts") or {}
+    delta_bits = _parse_delta_metrics(ctx.get("delta_excerpt") or "")
+
+    try:
+        platform_score = int(float(threat.get("score"))) if threat.get("score") is not None else None
+    except (TypeError, ValueError):
+        platform_score = None
+
+    rising = []
+    for p in ww.get("rising") or []:
+        if not isinstance(p, dict):
+            continue
+        rising.append(
+            {
+                "name": p.get("name"),
+                "states_rising": p.get("states_rising"),
+                "sites_rising": p.get("sites_rising"),
+                "sites_alert": p.get("sites_alert"),
+                "rising_rate_display": p.get("rising_rate_display"),
+            }
+        )
+
+    domestic_titles = [
+        str(n.get("title") or "").strip()
+        for n in (ctx.get("domestic_news") or [])[:5]
+        if n.get("title")
+    ]
+    foreign_titles = [
+        str(n.get("title") or "").strip()
+        for n in (ctx.get("foreign_news") or [])[:5]
+        if n.get("title")
+    ]
+
+    return {
+        "date": day,
+        "captured_at": when.isoformat(timespec="seconds"),
+        "platform_threat": {
+            "level": threat.get("level"),
+            "score": platform_score,
+            "drivers": list(threat.get("drivers") or [])[:6],
+        },
+        "strategic": {
+            "overall_risk_word": delta_bits.get("overall_risk_word"),
+            "overall_risk_score": delta_bits.get("overall_risk_score"),
+            "trend": delta_bits.get("trend"),
+            "critical_flashpoints": delta_bits.get("critical_flashpoints"),
+            "priorities": delta_bits.get("priorities") or [],
+            "region_shifts": delta_bits.get("region_shifts") or [],
+            "domestic_watch": delta_bits.get("domestic_watch"),
+        },
+        "metrics": {
+            "military_flights": _parse_mil_flights(threat, ctx.get("delta_excerpt") or ""),
+            "news_count": sc.get("news"),
+            "gdelt_count": sc.get("gdelt"),
+            "telegram_count": sc.get("telegram"),
+            "earthquakes": sc.get("earthquakes"),
+            "pathogens_rising": ww.get("pathogens_rising"),
+            "plants_active": ww.get("plants_active"),
+            "plants_monitored": ww.get("plants_monitored"),
+            "latest_collection_date": ww.get("latest_collection_date"),
+            "median_sample_age_days": ww.get("median_sample_age_days"),
+        },
+        "pathogens_rising": rising[:12],
+        "headline_leads": {
+            "domestic": domestic_titles,
+            "foreign": foreign_titles,
+        },
+    }
+
+
+def load_history() -> dict[str, Any]:
+    try:
+        if HISTORY_JSON.is_file():
+            raw = json.loads(HISTORY_JSON.read_text(encoding="utf-8"))
+            if isinstance(raw, dict) and isinstance(raw.get("days"), list):
+                return raw
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"[warn] history load failed: {exc}", file=sys.stderr)
+    return {
+        "schema": "pat_labs_threat_history_3d/v1",
+        "retention_days": HISTORY_DAYS,
+        "updated_at": None,
+        "days": [],
+    }
+
+
+def save_history(doc: dict[str, Any]) -> Path:
+    HISTORY_JSON.parent.mkdir(parents=True, exist_ok=True)
+    doc = dict(doc)
+    doc["schema"] = "pat_labs_threat_history_3d/v1"
+    doc["retention_days"] = HISTORY_DAYS
+    doc["updated_at"] = _now_local().isoformat(timespec="seconds")
+    # Atomic-ish replace
+    tmp = HISTORY_JSON.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(HISTORY_JSON)
+    try:
+        HISTORY_JSON.chmod(0o644)
+    except OSError:
+        pass
+    return HISTORY_JSON
+
+
+def upsert_history(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Insert/replace today's snapshot; keep only last HISTORY_DAYS calendar days."""
+    doc = load_history()
+    days = [d for d in (doc.get("days") or []) if isinstance(d, dict) and d.get("date")]
+    today = snapshot.get("date")
+    days = [d for d in days if d.get("date") != today]
+    days.append(snapshot)
+    days.sort(key=lambda d: str(d.get("date") or ""))
+    # Keep last N unique dates
+    if len(days) > HISTORY_DAYS:
+        days = days[-HISTORY_DAYS:]
+    doc["days"] = days
+    save_history(doc)
+    return doc
+
+
+def compute_progression(doc: dict[str, Any]) -> dict[str, Any]:
+    """Day-over-day deltas for LLM + HTML (facts only)."""
+    days = [d for d in (doc.get("days") or []) if isinstance(d, dict)]
+    days = sorted(days, key=lambda d: str(d.get("date") or ""))
+    if not days:
+        return {"days_available": 0, "series": [], "changes": [], "summary_lines": []}
+
+    series = []
+    for d in days:
+        pt = d.get("platform_threat") or {}
+        st = d.get("strategic") or {}
+        met = d.get("metrics") or {}
+        series.append(
+            {
+                "date": d.get("date"),
+                "platform_score": pt.get("score"),
+                "platform_level": pt.get("level"),
+                "strategic_score": st.get("overall_risk_score"),
+                "strategic_level": st.get("overall_risk_word"),
+                "trend": st.get("trend"),
+                "critical_flashpoints": st.get("critical_flashpoints"),
+                "pathogens_rising": met.get("pathogens_rising"),
+                "military_flights": met.get("military_flights"),
+                "news_count": met.get("news_count"),
+                "top_priorities": [
+                    p.get("region") for p in (st.get("priorities") or [])[:3] if isinstance(p, dict)
+                ],
+                "top_pathogens": [
+                    p.get("name") for p in (d.get("pathogens_rising") or [])[:4] if isinstance(p, dict)
+                ],
+            }
+        )
+
+    changes: list[dict[str, Any]] = []
+    summary_lines: list[str] = []
+
+    def _num(v: Any) -> float | None:
+        try:
+            if v is None:
+                return None
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    if len(series) >= 2:
+        prev, cur = series[-2], series[-1]
+        for key, label in (
+            ("platform_score", "Platform threat score"),
+            ("strategic_score", "Strategic risk score"),
+            ("pathogens_rising", "Pathogens rising"),
+            ("military_flights", "Military flights tracked"),
+            ("critical_flashpoints", "Critical flashpoints"),
+            ("news_count", "News items"),
+        ):
+            a, b = _num(prev.get(key)), _num(cur.get(key))
+            if a is None or b is None:
+                continue
+            delta = b - a
+            direction = "up" if delta > 0 else ("down" if delta < 0 else "flat")
+            changes.append(
+                {
+                    "metric": key,
+                    "label": label,
+                    "from_date": prev.get("date"),
+                    "to_date": cur.get("date"),
+                    "from": a,
+                    "to": b,
+                    "delta": delta,
+                    "direction": direction,
+                }
+            )
+            arrow = "↑" if delta > 0 else ("↓" if delta < 0 else "→")
+            summary_lines.append(
+                f"{label}: {a:g} → {b:g} ({arrow}{abs(delta):g}) [{prev.get('date')} → {cur.get('date')}]"
+            )
+
+        # Priority set changes
+        prev_pri = set(prev.get("top_priorities") or [])
+        cur_pri = set(cur.get("top_priorities") or [])
+        entered = sorted(cur_pri - prev_pri)
+        exited = sorted(prev_pri - cur_pri)
+        if entered:
+            summary_lines.append("New priority theaters: " + ", ".join(entered))
+        if exited:
+            summary_lines.append("Dropped from top priorities: " + ", ".join(exited))
+
+        prev_path = set(prev.get("top_pathogens") or [])
+        cur_path = set(cur.get("top_pathogens") or [])
+        new_path = sorted(cur_path - prev_path)
+        gone_path = sorted(prev_path - cur_path)
+        if new_path:
+            summary_lines.append("Newly prominent rising pathogens: " + ", ".join(new_path))
+        if gone_path:
+            summary_lines.append("No longer in top rising list: " + ", ".join(gone_path))
+    else:
+        summary_lines.append(
+            f"Only {len(series)} day(s) of history so far — progression strengthens after 2–3 daily runs."
+        )
+
+    # 3-day platform score trail
+    trail = [
+        f"{s.get('date')}: platform {s.get('platform_score')}/{s.get('platform_level')}"
+        + (
+            f", strategic {s.get('strategic_score')}/{s.get('strategic_level')}"
+            if s.get("strategic_score") is not None or s.get("strategic_level")
+            else ""
+        )
+        for s in series
+    ]
+    if trail:
+        summary_lines.insert(0, "Score trail: " + " · ".join(trail))
+
+    return {
+        "days_available": len(series),
+        "retention_days": HISTORY_DAYS,
+        "series": series,
+        "changes": changes,
+        "summary_lines": summary_lines,
+        "history_path": str(HISTORY_JSON),
+    }
+
+
 # ── Ollama ──────────────────────────────────────────────────────────────────
 
 
@@ -392,6 +732,9 @@ def _briefing_facts_for_llm(ctx: dict[str, Any]) -> dict[str, Any]:
         "strategic_delta_excerpt": "\n".join(
             (facts.get("strategic_delta_excerpt") or "").splitlines()[:120]
         ),
+        "three_day_progression": (ctx.get("progression") or {}).get("summary_lines")
+        or [],
+        "three_day_series": (ctx.get("progression") or {}).get("series") or [],
     }
 
 
@@ -419,6 +762,7 @@ Requirements:
 - Length: 3 short paragraphs OR 8–14 dense sentences total (about 220–420 words).
 - Be specific: name flashpoints, risk scores, pathogens with rates/states when given, and the most important headlines (with outlet when given).
 - Cover all four threads when data exists: (1) strategic / geopolitical posture, (2) domestic U.S. developments, (3) international news, (4) wastewater pathogen trends and sampling lag.
+- When three_day_progression / three_day_series are present, weave in how scores or priorities moved over the last 2–3 days (improving, deteriorating, or flat) using only those numbers.
 - Open with overall posture in plain English, then connect the highest-signal items, then close with what matters most over the next day or two.
 - Plain prose only — no bullet lists, no markdown headings, no JSON, no preamble like "Here is the summary".
 
@@ -432,6 +776,7 @@ Facts:
     support_user = f"""Return JSON only (no markdown fences) with exactly these keys:
 - "what_to_watch": array of 5–7 short concrete watch items (strings), each grounded in the facts (flashpoints, pathogens, named headlines). No vague filler.
 - "threat_blurb": 3–5 sentences translating strategic risk for non-experts; mention overall risk score/level and the top flashpoints if present.
+- "progression_blurb": 2–4 sentences on how the last 2–3 days compare (use three_day_progression numbers only; if only one day of history, say baseline day).
 
 Facts:
 {pack_json}
@@ -446,6 +791,7 @@ Facts:
         what_to_watch = str(what or "").strip()
 
     threat_blurb = str(support.get("threat_blurb") or "").strip()
+    progression_blurb = str(support.get("progression_blurb") or "").strip()
 
     if not executive:
         print("[warn] Ollama executive summary empty", file=sys.stderr)
@@ -456,6 +802,7 @@ Facts:
         "executive_summary": executive,
         "what_to_watch": what_to_watch,
         "threat_blurb": threat_blurb,
+        "progression_blurb": progression_blurb,
     }
 
 
@@ -637,6 +984,27 @@ def assemble_narrative(ctx: dict[str, Any], prose: dict[str, str] | None = None)
             "- Pathogens still marked rising on the wastewater rollup.",
             "- High-impact headlines in the domestic and international lists above.",
         ]
+
+    prog = ctx.get("progression") if isinstance(ctx.get("progression"), dict) else {}
+    prog_lines = list(prog.get("summary_lines") or [])
+    prog_blurb = (prose.get("progression_blurb") or "").strip()
+    lines += ["", "## 3-Day Progression", ""]
+    if prog_blurb:
+        lines += [prog_blurb, ""]
+    if prog_lines:
+        for ln in prog_lines:
+            lines.append(f"- {ln}")
+    else:
+        lines.append("- No multi-day history yet (first run seeds the rolling JSON).")
+    series = prog.get("series") or []
+    if series:
+        lines += ["", "| Date | Platform | Strategic | Pathogens ↑ | Mil. flights |", "|---|---|---|---:|---:|"]
+        for s in series:
+            lines.append(
+                f"| {s.get('date')} | {s.get('platform_score')}/{s.get('platform_level')} | "
+                f"{s.get('strategic_score')}/{s.get('strategic_level')} | "
+                f"{s.get('pathogens_rising')} | {s.get('military_flights')} |"
+            )
 
     lines += [
         "",
@@ -828,6 +1196,79 @@ def _format_snapshot_date(iso_ts: str) -> str:
         return dt.strftime("%B %d, %Y")
     except ValueError:
         return _now_local().strftime("%B %d, %Y")
+
+
+def _render_progression_html(ctx: dict[str, Any]) -> str:
+    """Email-safe 3-day progression table + change bullets."""
+    prog = ctx.get("progression") if isinstance(ctx.get("progression"), dict) else {}
+    series = list(prog.get("series") or [])
+    summary = list(prog.get("summary_lines") or [])
+    blurb = ""
+    # progression_blurb lives in narrative section; optional on ctx
+    if isinstance(ctx.get("progression_blurb"), str):
+        blurb = ctx["progression_blurb"].strip()
+
+    def esc(s: Any) -> str:
+        return html.escape("" if s is None else str(s))
+
+    parts: list[str] = []
+    if blurb:
+        parts.append(
+            f'<p style="margin:0 0 10px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;'
+            f'font-size:13px;color:#334155;line-height:1.5;">{esc(blurb)}</p>'
+        )
+
+    if series:
+        rows = []
+        for s in series:
+            plat = s.get("platform_score")
+            plat_l = s.get("platform_level") or "—"
+            strat = s.get("strategic_score")
+            strat_l = s.get("strategic_level") or "—"
+            plat_cell = f"{plat}/{plat_l}" if plat is not None else str(plat_l)
+            strat_cell = f"{strat}/{strat_l}" if strat is not None else str(strat_l)
+            rows.append(
+                "<tr>"
+                f'<td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;color:#0f172a;">{esc(s.get("date"))}</td>'
+                f'<td align="center" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;color:#0f172a;">{esc(plat_cell)}</td>'
+                f'<td align="center" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;color:#0f172a;">{esc(strat_cell)}</td>'
+                f'<td align="center" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;color:#0f172a;">{esc(s.get("pathogens_rising") if s.get("pathogens_rising") is not None else "—")}</td>'
+                f'<td align="center" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;color:#0f172a;">{esc(s.get("military_flights") if s.get("military_flights") is not None else "—")}</td>'
+                "</tr>"
+            )
+        parts.append(
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            'style="border:1px solid #e2e8f0;margin-bottom:10px;">'
+            '<tr style="background:#f8fafc;">'
+            '<th align="left" style="padding:8px 10px;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Date</th>'
+            '<th align="center" style="padding:8px 10px;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Platform</th>'
+            '<th align="center" style="padding:8px 10px;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Strategic</th>'
+            '<th align="center" style="padding:8px 10px;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Path ↑</th>'
+            '<th align="center" style="padding:8px 10px;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Flights</th>'
+            "</tr>"
+            + "".join(rows)
+            + "</table>"
+        )
+
+    # Change bullets (skip the score trail line if table already shows it)
+    change_lines = [ln for ln in summary if not str(ln).startswith("Score trail:")]
+    if change_lines:
+        lis = "".join(
+            f'<tr><td width="14" valign="top" style="padding:4px 0;font-size:11px;color:#94a3b8;">•</td>'
+            f'<td style="padding:4px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;color:#334155;line-height:1.4;">{esc(ln)}</td></tr>'
+            for ln in change_lines[:10]
+        )
+        parts.append(
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{lis}</table>'
+        )
+    elif not series:
+        parts.append(
+            '<p style="margin:0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;color:#64748b;">'
+            "No multi-day history yet — this run seeds the rolling 3-day JSON."
+            "</p>"
+        )
+
+    return "\n".join(parts) if parts else ""
 
 
 def render_pat_labs_html(ctx: dict[str, Any], narrative_md: str) -> str:
@@ -1568,6 +2009,19 @@ def render_pat_labs_html(ctx: dict[str, Any], narrative_md: str) -> str:
             </td>
           </tr>
 
+          <!-- ===== 3-DAY PROGRESSION ===== -->
+          <tr>
+            <td style="padding:18px 24px 8px 24px;">
+              <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1e3a5f;border-bottom:2px solid #0b1f33;padding-bottom:8px;margin-bottom:4px;">
+                3-Day Progression
+              </div>
+              <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;color:#64748b;margin-bottom:8px;">
+                Rolling history · how scores and priorities moved (not just today)
+              </div>
+              {_render_progression_html(ctx)}
+            </td>
+          </tr>
+
           <!-- ===== NEXT 48 HOURS ===== -->
           <tr>
             <td style="padding:18px 24px 8px 24px;">
@@ -1682,6 +2136,18 @@ def main() -> int:
         f"delta={'yes' if ctx.get('delta_excerpt') else 'no'}"
     )
 
+    # Rolling 3-day history (fixed JSON filename) — seed/update before narrative
+    day_snap = build_day_snapshot(ctx)
+    hist_doc = upsert_history(day_snap)
+    progression = compute_progression(hist_doc)
+    ctx["day_snapshot"] = day_snap
+    ctx["history"] = hist_doc
+    ctx["progression"] = progression
+    print(
+        f"[ok] history {HISTORY_JSON} "
+        f"days={progression.get('days_available')}/{HISTORY_DAYS}"
+    )
+
     prose: dict[str, str] = {}
     if not args.no_ollama:
         print(f"[info] Ollama model={OLLAMA_MODEL} (prose bits) …")
@@ -1690,6 +2156,8 @@ def main() -> int:
             print("[info] Ollama prose received")
         else:
             print("[warn] Ollama prose empty; structured text only", file=sys.stderr)
+    if prose.get("progression_blurb"):
+        ctx["progression_blurb"] = prose["progression_blurb"]
     narrative = assemble_narrative(ctx, prose)
 
     md = build_full_markdown(ctx, narrative)
@@ -1697,6 +2165,7 @@ def main() -> int:
     paths = write_outputs(md, html_doc)
     print(f"[ok] wrote {paths['markdown']}")
     print(f"[ok] wrote {paths['html']}")
+    print(f"[ok] wrote {HISTORY_JSON}")
 
     want_email = args.email or (
         not args.no_email and _env_bool("DAILY_BRIEF_EMAIL", False)
