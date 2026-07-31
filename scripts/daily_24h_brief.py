@@ -748,29 +748,43 @@ def ollama_prose_bits(ctx: dict[str, Any]) -> dict[str, str]:
     pack_json = json.dumps(pack, ensure_ascii=False, indent=2)
 
     system = (
-        "You are the lead analyst for PAT Labs Threat Assessment, writing a daily "
-        "brief for educated friends and family. Calm, specific, and substantive. "
-        "Use ONLY the provided facts — never invent places, numbers, or events. "
-        "No medical advice, no conspiracy framing, no panic. "
-        "Wastewater is community environmental surveillance, not a personal diagnosis."
+        "You are the lead analyst for PAT Labs Threat Assessment. "
+        "Write finished prose only. Use ONLY provided facts. "
+        "Never invent places, numbers, or events. No medical advice, no panic. "
+        "Wastewater is environmental surveillance, not diagnosis. "
+        "FORBIDDEN: markdown headings (# ## ###), bullet lists, numbered outlines, "
+        "section labels like 'Strategic Overview' or 'Recommendations', "
+        "and openers like 'Based on the provided data'."
     )
 
     # ── 1) Full executive summary (multi-paragraph plain text) ─────────────
-    exec_user = f"""Write the Executive Summary for today's PAT Labs Threat Assessment.
+    exec_user = f"""Write the Executive Summary as 3 continuous paragraphs of plain English (220–400 words total).
 
-Requirements:
-- Length: 3 short paragraphs OR 8–14 dense sentences total (about 220–420 words).
-- Be specific: name flashpoints, risk scores, pathogens with rates/states when given, and the most important headlines (with outlet when given).
-- Cover all four threads when data exists: (1) strategic / geopolitical posture, (2) domestic U.S. developments, (3) international news, (4) wastewater pathogen trends and sampling lag.
-- When three_day_progression / three_day_series are present, weave in how scores or priorities moved over the last 2–3 days (improving, deteriorating, or flat) using only those numbers.
-- Open with overall posture in plain English, then connect the highest-signal items, then close with what matters most over the next day or two.
-- Plain prose only — no bullet lists, no markdown headings, no JSON, no preamble like "Here is the summary".
+Must include when facts allow: overall risk/score and trend; top flashpoints by name; 3-day score movement if three_day_series exists; notable rising pathogens with rates; 1–2 concrete headlines with outlets; what matters next.
+
+Output rules (strict):
+- ONLY paragraph text separated by blank lines
+- NO markdown of any kind (no #, ###, -, *, 1., bold **)
+- NO section titles
+- NO incomplete lists or trailing colons with empty content
+- Start with the situation, not meta commentary
 
 Facts:
 {pack_json}
 """
     executive = _ollama_chat(system, exec_user, num_predict=2200)
     executive = _clean_exec_prose(executive)
+    if not _exec_prose_ok(executive):
+        print("[warn] executive summary failed quality check — retrying once", file=sys.stderr)
+        retry = (
+            "Rewrite as THREE plain paragraphs only. Zero markdown. Zero headings. "
+            "Zero bullets. Include scores, flashpoints, pathogens, and trend from the facts.\n\n"
+            f"Facts:\n{pack_json}"
+        )
+        executive = _clean_exec_prose(_ollama_chat(system, retry, num_predict=1800))
+    if not _exec_prose_ok(executive):
+        print("[warn] executive summary still poor — using structured fallback", file=sys.stderr)
+        executive = ""
 
     # ── 2) Supporting fields as JSON ───────────────────────────────────────
     support_user = f"""Return JSON only (no markdown fences) with exactly these keys:
@@ -807,7 +821,7 @@ Facts:
 
 
 def _clean_exec_prose(text: str) -> str:
-    """Strip chatty wrappers; keep multi-paragraph prose."""
+    """Strip chatty wrappers and markdown outlines; keep multi-paragraph prose."""
     t = (text or "").strip()
     if not t:
         return ""
@@ -816,17 +830,164 @@ def _clean_exec_prose(text: str) -> str:
         obj = _parse_json_object(t)
         if obj and obj.get("executive_summary"):
             t = str(obj["executive_summary"]).strip()
-    # Drop leading "Here is..." lines
+
+    # If model returned an outline, flatten heading+bullets into sentences
+    if re.search(r"(?m)^#{1,6}\s+", t) or re.search(r"(?m)^(\d+\.|[-*])\s+\S", t):
+        t = _outline_to_prose(t)
+
     lines = t.splitlines()
     while lines and re.match(
-        r"(?i)^(here('s| is)|sure[,.]|below is|executive summary\s*:)\b",
+        r"(?i)^(here('s| is)|sure[,.]|below is|executive summary\s*:|"
+        r"based on the provided data|comprehensive analysis)\b",
         lines[0].strip(),
     ):
         lines.pop(0)
-    t = "\n".join(lines).strip()
-    # Normalize markdown bold leftovers from model
-    t = re.sub(r"\*\*(.+?)\*\*", r"\1", t)
-    return t.strip()
+    # Drop leftover pure heading / empty-label lines
+    cleaned: list[str] = []
+    for line in lines:
+        s = line.strip()
+        if not s:
+            cleaned.append("")
+            continue
+        if re.match(r"^#{1,6}\s+", s):
+            # heading-only → skip (content should already be flattened)
+            continue
+        if re.match(r"(?i)^(strategic overview|key flashpoints|recent changes|"
+                    r"pathogen situation|military activity|news coverage|"
+                    r"recommendations)\s*:?\s*$", s):
+            continue
+        if re.match(r"(?i)^\d+\.\s+\w[\w\s/&-]*:\s*$", s):
+            # "1. Score Progression:" with no body
+            continue
+        s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)
+        s = re.sub(r"^#{1,6}\s+", "", s)
+        s = re.sub(r"^[-*]\s+", "", s)
+        s = re.sub(r"^\d+\.\s+", "", s)
+        cleaned.append(s)
+
+    # Collapse to paragraphs on blank lines
+    paras: list[str] = []
+    buf: list[str] = []
+    for s in cleaned:
+        if not s:
+            if buf:
+                paras.append(" ".join(buf))
+                buf = []
+            continue
+        buf.append(s)
+    if buf:
+        paras.append(" ".join(buf))
+
+    t = "\n\n".join(p.strip() for p in paras if p.strip())
+    # Remove meta openers mid-text
+    t = re.sub(
+        r"(?i)^based on the provided data,?\s*here'?s a comprehensive analysis[^:]*:\s*",
+        "",
+        t,
+    ).strip()
+    return t
+
+
+def _outline_to_prose(text: str) -> str:
+    """Turn markdown outline (headings + bullets) into paragraph blocks."""
+    chunks: list[str] = []
+    current_label = ""
+    bullets: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_label, bullets
+        if not bullets and not current_label:
+            return
+        body = "; ".join(b.rstrip(".") for b in bullets if b.strip())
+        if current_label and body:
+            chunks.append(f"{current_label}: {body}.")
+        elif body:
+            chunks.append(body + ("" if body.endswith(".") else "."))
+        elif current_label:
+            # label alone — drop empty sections
+            pass
+        current_label = ""
+        bullets = []
+
+    for raw in text.splitlines():
+        s = raw.strip()
+        if not s:
+            flush()
+            continue
+        hm = re.match(r"^#{1,6}\s+(.+)$", s)
+        if hm:
+            flush()
+            current_label = re.sub(r"[:\s]+$", "", hm.group(1).strip())
+            continue
+        bm = re.match(r"^[-*]\s+(.+)$", s)
+        if bm:
+            bullets.append(re.sub(r"\*\*(.+?)\*\*", r"\1", bm.group(1).strip()))
+            continue
+        nm = re.match(r"^\d+\.\s+(.+)$", s)
+        if nm:
+            item = re.sub(r"\*\*(.+?)\*\*", r"\1", nm.group(1).strip())
+            # "Score Progression:" alone → become label, not bullet
+            if item.endswith(":") and len(item) < 60:
+                flush()
+                current_label = item.rstrip(":").strip()
+            else:
+                bullets.append(item)
+            continue
+        # plain sentence line
+        flush()
+        s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)
+        if not re.match(
+            r"(?i)^(based on the provided data|here'?s a comprehensive)",
+            s,
+        ):
+            chunks.append(s if s.endswith((".", "!", "?")) else s + ".")
+
+    flush()
+    # Group into ~3 paragraphs
+    if not chunks:
+        return ""
+    if len(chunks) <= 3:
+        return "\n\n".join(chunks)
+    n = len(chunks)
+    a, b = max(1, n // 3), max(2, (2 * n) // 3)
+    return "\n\n".join(
+        [
+            " ".join(chunks[:a]),
+            " ".join(chunks[a:b]),
+            " ".join(chunks[b:]),
+        ]
+    )
+
+
+def _exec_prose_ok(text: str) -> bool:
+    """Reject empty outlines / markdown shells from the model."""
+    t = (text or "").strip()
+    if len(t) < 120:
+        return False
+    words = len(t.split())
+    if words < 40:
+        return False
+    heading_lines = len(re.findall(r"(?m)^#{1,6}\s+\S", t))
+    if heading_lines >= 2:
+        return False
+    if t.count("###") >= 2:
+        return False
+    # Many empty section labels
+    empty_labels = len(
+        re.findall(
+            r"(?im)^(strategic overview|key flashpoints|pathogen situation|"
+            r"military activity|news coverage|recommendations)\s*:?\s*$",
+            t,
+        )
+    )
+    if empty_labels >= 2:
+        return False
+    if re.search(r"(?i)based on the provided data", t) and words < 80:
+        return False
+    # Truncated trailing header
+    if re.search(r"(?i)recommendations for\s*$", t):
+        return False
+    return True
 
 
 def _fallback_executive_summary(ctx: dict[str, Any]) -> str:
@@ -906,8 +1067,8 @@ def assemble_narrative(ctx: dict[str, Any], prose: dict[str, str] | None = None)
     score = tl.get("score")
     drivers = tl.get("drivers") or []
 
-    exec_sum = (prose.get("executive_summary") or "").strip()
-    if not exec_sum:
+    exec_sum = _clean_exec_prose((prose.get("executive_summary") or "").strip())
+    if not _exec_prose_ok(exec_sum):
         exec_sum = _fallback_executive_summary(ctx)
 
     threat_blurb = (prose.get("threat_blurb") or "").strip()
@@ -1776,13 +1937,29 @@ def render_pat_labs_html(ctx: dict[str, Any], narrative_md: str) -> str:
   </td>
 </tr>"""
 
-    # Full analysis (progressive disclosure — original exec prose)
+    # Full analysis (progressive disclosure — cleaned prose only)
     analysis_paras = ""
-    for p in _md_paragraphs(exec_body) or ([exec_body] if exec_body else []):
-        if p.strip():
-            analysis_paras += f'<p style="margin:0 0 12px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;color:#334155;line-height:1.55;">{esc(p.strip())}</p>'
-    if threat_blurb:
-        analysis_paras += f'<p style="margin:0 0 12px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;color:#334155;line-height:1.55;">{esc(threat_blurb)}</p>'
+    exec_clean = _clean_exec_prose(exec_body) if exec_body else ""
+    if not _exec_prose_ok(exec_clean):
+        exec_clean = _fallback_executive_summary(ctx)
+    for p in re.split(r"\n\s*\n", exec_clean):
+        p = p.strip()
+        if not p or re.match(r"^#{1,6}\s+", p):
+            continue
+        # Never show raw markdown markers in email
+        p = re.sub(r"^#{1,6}\s+", "", p)
+        p = re.sub(r"\*\*(.+?)\*\*", r"\1", p)
+        analysis_paras += (
+            f'<p style="margin:0 0 12px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;'
+            f'font-size:13px;color:#334155;line-height:1.55;">{esc(p)}</p>'
+        )
+    if threat_blurb and threat_blurb not in exec_clean:
+        tb = _clean_exec_prose(threat_blurb) or threat_blurb
+        if tb and not re.match(r"^#{1,6}\s+", tb):
+            analysis_paras += (
+                f'<p style="margin:0 0 12px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;'
+                f'font-size:13px;color:#334155;line-height:1.55;">{esc(tb)}</p>'
+            )
 
     # Remaining threat context bullets (region shifts etc.) not in priority cards
     extra_context = []
