@@ -5,7 +5,7 @@ Writes (overwrites, no timestamps):
   ~/Desktop/Daily_Inspiration/shadowbroker_24h_brief.md
   ~/Desktop/Daily_Inspiration/shadowbroker_24h_brief.html
 
-Uses local Ollama (default model: cogito:14b) plus Shadowbroker live data
+Uses local Ollama (default model: olmo-3:32b-think) plus Shadowbroker live data
 and the latest strategic delta brief.
 
 Optional SMTP (HTML body) when DAILY_BRIEF_SMTP_* or DELTA_REPORT_SMTP_* are set.
@@ -32,7 +32,7 @@ from typing import Any
 
 SB_BASE = os.environ.get("SHADOWBROKER_URL", "http://127.0.0.1:3050").rstrip("/")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-OLLAMA_MODEL = os.environ.get("DAILY_BRIEF_OLLAMA_MODEL", "cogito:14b")
+OLLAMA_MODEL = os.environ.get("DAILY_BRIEF_OLLAMA_MODEL", "olmo-3:32b-think")
 OUT_DIR = Path(
     os.environ.get(
         "DAILY_BRIEF_OUT_DIR",
@@ -840,9 +840,31 @@ Facts:
     }
 
 
+def _strip_think_traces(text: str) -> str:
+    """Remove chain-of-thought blocks from think-style models (e.g. olmo-3:32b-think)."""
+    t = text or ""
+    # XML-style / common Ollama think wrappers
+    for pat in (
+        r"(?is)<think\b[^>]*>.*?</think>",
+        r"(?is)<thinking\b[^>]*>.*?</thinking>",
+        r"(?is)<reasoning\b[^>]*>.*?</reasoning>",
+        r"(?is)<\|thinking\|>.*?<\|/thinking\|>",
+        r"(?is)<\|begin_of_thought\|>.*?<\|end_of_thought\|>",
+    ):
+        t = re.sub(pat, "", t)
+    # If the model dumps a long "Thinking:" preamble then a Final answer:
+    m = re.search(
+        r"(?is)(?:^|\n)\s*(?:final\s+answer|answer|executive\s+summary|situation\s+overview)\s*[:\-]\s*",
+        t,
+    )
+    if m and m.start() > 80:
+        t = t[m.end() :]
+    return t.strip()
+
+
 def _clean_exec_prose(text: str) -> str:
     """Strip chatty wrappers and markdown outlines; keep multi-paragraph prose."""
-    t = (text or "").strip()
+    t = _strip_think_traces((text or "").strip())
     if not t:
         return ""
     # Drop accidental JSON wrapper
@@ -850,6 +872,7 @@ def _clean_exec_prose(text: str) -> str:
         obj = _parse_json_object(t)
         if obj and obj.get("executive_summary"):
             t = str(obj["executive_summary"]).strip()
+            t = _strip_think_traces(t)
 
     # If model returned an outline, flatten heading+bullets into sentences
     if re.search(r"(?m)^#{1,6}\s+", t) or re.search(r"(?m)^(\d+\.|[-*])\s+\S", t):

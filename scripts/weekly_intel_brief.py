@@ -7,7 +7,7 @@ refreshes live feeds for context, writes fixed-name MD + email HTML:
   ~/Desktop/Daily_Inspiration/pat_labs_weekly_intel.md
   ~/Desktop/Daily_Inspiration/pat_labs_weekly_intel.html
 
-No dated archive copies. Uses Ollama (default cogito:14b) for narrative.
+No dated archive copies. Uses Ollama (default olmo-3:32b-think) for narrative.
 """
 
 from __future__ import annotations

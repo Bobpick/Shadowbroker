@@ -9,7 +9,7 @@ This guide installs the stack so a MacBook Pro can run **Shadowbroker** (data), 
 | Piece | Role |
 |--------|------|
 | **Shadowbroker** (Docker) | Live OSINT feeds, GT/delta, wastewater, news |
-| **Ollama + `cogito:14b`** | Local LLM for executive prose |
+| **Ollama + `olmo-3:32b-think`** | Local LLM for executive prose |
 | **Python scripts** | Write fixed-name MD/HTML + rolling history JSON |
 
 Outputs (default, fixed names — no dated archives):
@@ -29,7 +29,7 @@ Outputs (default, fixed names — no dated archives):
 - MacBook Pro (Intel or Apple Silicon)
 - **Docker Desktop** with ~8 GB+ RAM allocated if possible
 - **Git**, **Python 3** (stdlib only for briefs)
-- **Ollama** + disk for `cogito:14b` (~9 GB)
+- **Ollama** + disk for `olmo-3:32b-think` (~19 GB)
 - Network for feeds (and first image/model pulls)
 
 ---
@@ -79,7 +79,7 @@ chmod +x quick_restart.sh nuke.sh
 
 ---
 
-## 3. Ollama + `cogito:14b`
+## 3. Ollama + `olmo-3:32b-think`
 
 ```bash
 # Homebrew (recommended)
@@ -88,7 +88,7 @@ brew install ollama
 # Start Ollama (app or service)
 open -a Ollama 2>/dev/null || brew services start ollama || ollama serve &
 
-ollama pull cogito:14b
+ollama pull olmo-3:32b-think
 ollama list
 ```
 
@@ -116,7 +116,7 @@ Shadowbroker and Ollama must be up:
 ```bash
 export SHADOWBROKER_URL=http://127.0.0.1:3050
 export OLLAMA_URL=http://127.0.0.1:11434
-export DAILY_BRIEF_OLLAMA_MODEL=cogito:14b
+export DAILY_BRIEF_OLLAMA_MODEL=olmo-3:32b-think
 export DAILY_BRIEF_OUT_DIR="$HOME/Desktop/Daily_Inspiration"
 
 # Prefer Homebrew/Xcode python3 if /usr/bin/python3 is missing:
@@ -238,7 +238,7 @@ Only Python + Ollama + scripts are required on the Mac. The remote API must be r
 
 1. Docker Desktop running  
 2. `docker compose up -d` in the Shadowbroker clone  
-3. `ollama pull cogito:14b` and Ollama running  
+3. `ollama pull olmo-3:32b-think` and Ollama running  
 4. `python3 scripts/daily_24h_brief.py --no-email` once by hand  
 5. Schedule daily 6:30 + weekly (e.g. Monday 07:00)  
 6. Open HTML under `~/Desktop/Daily_Inspiration/`  
@@ -251,7 +251,7 @@ Only Python + Ollama + scripts are required on the Mac. The remote API must be r
 |---------|-----|
 | Dashboard blank / port in use | `./quick_restart.sh` (kills host listeners on 3000/3050) |
 | Frontend won’t bind 3000 | Quit other Next.js apps; free port; restart Docker |
-| No Ollama prose | `ollama list`, `ollama serve`, model name `cogito:14b` |
+| No Ollama prose | `ollama list`, `ollama serve`, model name `olmo-3:32b-think` |
 | Empty 3-day / weekly history | Need successful daily runs; weekly is weak until ~7 days exist |
 | Cron can’t write Desktop | Full Disk Access for the scheduler / Terminal |
 | Python not found | `xcode-select --install` or Homebrew `python3` |
