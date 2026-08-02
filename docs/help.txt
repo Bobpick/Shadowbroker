@@ -1,0 +1,34 @@
+cd ~/Shadowbroker
+
+# Stop Docker and any leftover processes
+docker compose down
+pkill -f "uvicorn main:app" || true
+pkill -f "next dev" || true
+pkill -f "Shadowbroker/start.sh" || true
+
+# Get latest code
+git pull origin main
+
+# Make scripts executable
+chmod +x start.sh scripts/*.sh
+
+# Put your API keys in .env (repo root) — at minimum:
+#   OPENSKY_CLIENT_ID, OPENSKY_CLIENT_SECRET, AIS_API_KEY
+# Enable extras you want (GT, Reddit, Telegram):
+#   GT_ANALYTICS_ENABLED=true
+#   REDDIT_OSINT_ENABLED=true
+#   TELEGRAM_OSINT_ENABLED=true
+#   TELEGRAM_OSINT_CHANNELS=osintdefender,insiderpaper,aljazeeraenglish,nexta_live,war_monitor
+nano .env
+
+# Copy root .env → backend/.env (where the API actually reads it)
+./scripts/sync-backend-env.sh
+
+# Install backend (Python 3.12 recommended)
+export BACKEND_BASE_PYTHON=python3.12
+cd backend && uv sync --frozen --no-dev && cd ..
+cd backend && npm ci --omit=dev && cd ..
+cd frontend && npm ci && cd ..
+
+# Start (no Docker) — keep this terminal open
+./scripts/start-source.sh
