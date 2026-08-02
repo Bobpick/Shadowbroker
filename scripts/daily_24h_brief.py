@@ -41,14 +41,18 @@ OUT_DIR = Path(
 ).expanduser()
 OUT_MD = OUT_DIR / "shadowbroker_24h_brief.md"
 OUT_HTML = OUT_DIR / "shadowbroker_24h_brief.html"
-# Fixed-name rolling history (last 3 calendar days) — overwritten in place, no dated copies
+# Fixed-name rolling history — overwritten in place, no dated copies.
+# Default retention 14 days so weekly intel can use a full week; daily UI still shows 3 days.
 HISTORY_JSON = Path(
     os.environ.get(
         "DAILY_BRIEF_HISTORY_JSON",
-        str(OUT_DIR / "pat_labs_threat_history_3d.json"),
+        str(OUT_DIR / "pat_labs_threat_history.json"),
     )
 ).expanduser()
-HISTORY_DAYS = max(1, int(os.environ.get("DAILY_BRIEF_HISTORY_DAYS", "3") or "3"))
+# Backward-compatible alias if only the older 3d filename exists
+HISTORY_JSON_LEGACY = OUT_DIR / "pat_labs_threat_history_3d.json"
+HISTORY_DAYS = max(1, int(os.environ.get("DAILY_BRIEF_HISTORY_DAYS", "14") or "14"))
+PROGRESSION_DISPLAY_DAYS = max(1, int(os.environ.get("DAILY_BRIEF_PROGRESSION_DAYS", "3") or "3"))
 DELTA_MD_CANDIDATES = [
     Path.home() / "Desktop" / "Daily_Inspiration" / "Shadowbroker_Strategic_Delta.md",
     Path("/home/bob/Desktop/Daily_Inspiration/Shadowbroker_Strategic_Delta.md"),
@@ -439,15 +443,19 @@ def build_day_snapshot(ctx: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_history() -> dict[str, Any]:
-    try:
-        if HISTORY_JSON.is_file():
-            raw = json.loads(HISTORY_JSON.read_text(encoding="utf-8"))
-            if isinstance(raw, dict) and isinstance(raw.get("days"), list):
-                return raw
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"[warn] history load failed: {exc}", file=sys.stderr)
+    candidates = [HISTORY_JSON]
+    if HISTORY_JSON_LEGACY not in candidates:
+        candidates.append(HISTORY_JSON_LEGACY)
+    for path in candidates:
+        try:
+            if path.is_file():
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict) and isinstance(raw.get("days"), list):
+                    return raw
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"[warn] history load failed ({path}): {exc}", file=sys.stderr)
     return {
-        "schema": "pat_labs_threat_history_3d/v1",
+        "schema": "pat_labs_threat_history/v1",
         "retention_days": HISTORY_DAYS,
         "updated_at": None,
         "days": [],
@@ -457,7 +465,7 @@ def load_history() -> dict[str, Any]:
 def save_history(doc: dict[str, Any]) -> Path:
     HISTORY_JSON.parent.mkdir(parents=True, exist_ok=True)
     doc = dict(doc)
-    doc["schema"] = "pat_labs_threat_history_3d/v1"
+    doc["schema"] = "pat_labs_threat_history/v1"
     doc["retention_days"] = HISTORY_DAYS
     doc["updated_at"] = _now_local().isoformat(timespec="seconds")
     # Atomic-ish replace
@@ -466,6 +474,15 @@ def save_history(doc: dict[str, Any]) -> Path:
     tmp.replace(HISTORY_JSON)
     try:
         HISTORY_JSON.chmod(0o644)
+    except OSError:
+        pass
+    # Keep legacy filename in sync for older tools/paths
+    try:
+        if HISTORY_JSON_LEGACY != HISTORY_JSON:
+            HISTORY_JSON_LEGACY.write_text(
+                HISTORY_JSON.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            HISTORY_JSON_LEGACY.chmod(0o644)
     except OSError:
         pass
     return HISTORY_JSON
@@ -493,6 +510,9 @@ def compute_progression(doc: dict[str, Any]) -> dict[str, Any]:
     days = sorted(days, key=lambda d: str(d.get("date") or ""))
     if not days:
         return {"days_available": 0, "series": [], "changes": [], "summary_lines": []}
+
+    # Daily brief progression panel: last N days only (default 3)
+    days = days[-PROGRESSION_DISPLAY_DAYS:]
 
     series = []
     for d in days:
