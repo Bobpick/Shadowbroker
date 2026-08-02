@@ -205,6 +205,11 @@ graphify-out/
 docs/*
 !docs/OUTBOUND_DATA.md
 !docs/production-hardening.md
+!docs/REPO_LAYOUT.md
+!docs/help.txt
+!docs/Mesh.md
+!docs/install/
+!docs/install/**
 !docs/mesh/
 docs/mesh/*
 !docs/mesh/threat-model.md
