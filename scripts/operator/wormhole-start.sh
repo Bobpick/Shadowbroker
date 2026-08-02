@@ -19,8 +19,8 @@ else
     exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR/backend"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$ROOT/backend"
 
 if [ ! -d "venv" ]; then
     echo "[*] Creating Python virtual environment..."

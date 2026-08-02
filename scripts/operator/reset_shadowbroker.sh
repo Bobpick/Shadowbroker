@@ -32,7 +32,7 @@ setup_repo() {
   fi
 
   git checkout main 2>/dev/null || true
-  chmod +x start.sh compose.sh *.sh scripts/*.sh 2>/dev/null || true
+  chmod +x start.sh compose.sh scripts/*.sh scripts/operator/*.sh 2>/dev/null || true
 }
 
 # ====================== 4. CONFIGURE .env + START (BUILD FROM SOURCE) ======================

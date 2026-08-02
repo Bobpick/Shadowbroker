@@ -72,8 +72,8 @@ Verify:
 Recovery scripts in the repo:
 
 ```bash
-chmod +x quick_restart.sh nuke.sh
-./quick_restart.sh    # bounce stack; free ports 3000/3050
+chmod +x quick_restart.sh nuke.sh scripts/operator/*.sh
+./quick_restart.sh    # bounce stack; free ports 3000/3050 (wrapper → scripts/operator/)
 # ./nuke.sh           # full reinstall from origin/main (prompts; preserves .env)
 ```
 
@@ -249,7 +249,7 @@ Only Python + Ollama + scripts are required on the Mac. The remote API must be r
 
 | Symptom | Fix |
 |---------|-----|
-| Dashboard blank / port in use | `./quick_restart.sh` (kills host listeners on 3000/3050) |
+| Dashboard blank / port in use | `./quick_restart.sh` or `./scripts/operator/quick_restart.sh` |
 | Frontend won’t bind 3000 | Quit other Next.js apps; free port; restart Docker |
 | No Ollama prose | `ollama list`, `ollama serve`, model name `cogito:32b` |
 | Empty 3-day / weekly history | Need successful daily runs; weekly is weak until ~7 days exist |
@@ -266,7 +266,8 @@ Only Python + Ollama + scripts are required on the Mac. The remote API must be r
 | `scripts/run_daily_24h_brief.sh` | Daily wrapper + log |
 | `scripts/weekly_intel_brief.py` | Weekly meeting pack |
 | `scripts/run_weekly_intel_brief.sh` | Weekly wrapper + log |
-| `quick_restart.sh` | Fast recovery |
-| `nuke.sh` | Clean reinstall from git |
+| `scripts/operator/quick_restart.sh` (root `./quick_restart.sh` wrapper) | Fast recovery |
+| `scripts/operator/nuke.sh` (root `./nuke.sh` wrapper) | Clean reinstall from git |
+| `docs/install/macbook_install.md` | This guide |
 
 Log directory: `~/.shadowbroker/logs/`

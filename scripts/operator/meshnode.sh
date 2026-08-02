@@ -24,7 +24,8 @@ fi
 PYVER=$(python3 --version 2>&1 | awk '{print $2}')
 echo "[*] Found Python $PYVER"
 
-cd "$(dirname "$0")/backend"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$ROOT/backend"
 
 # Setup venv
 if [ ! -d "venv" ]; then
