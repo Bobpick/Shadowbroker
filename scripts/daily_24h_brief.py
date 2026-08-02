@@ -5,7 +5,7 @@ Writes (overwrites, no timestamps):
   ~/Desktop/Daily_Inspiration/shadowbroker_24h_brief.md
   ~/Desktop/Daily_Inspiration/shadowbroker_24h_brief.html
 
-Uses local Ollama (default model: olmo-3:32b-think) plus Shadowbroker live data
+Uses local Ollama (default model: cogito:32b) plus Shadowbroker live data
 and the latest strategic delta brief.
 
 Optional SMTP (HTML body) when DAILY_BRIEF_SMTP_* or DELTA_REPORT_SMTP_* are set.
@@ -32,7 +32,7 @@ from typing import Any
 
 SB_BASE = os.environ.get("SHADOWBROKER_URL", "http://127.0.0.1:3050").rstrip("/")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
-OLLAMA_MODEL = os.environ.get("DAILY_BRIEF_OLLAMA_MODEL", "olmo-3:32b-think")
+OLLAMA_MODEL = os.environ.get("DAILY_BRIEF_OLLAMA_MODEL", "cogito:32b")
 OUT_DIR = Path(
     os.environ.get(
         "DAILY_BRIEF_OUT_DIR",
@@ -674,7 +674,12 @@ def _ollama_chat(system: str, user: str, *, num_predict: int = 900) -> str:
             },
         )
         msg = data.get("message") if isinstance(data.get("message"), dict) else {}
-        return str((msg or {}).get("content") or data.get("response") or "").strip()
+        raw = str((msg or {}).get("content") or data.get("response") or "").strip()
+        # Some think models put reasoning in a separate field
+        thinking = str((msg or {}).get("thinking") or data.get("thinking") or "").strip()
+        if thinking and not raw:
+            raw = thinking
+        return _strip_think_traces(raw)
     except Exception as exc:
         print(f"[warn] Ollama chat failed: {exc}", file=sys.stderr)
         return ""

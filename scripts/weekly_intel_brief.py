@@ -7,7 +7,8 @@ refreshes live feeds for context, writes fixed-name MD + email HTML:
   ~/Desktop/Daily_Inspiration/pat_labs_weekly_intel.md
   ~/Desktop/Daily_Inspiration/pat_labs_weekly_intel.html
 
-No dated archive copies. Uses Ollama (default olmo-3:32b-think) for narrative.
+No dated archive copies. Uses Ollama (default cogito:32b) for narrative.
+Weekly product is an issues synopsis for intel meetings — not tasking.
 """
 
 from __future__ import annotations
@@ -194,12 +195,18 @@ def week_metrics(days: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def ollama_weekly(metrics: dict[str, Any], live: dict[str, Any] | None) -> dict[str, str]:
+    """Narrative for a weekly issues synopsis (no tasking)."""
     pack = {
         "window": {
             "start": metrics.get("date_start"),
             "end": metrics.get("date_end"),
             "days_available": metrics.get("days_available"),
         },
+        "score_note": (
+            "Platform and strategic scores are 0–100 RISK scales: "
+            "higher = worse (more threat / more strategic risk). "
+            "Lower is better. Not like golf."
+        ),
         "score_trail": metrics.get("score_trail"),
         "changes": metrics.get("changes"),
         "priority_frequency": metrics.get("priority_frequency"),
@@ -210,43 +217,51 @@ def ollama_weekly(metrics: dict[str, Any], live: dict[str, Any] | None) -> dict[
     }
     pack_json = json.dumps(pack, ensure_ascii=False, indent=2)
     system = (
-        "You write weekly intelligence meeting packs for professional analysts. "
-        "Plain prose only. Use ONLY provided facts. No medical advice, no panic, "
-        "no markdown headings, no bullet outlines, no 'Based on the provided data'."
+        "You write weekly intelligence synopses for professionals. "
+        "Sum up what happened and which issues mattered. "
+        "Do NOT assign tasks, owners, discussion questions, or action items. "
+        "Use ONLY provided facts. No medical advice, no panic. "
+        "Scores: higher risk/threat is worse. "
+        "Plain prose only — no markdown headings, no bullet outlines, "
+        "no 'Based on the provided data'."
     )
-    sit_user = f"""Write the Weekly Situation Overview for a 45-minute intel meeting.
+    overview_user = f"""Write the Weekly Issues Synopsis for the past week.
 
-Requirements:
-- Exactly 3 paragraphs of plain English (about 250–450 words total).
-- Cover: week-over-week risk movement, which theaters dominated the week, biosecurity (pathogens that appeared most often), and what the meeting should prioritize next week.
-- No markdown. No section titles. No lists.
-
-Facts:
-{pack_json}
-"""
-    discussion_user = f"""Return JSON only (no fences) with keys:
-- "discussion_questions": array of 5 short questions for the group (grounded in facts).
-- "watch_next_week": array of 5–7 concrete watch items for the coming week.
-- "decision_points": array of 3 optional decision/check items (monitoring only if no action data).
+Exactly 3–4 continuous paragraphs of plain English (about 280–500 words).
+Cover: how risk moved (use the 0–100 scale correctly: higher = worse);
+which theaters dominated; biosecurity/pathogen issues that kept rising;
+major news themes; and the residual issues still open at week end.
+Do NOT invent events. Do NOT assign work or ask discussion questions.
 
 Facts:
 {pack_json}
 """
-    # Use weekly model override via env already on daily.OLLAMA_MODEL if set before import — patch
+    issues_user = f"""Return JSON only (no fences) with exactly these keys:
+- "top_issues": array of 5–8 short issue statements (what happened / why it mattered), grounded in facts. Not tasks.
+- "theater_issues": array of 3–6 theater/region issue lines (name + what deteriorated or improved).
+- "biosecurity_issues": array of 2–5 pathogen/public-health surveillance issue lines from the data.
+- "closing_issues": array of 3–5 residual issues still open at week end (watch items as issues, not assignments).
+
+Facts:
+{pack_json}
+"""
     old = daily.OLLAMA_MODEL
     daily.OLLAMA_MODEL = OLLAMA_MODEL
     try:
-        overview = daily._clean_exec_prose(daily._ollama_chat(system, sit_user, num_predict=2200))
+        overview = daily._clean_exec_prose(
+            daily._ollama_chat(system, overview_user, num_predict=2400)
+        )
         if not daily._exec_prose_ok(overview):
             overview = daily._clean_exec_prose(
                 daily._ollama_chat(
                     system,
-                    "Rewrite as THREE plain paragraphs only. Zero markdown.\n\n" + pack_json,
-                    num_predict=1800,
+                    "Rewrite as 3–4 plain paragraphs only. Zero markdown. "
+                    "Higher scores mean worse risk.\n\n" + pack_json,
+                    num_predict=2000,
                 )
             )
         support = daily._parse_json_object(
-            daily._ollama_chat(system, discussion_user, num_predict=1200)
+            daily._ollama_chat(system, issues_user, num_predict=1400)
         ) or {}
     finally:
         daily.OLLAMA_MODEL = old
@@ -261,32 +276,42 @@ Facts:
 
     return {
         "overview": overview if daily._exec_prose_ok(overview) else "",
-        "discussion_questions": _arr("discussion_questions"),
-        "watch_next_week": _arr("watch_next_week"),
-        "decision_points": _arr("decision_points"),
+        "top_issues": _arr("top_issues"),
+        "theater_issues": _arr("theater_issues"),
+        "biosecurity_issues": _arr("biosecurity_issues"),
+        "closing_issues": _arr("closing_issues"),
     }
 
 
 def fallback_overview(metrics: dict[str, Any]) -> str:
     if not metrics.get("days_available"):
         return (
-            "No daily history is available yet. Run the morning PAT Labs brief for several days "
-            "so this weekly pack can summarize progression. Until then, treat live Shadowbroker "
-            "feeds and the latest strategic delta as the primary source for the meeting."
+            "No daily history is available yet. After several morning PAT Labs briefs, "
+            "this weekly synopsis will summarize the week’s issues, score movement, "
+            "priority theaters, and biosecurity signals. Higher platform and strategic "
+            "scores mean higher risk (worse), not better."
         )
     trail = "; ".join(metrics.get("score_trail") or [])
     changes = metrics.get("changes") or []
     ch_txt = []
     for c in changes:
         arrow = "↑" if c.get("direction") == "up" else ("↓" if c.get("direction") == "down" else "→")
+        worse_note = ""
+        if c.get("metric") in {"platform_score", "strategic_score", "pathogens_rising"}:
+            if c.get("direction") == "up":
+                worse_note = " — higher is worse"
+            elif c.get("direction") == "down":
+                worse_note = " — lower is better"
         ch_txt.append(
-            f"{c.get('label')}: {c.get('from'):g} → {c.get('to'):g} ({arrow}{abs(float(c.get('delta') or 0)):g})"
+            f"{c.get('label')}: {c.get('from'):g} → {c.get('to'):g} "
+            f"({arrow}{abs(float(c.get('delta') or 0)):g}){worse_note}"
         )
     pris = ", ".join(f"{k} ({v}d)" for k, v in (metrics.get("priority_frequency") or {}).items())
     paths = ", ".join(f"{k} ({v}d)" for k, v in (metrics.get("pathogen_frequency") or {}).items())
     p1 = (
-        f"This weekly pack covers {metrics.get('date_start')} through {metrics.get('date_end')} "
-        f"({metrics.get('days_available')} daily snapshots). Score trail: {trail}."
+        f"This weekly synopsis covers {metrics.get('date_start')} through {metrics.get('date_end')} "
+        f"({metrics.get('days_available')} daily snapshots). Platform and strategic scores are risk scales "
+        f"(0–100): higher is worse. Score trail: {trail}."
     )
     p2 = (
         "Week movement: " + ("; ".join(ch_txt) if ch_txt else "insufficient paired scores for deltas.")
@@ -294,32 +319,85 @@ def fallback_overview(metrics: dict[str, Any]) -> str:
     )
     p3 = (
         f"Pathogens most often marked rising: {paths or 'n/a'}. "
-        "Use Priority Watch frequency and score movement to set the meeting agenda; "
-        "confirm with the latest daily HTML brief and strategic delta SITREP."
+        "The list below restates the week’s dominant issues for the intel meeting; "
+        "confirm with the latest daily brief and strategic delta SITREP."
     )
     return f"{p1}\n\n{p2}\n\n{p3}"
+
+
+def _issue_list_from_metrics(metrics: dict[str, Any]) -> dict[str, list[str]]:
+    """Structured issues when the model is offline."""
+    top: list[str] = []
+    for c in metrics.get("changes") or []:
+        arrow = "rose" if c.get("direction") == "up" else (
+            "fell" if c.get("direction") == "down" else "held"
+        )
+        note = ""
+        if c.get("metric") in {"platform_score", "strategic_score"}:
+            if c.get("direction") == "up":
+                note = " (worse)"
+            elif c.get("direction") == "down":
+                note = " (improved)"
+        top.append(
+            f"{c.get('label')} {arrow} from {c.get('from'):g} to {c.get('to'):g}{note} "
+            f"over {c.get('from_date')}–{c.get('to_date')}."
+        )
+    theaters = [
+        f"{name} appeared on priority watch {count} day(s) this week."
+        for name, count in (metrics.get("priority_frequency") or {}).items()
+    ]
+    bio = [
+        f"{name} was marked rising on {count} day(s) in wastewater surveillance."
+        for name, count in (metrics.get("pathogen_frequency") or {}).items()
+    ]
+    closing = theaters[:3] + bio[:2]
+    if not closing:
+        closing = ["Insufficient history to name residual open issues."]
+    # Headlines as issues
+    for t in ((metrics.get("headline_leads") or {}).get("domestic") or [])[:2]:
+        top.append(f"Domestic lead theme: {t}")
+    for t in ((metrics.get("headline_leads") or {}).get("foreign") or [])[:2]:
+        top.append(f"International lead theme: {t}")
+    return {
+        "top_issues": top[:8] or ["No scored issues yet — need more daily snapshots."],
+        "theater_issues": theaters[:6] or ["No theater priority history in window."],
+        "biosecurity_issues": bio[:5] or ["No rising-pathogen history in window."],
+        "closing_issues": closing[:5],
+    }
 
 
 def build_markdown(metrics: dict[str, Any], prose: dict[str, str], live: dict[str, Any] | None) -> str:
     when = _now().isoformat(timespec="seconds")
     overview = (prose.get("overview") or "").strip() or fallback_overview(metrics)
+    fb = _issue_list_from_metrics(metrics)
+
+    def issues(key: str) -> list[str]:
+        raw = prose.get(key) or []
+        if isinstance(raw, str):
+            raw = daily._normalize_watch_items(raw)
+        return list(raw)[:8] if raw else list(fb.get(key) or [])
+
     lines = [
-        "# PAT Labs — Weekly Intelligence Pack",
+        "# PAT Labs — Weekly Issues Synopsis",
         "",
         f"**Generated:** {when}  ",
         f"**Window:** {metrics.get('date_start') or '—'} → {metrics.get('date_end') or '—'} "
         f"({metrics.get('days_available') or 0} daily snapshots)  ",
         f"**Audience:** Weekly intel meeting  ",
         "",
+        "> **Score key:** Platform threat and strategic risk are **0–100 risk scales**. "
+        "**Higher = worse** (more threat / more strategic risk). **Lower = better.** "
+        "This is the opposite of golf.",
+        "",
         "---",
         "",
-        "## Situation Overview",
+        "## Week in Brief",
         "",
         overview,
         "",
-        "## Week-at-a-Glance Metrics",
+        "## Scoreboard (higher = worse)",
         "",
-        "| Date | Platform | Strategic | Pathogens ↑ | Mil. flights |",
+        "| Date | Platform threat | Strategic risk | Pathogens rising | Mil. flights |",
         "|---|---|---|---:|---:|",
     ]
     for d in metrics.get("days") or []:
@@ -332,85 +410,57 @@ def build_markdown(metrics: dict[str, Any], prose: dict[str, str], live: dict[st
             f"{met.get('pathogens_rising')} | {met.get('military_flights')} |"
         )
 
-    lines += ["", "## Score Movement (first → last day in window)", ""]
+    lines += ["", "## How Risk Moved", ""]
     for c in metrics.get("changes") or []:
         arrow = "↑" if c.get("direction") == "up" else ("↓" if c.get("direction") == "down" else "→")
+        meaning = ""
+        if c.get("metric") in {"platform_score", "strategic_score", "pathogens_rising"}:
+            if c.get("direction") == "up":
+                meaning = " — **worse**"
+            elif c.get("direction") == "down":
+                meaning = " — **better**"
         lines.append(
             f"- **{c.get('label')}:** {c.get('from'):g} → {c.get('to'):g} "
-            f"({arrow}{abs(float(c.get('delta') or 0)):g}) "
+            f"({arrow}{abs(float(c.get('delta') or 0)):g}){meaning} "
             f"[{c.get('from_date')} → {c.get('to_date')}]"
         )
     if not metrics.get("changes"):
-        lines.append("- Not enough multi-day points yet for deltas.")
+        lines.append("- Not enough multi-day points yet for week-over-week deltas.")
 
-    lines += ["", "## Theaters Most Often on Priority Watch", ""]
-    for name, count in (metrics.get("priority_frequency") or {}).items():
-        lines.append(f"- **{name}** — {count} day(s) in top priorities")
-    if not metrics.get("priority_frequency"):
-        lines.append("- No priority theater history in window.")
+    lines += ["", "## Top Issues This Week", ""]
+    for i, it in enumerate(issues("top_issues"), 1):
+        lines.append(f"{i}. {it}")
 
-    lines += ["", "## Biosecurity — Pathogens Most Often Rising", ""]
-    for name, count in (metrics.get("pathogen_frequency") or {}).items():
-        lines.append(f"- **{name}** — marked rising on {count} day(s)")
-    if not metrics.get("pathogen_frequency"):
-        lines.append("- No rising-pathogen history in window.")
+    lines += ["", "## Theater & Strategic Issues", ""]
+    for it in issues("theater_issues"):
+        lines.append(f"- {it}")
 
-    lines += ["", "## Headline Leads Captured During the Week", "", "### Domestic", ""]
+    lines += ["", "## Biosecurity Issues", ""]
+    for it in issues("biosecurity_issues"):
+        lines.append(f"- {it}")
+
+    lines += ["", "## Headline Themes Captured", "", "### Domestic", ""]
     for t in (metrics.get("headline_leads") or {}).get("domestic") or []:
         lines.append(f"- {t}")
     if not (metrics.get("headline_leads") or {}).get("domestic"):
-        lines.append("- None stored.")
+        lines.append("- None stored in daily history.")
     lines += ["", "### International", ""]
     for t in (metrics.get("headline_leads") or {}).get("foreign") or []:
         lines.append(f"- {t}")
     if not (metrics.get("headline_leads") or {}).get("foreign"):
-        lines.append("- None stored.")
+        lines.append("- None stored in daily history.")
 
-    lines += ["", "## Discussion Questions", ""]
-    qs = prose.get("discussion_questions") or []
-    if isinstance(qs, str):
-        qs = daily._normalize_watch_items(qs)
-    for i, q in enumerate(qs[:7], 1):
-        lines.append(f"{i}. {q}")
-    if not qs:
-        lines += [
-            "1. Which theater showed the worst week-over-week movement, and is that still true today?",
-            "2. Which pathogen trend is most operationally relevant for the group’s AO?",
-            "3. What single watch item should the group re-check mid-week?",
-        ]
-
-    lines += ["", "## Watch Next Week", ""]
-    watch = prose.get("watch_next_week") or []
-    if isinstance(watch, str):
-        watch = daily._normalize_watch_items(watch)
-    for w in watch[:8]:
-        lines.append(f"- {w}")
-    if not watch:
-        for name, _ in list((metrics.get("priority_frequency") or {}).items())[:4]:
-            lines.append(f"- Continue priority watch: {name}")
-        for name, _ in list((metrics.get("pathogen_frequency") or {}).items())[:2]:
-            lines.append(f"- Track wastewater trend: {name}")
-
-    lines += ["", "## Decision / Check Points", ""]
-    dec = prose.get("decision_points") or []
-    if isinstance(dec, str):
-        dec = daily._normalize_watch_items(dec)
-    for d in dec[:5]:
-        lines.append(f"- {d}")
-    if not dec:
-        lines += [
-            "- Confirm whether any priority theater requires an out-of-cycle update before next week.",
-            "- Assign owner to re-check rising pathogen leaders mid-week.",
-            "- Align on one shared common operating picture source (daily HTML brief).",
-        ]
+    lines += ["", "## Issues Still Open at Week End", ""]
+    for it in issues("closing_issues"):
+        lines.append(f"- {it}")
 
     if live and isinstance(live.get("threat_level"), dict):
         tl = live["threat_level"]
         lines += [
             "",
-            "## Live Snapshot at Generation",
+            "## Live Snapshot When This Pack Was Built",
             "",
-            f"- Platform threat: **{tl.get('level')}** ({tl.get('score')})",
+            f"- Platform threat: **{tl.get('level')}** ({tl.get('score')}/100 — higher is worse)",
         ]
         for dr in (tl.get("drivers") or [])[:5]:
             lines.append(f"- {dr}")
@@ -421,10 +471,11 @@ def build_markdown(metrics: dict[str, Any], prose: dict[str, str], live: dict[st
         "",
         "## Methodology",
         "",
-        "Built from the rolling daily history JSON written by the morning PAT Labs brief "
-        f"(retention ~{daily.HISTORY_DAYS} days). Weekly window = last {WEEK_DAYS} calendar days "
-        "present in that file. Open-source only; wastewater lags sampling. "
-        "Not medical, legal, or operational orders — a structured meeting aid.",
+        "Summation of daily PAT Labs snapshots for the last week. "
+        f"History file retention ~{daily.HISTORY_DAYS} days; weekly window = last {WEEK_DAYS} "
+        "calendar days present. Platform and strategic scores are risk measures "
+        "(higher = worse). Open-source only; wastewater sampling lags. "
+        "This is a meeting synopsis of issues — not tasking and not medical advice.",
         "",
         f"_History file: `{daily.HISTORY_JSON}`_",
         "",
@@ -433,10 +484,10 @@ def build_markdown(metrics: dict[str, Any], prose: dict[str, str], live: dict[st
 
 
 def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
-    """Email-safe table layout matching the daily executive style."""
+    """Email-safe weekly issues synopsis (no tasking)."""
     title_start = metrics.get("date_start") or "—"
     title_end = metrics.get("date_end") or "—"
-    title = f"PAT Labs Weekly Intel — {title_start} to {title_end}"
+    title = f"PAT Labs Weekly Issues — {title_start} to {title_end}"
     gen = _now().strftime("%Y-%m-%d %H:%M %Z")
 
     def esc(s: Any) -> str:
@@ -460,35 +511,53 @@ def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
             )
         return "\n".join(out)
 
-    def bullets_html(text: str) -> str:
+    def bullets_html(text: str, *, numbered: bool = False) -> str:
         items = daily._md_bullets(text)
         if not items:
-            # numbered list
             for line in text.splitlines():
                 m = re.match(r"^\d+\.\s+(.+)$", line.strip())
                 if m:
                     items.append(m.group(1).strip())
-        if not items and text.strip():
-            items = [text.strip()]
-        rows = "".join(
-            f'<tr><td width="18" valign="top" style="padding:6px 0;font-size:12px;color:#94a3b8;">•</td>'
-            f'<td style="padding:6px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;'
-            f'color:#1e293b;line-height:1.45;">{esc(re.sub(r"\*\*(.+?)\*\*", r"\1", it))}</td></tr>'
-            for it in items
+        if not items and text.strip() and "None stored" not in text:
+            # keep explicit "none" lines
+            for line in text.splitlines():
+                s = line.strip()
+                if s.startswith("- "):
+                    items.append(s[2:])
+                elif s and not s.startswith("#"):
+                    items.append(s)
+        rows = []
+        for i, it in enumerate(items, 1):
+            mark = f"{i}." if numbered else "•"
+            clean = re.sub(r"\*\*(.+?)\*\*", r"\1", it)
+            rows.append(
+                f'<tr><td width="22" valign="top" style="padding:6px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;'
+                f'font-size:13px;color:#1e3a5f;font-weight:700;">{mark}</td>'
+                f'<td style="padding:6px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;'
+                f'color:#1e293b;line-height:1.45;">{esc(clean)}</td></tr>'
+            )
+        if not rows:
+            rows.append(
+                '<tr><td style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;color:#64748b;">'
+                "No items in window.</td></tr>"
+            )
+        return (
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
+            f'{"".join(rows)}</table>'
         )
-        return f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">{rows}</table>'
 
-    # Metrics table rows
     mrows = ""
     for d in metrics.get("days") or []:
         pt = d.get("platform_threat") or {}
         st = d.get("strategic") or {}
         met = d.get("metrics") or {}
+        plat = f"{pt.get('score')}/{pt.get('level')}"
+        strat = f"{st.get('overall_risk_score')}/{st.get('overall_risk_word')}"
         mrows += (
             "<tr>"
             f'<td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;">{esc(d.get("date"))}</td>'
-            f'<td align="center" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">{esc(f"{pt.get("score")}/{pt.get("level")}")}</td>'
-            f'<td align="center" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;">{esc(f"{st.get("overall_risk_score")}/{st.get("overall_risk_word")}")}</td>'
+            f'<td align="center" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;font-weight:700;">{esc(plat)}</td>'
+            f'<td align="center" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;">{esc(strat)}</td>'
             f'<td align="center" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;">{esc(met.get("pathogens_rising") if met.get("pathogens_rising") is not None else "—")}</td>'
             f'<td align="center" style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;">{esc(met.get("military_flights") if met.get("military_flights") is not None else "—")}</td>'
             "</tr>"
@@ -497,12 +566,20 @@ def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
     movement = ""
     for c in metrics.get("changes") or []:
         arrow = "↑" if c.get("direction") == "up" else ("↓" if c.get("direction") == "down" else "→")
-        color = "#b91c1c" if c.get("direction") == "up" and "score" in str(c.get("metric")) else "#0f172a"
+        meaning = ""
+        color = "#0f172a"
+        if c.get("metric") in {"platform_score", "strategic_score", "pathogens_rising"}:
+            if c.get("direction") == "up":
+                meaning = " · worse"
+                color = "#b91c1c"
+            elif c.get("direction") == "down":
+                meaning = " · better"
+                color = "#047857"
         movement += (
             f'<tr><td width="18" valign="top" style="padding:5px 0;color:#94a3b8;">•</td>'
             f'<td style="padding:5px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;color:{color};">'
             f'<strong>{esc(c.get("label"))}:</strong> {esc(c.get("from"))} → {esc(c.get("to"))} '
-            f'({arrow}{esc(abs(float(c.get("delta") or 0)))})</td></tr>'
+            f'({arrow}{esc(abs(float(c.get("delta") or 0)))}){esc(meaning)}</td></tr>'
         )
 
     return f"""<!DOCTYPE html>
@@ -514,7 +591,7 @@ def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
 </head>
 <body style="margin:0;padding:0;background-color:#e8eef4;">
   <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
-    PAT Labs weekly intel {esc(title_start)} to {esc(title_end)}
+    Weekly issues synopsis {esc(title_start)} to {esc(title_end)} — higher risk scores are worse
   </div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#e8eef4;">
     <tr><td align="center" style="padding:20px 12px;">
@@ -522,26 +599,36 @@ def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
 
         <tr><td style="background:#0b1f33;padding:20px 24px;">
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#8ba3b7;font-weight:600;">
-            PAT Labs · Weekly Intelligence Pack
+            PAT Labs · Weekly Issues Synopsis
           </div>
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:22px;font-weight:700;color:#ffffff;margin-top:6px;">
-            Weekly Intel Meeting Brief
+            Last Week&rsquo;s Issues
           </div>
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;color:#8ba3b7;margin-top:6px;">
             {esc(title_start)} → {esc(title_end)} · {esc(metrics.get("days_available"))} daily snapshots · Generated {esc(gen)}
           </div>
         </td></tr>
 
+        <tr><td style="padding:14px 24px 0 24px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fffbeb;border:1px solid #fde68a;">
+            <tr><td style="padding:10px 14px;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;color:#92400e;line-height:1.45;">
+              <strong>Score key:</strong> Platform threat and strategic risk are <strong>0–100 risk scales</strong>.
+              <strong>Higher = worse</strong> (more threat / more strategic risk). <strong>Lower = better.</strong>
+              Not like golf.
+            </td></tr>
+          </table>
+        </td></tr>
+
         <tr><td style="padding:22px 24px 8px 24px;">
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1e3a5f;border-bottom:2px solid #0b1f33;padding-bottom:8px;margin-bottom:12px;">
-            Situation Overview
+            Week in Brief
           </div>
-          {paras_html(section_body("Situation Overview"))}
+          {paras_html(section_body("Week in Brief"))}
         </td></tr>
 
         <tr><td style="padding:16px 24px 8px 24px;">
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1e3a5f;border-bottom:2px solid #0b1f33;padding-bottom:8px;margin-bottom:10px;">
-            Week-at-a-Glance
+            Scoreboard · Higher = Worse
           </div>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e2e8f0;">
             <tr style="background:#f8fafc;">
@@ -557,7 +644,7 @@ def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
 
         <tr><td style="padding:16px 24px 8px 24px;">
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1e3a5f;border-bottom:2px solid #0b1f33;padding-bottom:8px;margin-bottom:8px;">
-            Score Movement
+            How Risk Moved
           </div>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             {movement or '<tr><td style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;color:#64748b;">Insufficient multi-day data.</td></tr>'}
@@ -566,37 +653,40 @@ def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
 
         <tr><td style="padding:16px 24px 8px 24px;">
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1e3a5f;border-bottom:2px solid #0b1f33;padding-bottom:8px;margin-bottom:8px;">
-            Theaters Most Often on Priority Watch
+            Top Issues This Week
           </div>
-          {bullets_html(section_body("Theaters Most Often on Priority Watch"))}
+          {bullets_html(section_body("Top Issues This Week"), numbered=True)}
         </td></tr>
 
         <tr><td style="padding:16px 24px 8px 24px;">
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1e3a5f;border-bottom:2px solid #0b1f33;padding-bottom:8px;margin-bottom:8px;">
-            Biosecurity
+            Theater &amp; Strategic Issues
           </div>
-          {bullets_html(section_body("Biosecurity — Pathogens Most Often Rising"))}
+          {bullets_html(section_body("Theater & Strategic Issues"))}
         </td></tr>
 
         <tr><td style="padding:16px 24px 8px 24px;">
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1e3a5f;border-bottom:2px solid #0b1f33;padding-bottom:8px;margin-bottom:8px;">
-            Discussion Questions
+            Biosecurity Issues
           </div>
-          {bullets_html(section_body("Discussion Questions"))}
+          {bullets_html(section_body("Biosecurity Issues"))}
         </td></tr>
 
         <tr><td style="padding:16px 24px 8px 24px;">
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1e3a5f;border-bottom:2px solid #0b1f33;padding-bottom:8px;margin-bottom:8px;">
-            Watch Next Week
+            Headline Themes
           </div>
-          {bullets_html(section_body("Watch Next Week"))}
+          <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;color:#64748b;margin:8px 0 4px;">Domestic</div>
+          {bullets_html(section_body("Headline Themes Captured").split("### International")[0] if "### International" in section_body("Headline Themes Captured") else section_body("Headline Themes Captured"))}
+          <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;color:#64748b;margin:12px 0 4px;">International</div>
+          {bullets_html("### International" + section_body("Headline Themes Captured").split("### International", 1)[-1] if "### International" in section_body("Headline Themes Captured") else "")}
         </td></tr>
 
         <tr><td style="padding:16px 24px 8px 24px;">
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1e3a5f;border-bottom:2px solid #0b1f33;padding-bottom:8px;margin-bottom:8px;">
-            Decision / Check Points
+            Issues Still Open at Week End
           </div>
-          {bullets_html(section_body("Decision / Check Points"))}
+          {bullets_html(section_body("Issues Still Open at Week End"))}
         </td></tr>
 
         <tr><td style="padding:20px 24px 24px 24px;">
@@ -604,11 +694,11 @@ def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
             Methodology
           </div>
           <p style="margin:0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;color:#94a3b8;line-height:1.5;">
-            Aggregated from daily PAT Labs snapshots (fixed history JSON). Open-source feeds; wastewater sampling lags.
-            For meeting use — not medical, legal, or operational orders.
+            Summation of the week&rsquo;s issues from daily PAT Labs snapshots. Risk scores: higher = worse.
+            Open-source feeds; wastewater sampling lags. Synopsis only — not tasking, not medical advice.
           </p>
           <p style="margin:12px 0 0 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:10px;color:#cbd5e1;letter-spacing:0.06em;text-transform:uppercase;">
-            PAT Labs · Weekly Intelligence Pack
+            PAT Labs · Weekly Issues Synopsis
           </p>
         </td></tr>
 
