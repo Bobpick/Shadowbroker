@@ -562,7 +562,7 @@ def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
 </head>
 <body style="margin:0;padding:0;background-color:#e8eef4;">
   <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
-    Weekly issues synopsis {esc(title_start)} to {esc(title_end)} — higher risk scores are worse
+    Weekly issues synopsis {esc(title_start)} to {esc(title_end)}
   </div>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#e8eef4;">
     <tr><td align="center" style="padding:20px 12px;">
