@@ -202,11 +202,6 @@ def ollama_weekly(metrics: dict[str, Any], live: dict[str, Any] | None) -> dict[
             "end": metrics.get("date_end"),
             "days_available": metrics.get("days_available"),
         },
-        "score_note": (
-            "Platform and strategic scores are 0–100 RISK scales: "
-            "higher = worse (more threat / more strategic risk). "
-            "Lower is better. Not like golf."
-        ),
         "score_trail": metrics.get("score_trail"),
         "changes": metrics.get("changes"),
         "priority_frequency": metrics.get("priority_frequency"),
@@ -221,16 +216,17 @@ def ollama_weekly(metrics: dict[str, Any], live: dict[str, Any] | None) -> dict[
         "Sum up what happened and which issues mattered. "
         "Do NOT assign tasks, owners, discussion questions, or action items. "
         "Use ONLY provided facts. No medical advice, no panic. "
-        "Scores: higher risk/threat is worse. "
+        "In the first paragraph only, mention once that platform/strategic scores "
+        "are 0–100 risk scales (higher = worse). Do not repeat that explanation later. "
         "Plain prose only — no markdown headings, no bullet outlines, "
         "no 'Based on the provided data'."
     )
     overview_user = f"""Write the Weekly Issues Synopsis for the past week.
 
 Exactly 3–4 continuous paragraphs of plain English (about 280–500 words).
-Cover: how risk moved (use the 0–100 scale correctly: higher = worse);
-which theaters dominated; biosecurity/pathogen issues that kept rising;
-major news themes; and the residual issues still open at week end.
+Cover: how risk moved; which theaters dominated; biosecurity/pathogen issues;
+major news themes; residual issues still open at week end.
+State the score scale once in paragraph 1 only (0–100, higher = worse), then do not re-explain it.
 Do NOT invent events. Do NOT assign work or ask discussion questions.
 
 Facts:
@@ -256,7 +252,7 @@ Facts:
                 daily._ollama_chat(
                     system,
                     "Rewrite as 3–4 plain paragraphs only. Zero markdown. "
-                    "Higher scores mean worse risk.\n\n" + pack_json,
+                    "Mention score scale once only.\n\n" + pack_json,
                     num_predict=2000,
                 )
             )
@@ -296,22 +292,17 @@ def fallback_overview(metrics: dict[str, Any]) -> str:
     ch_txt = []
     for c in changes:
         arrow = "↑" if c.get("direction") == "up" else ("↓" if c.get("direction") == "down" else "→")
-        worse_note = ""
-        if c.get("metric") in {"platform_score", "strategic_score", "pathogens_rising"}:
-            if c.get("direction") == "up":
-                worse_note = " — higher is worse"
-            elif c.get("direction") == "down":
-                worse_note = " — lower is better"
         ch_txt.append(
             f"{c.get('label')}: {c.get('from'):g} → {c.get('to'):g} "
-            f"({arrow}{abs(float(c.get('delta') or 0)):g}){worse_note}"
+            f"({arrow}{abs(float(c.get('delta') or 0)):g})"
         )
     pris = ", ".join(f"{k} ({v}d)" for k, v in (metrics.get("priority_frequency") or {}).items())
     paths = ", ".join(f"{k} ({v}d)" for k, v in (metrics.get("pathogen_frequency") or {}).items())
     p1 = (
         f"This weekly synopsis covers {metrics.get('date_start')} through {metrics.get('date_end')} "
-        f"({metrics.get('days_available')} daily snapshots). Platform and strategic scores are risk scales "
-        f"(0–100): higher is worse. Score trail: {trail}."
+        f"({metrics.get('days_available')} daily snapshots). "
+        f"Platform and strategic scores use a 0–100 risk scale (higher = worse, lower = better). "
+        f"Score trail: {trail}."
     )
     p2 = (
         "Week movement: " + ("; ".join(ch_txt) if ch_txt else "insufficient paired scores for deltas.")
@@ -332,14 +323,8 @@ def _issue_list_from_metrics(metrics: dict[str, Any]) -> dict[str, list[str]]:
         arrow = "rose" if c.get("direction") == "up" else (
             "fell" if c.get("direction") == "down" else "held"
         )
-        note = ""
-        if c.get("metric") in {"platform_score", "strategic_score"}:
-            if c.get("direction") == "up":
-                note = " (worse)"
-            elif c.get("direction") == "down":
-                note = " (improved)"
         top.append(
-            f"{c.get('label')} {arrow} from {c.get('from'):g} to {c.get('to'):g}{note} "
+            f"{c.get('label')} {arrow} from {c.get('from'):g} to {c.get('to'):g} "
             f"over {c.get('from_date')}–{c.get('to_date')}."
         )
     theaters = [
@@ -385,17 +370,13 @@ def build_markdown(metrics: dict[str, Any], prose: dict[str, str], live: dict[st
         f"({metrics.get('days_available') or 0} daily snapshots)  ",
         f"**Audience:** Weekly intel meeting  ",
         "",
-        "> **Score key:** Platform threat and strategic risk are **0–100 risk scales**. "
-        "**Higher = worse** (more threat / more strategic risk). **Lower = better.** "
-        "This is the opposite of golf.",
-        "",
         "---",
         "",
         "## Week in Brief",
         "",
         overview,
         "",
-        "## Scoreboard (higher = worse)",
+        "## Scoreboard",
         "",
         "| Date | Platform threat | Strategic risk | Pathogens rising | Mil. flights |",
         "|---|---|---|---:|---:|",
@@ -413,15 +394,9 @@ def build_markdown(metrics: dict[str, Any], prose: dict[str, str], live: dict[st
     lines += ["", "## How Risk Moved", ""]
     for c in metrics.get("changes") or []:
         arrow = "↑" if c.get("direction") == "up" else ("↓" if c.get("direction") == "down" else "→")
-        meaning = ""
-        if c.get("metric") in {"platform_score", "strategic_score", "pathogens_rising"}:
-            if c.get("direction") == "up":
-                meaning = " — **worse**"
-            elif c.get("direction") == "down":
-                meaning = " — **better**"
         lines.append(
             f"- **{c.get('label')}:** {c.get('from'):g} → {c.get('to'):g} "
-            f"({arrow}{abs(float(c.get('delta') or 0)):g}){meaning} "
+            f"({arrow}{abs(float(c.get('delta') or 0)):g}) "
             f"[{c.get('from_date')} → {c.get('to_date')}]"
         )
     if not metrics.get("changes"):
@@ -460,7 +435,7 @@ def build_markdown(metrics: dict[str, Any], prose: dict[str, str], live: dict[st
             "",
             "## Live Snapshot When This Pack Was Built",
             "",
-            f"- Platform threat: **{tl.get('level')}** ({tl.get('score')}/100 — higher is worse)",
+            f"- Platform threat: **{tl.get('level')}** ({tl.get('score')}/100)",
         ]
         for dr in (tl.get("drivers") or [])[:5]:
             lines.append(f"- {dr}")
@@ -473,9 +448,8 @@ def build_markdown(metrics: dict[str, Any], prose: dict[str, str], live: dict[st
         "",
         "Summation of daily PAT Labs snapshots for the last week. "
         f"History file retention ~{daily.HISTORY_DAYS} days; weekly window = last {WEEK_DAYS} "
-        "calendar days present. Platform and strategic scores are risk measures "
-        "(higher = worse). Open-source only; wastewater sampling lags. "
-        "This is a meeting synopsis of issues — not tasking and not medical advice.",
+        "calendar days present. Open-source only; wastewater sampling lags. "
+        "Meeting synopsis of issues — not tasking and not medical advice.",
         "",
         f"_History file: `{daily.HISTORY_JSON}`_",
         "",
@@ -566,20 +540,17 @@ def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
     movement = ""
     for c in metrics.get("changes") or []:
         arrow = "↑" if c.get("direction") == "up" else ("↓" if c.get("direction") == "down" else "→")
-        meaning = ""
         color = "#0f172a"
         if c.get("metric") in {"platform_score", "strategic_score", "pathogens_rising"}:
             if c.get("direction") == "up":
-                meaning = " · worse"
                 color = "#b91c1c"
             elif c.get("direction") == "down":
-                meaning = " · better"
                 color = "#047857"
         movement += (
             f'<tr><td width="18" valign="top" style="padding:5px 0;color:#94a3b8;">•</td>'
             f'<td style="padding:5px 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:13px;color:{color};">'
             f'<strong>{esc(c.get("label"))}:</strong> {esc(c.get("from"))} → {esc(c.get("to"))} '
-            f'({arrow}{esc(abs(float(c.get("delta") or 0)))}){esc(meaning)}</td></tr>'
+            f'({arrow}{esc(abs(float(c.get("delta") or 0)))})</td></tr>'
         )
 
     return f"""<!DOCTYPE html>
@@ -609,16 +580,6 @@ def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
           </div>
         </td></tr>
 
-        <tr><td style="padding:14px 24px 0 24px;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fffbeb;border:1px solid #fde68a;">
-            <tr><td style="padding:10px 14px;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;color:#92400e;line-height:1.45;">
-              <strong>Score key:</strong> Platform threat and strategic risk are <strong>0–100 risk scales</strong>.
-              <strong>Higher = worse</strong> (more threat / more strategic risk). <strong>Lower = better.</strong>
-              Not like golf.
-            </td></tr>
-          </table>
-        </td></tr>
-
         <tr><td style="padding:22px 24px 8px 24px;">
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1e3a5f;border-bottom:2px solid #0b1f33;padding-bottom:8px;margin-bottom:12px;">
             Week in Brief
@@ -628,7 +589,7 @@ def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
 
         <tr><td style="padding:16px 24px 8px 24px;">
           <div style="font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#1e3a5f;border-bottom:2px solid #0b1f33;padding-bottom:8px;margin-bottom:10px;">
-            Scoreboard · Higher = Worse
+            Scoreboard
           </div>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e2e8f0;">
             <tr style="background:#f8fafc;">
@@ -694,7 +655,7 @@ def render_weekly_html(md: str, metrics: dict[str, Any]) -> str:
             Methodology
           </div>
           <p style="margin:0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:11px;color:#94a3b8;line-height:1.5;">
-            Summation of the week&rsquo;s issues from daily PAT Labs snapshots. Risk scores: higher = worse.
+            Summation of the week&rsquo;s issues from daily PAT Labs snapshots.
             Open-source feeds; wastewater sampling lags. Synopsis only — not tasking, not medical advice.
           </p>
           <p style="margin:12px 0 0 0;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:10px;color:#cbd5e1;letter-spacing:0.06em;text-transform:uppercase;">
