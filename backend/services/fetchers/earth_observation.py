@@ -4,6 +4,7 @@ severe weather alerts, air quality, volcanoes."""
 import concurrent.futures
 import csv
 import hashlib
+import heapq
 import io
 import json
 import logging
@@ -12,7 +13,7 @@ import re
 import shutil
 import subprocess
 import time
-import heapq
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from services.network_utils import (
@@ -339,9 +340,227 @@ def fetch_weather_forecast_meta():
 # ---------------------------------------------------------------------------
 # NOAA/NWS Severe Weather Alerts
 # ---------------------------------------------------------------------------
+# Most NWS alerts (heat advisories, freezes, etc.) are zone-based and ship
+# with geometry=null. Collection endpoints also omit geometry; only per-zone
+# URLs (e.g. /zones/forecast/ORZ023) return polygons. We resolve those and
+# cache successful geometries on disk.
+_NWS_ZONE_CACHE_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "nws_zone_geom_cache.json"
+_NWS_ZONE_GEOM_CACHE: dict[str, dict] = {}
+_NWS_ZONE_CACHE_LOADED = False
+_NWS_ZONE_URL_RE = re.compile(
+    r"(https://api\.weather\.gov/zones/(?:forecast|county|fire|marine)/[A-Za-z]{2}[CZcz]\d{3})\b"
+)
+_NWS_UGC_RE = re.compile(r"^[A-Z]{2}[CZ]\d{3}$")
+_NWS_ZONE_MAX_PER_ALERT = 80
+_NWS_ZONE_FETCH_WORKERS = 12
+# Cap cold-start zone fetches per cycle so the weather job stays bounded;
+# disk cache fills over a few refresh cycles (~120s each).
+# Prefer a higher first-cycle budget: most active UGC sets are ~1k zones.
+_NWS_ZONE_MAX_FETCH_PER_CYCLE = 600
+
+def _load_nws_zone_geom_cache() -> None:
+    global _NWS_ZONE_CACHE_LOADED
+    if _NWS_ZONE_CACHE_LOADED:
+        return
+    _NWS_ZONE_CACHE_LOADED = True
+    try:
+        if _NWS_ZONE_CACHE_PATH.is_file():
+            raw = json.loads(_NWS_ZONE_CACHE_PATH.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                for key, geom in raw.items():
+                    if (
+                        isinstance(key, str)
+                        and isinstance(geom, dict)
+                        and geom.get("type")
+                        and geom.get("coordinates")
+                    ):
+                        _NWS_ZONE_GEOM_CACHE[key] = geom
+                logger.info("NWS zone geom cache loaded: %d entries", len(_NWS_ZONE_GEOM_CACHE))
+    except (OSError, ValueError, TypeError) as e:
+        logger.warning("Failed to load NWS zone geom cache: %s", e)
+
+
+def _persist_nws_zone_geom_cache() -> None:
+    try:
+        _NWS_ZONE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _NWS_ZONE_CACHE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(_NWS_ZONE_GEOM_CACHE, separators=(",", ":")), encoding="utf-8")
+        tmp.replace(_NWS_ZONE_CACHE_PATH)
+    except (OSError, TypeError, ValueError) as e:
+        logger.warning("Failed to persist NWS zone geom cache: %s", e)
+
+
+def _ugc_to_zone_url(ugc: str) -> str:
+    """Best-effort zone URL from a UGC code when affectedZones is missing."""
+    code = ugc.strip().upper()
+    # County codes use C; public forecast / fire / marine use Z — default forecast.
+    kind = "county" if len(code) >= 3 and code[2] == "C" else "forecast"
+    return f"https://api.weather.gov/zones/{kind}/{code}"
+
+
+def _nws_zone_urls_from_alert(props: dict) -> list[str]:
+    """Zone resource URLs for an alert (preferred over bare UGC)."""
+    urls: list[str] = []
+    seen: set[str] = set()
+    for raw in props.get("affectedZones") or []:
+        if not isinstance(raw, str):
+            continue
+        m = _NWS_ZONE_URL_RE.search(raw)
+        url = m.group(1) if m else raw.strip()
+        if not url.startswith("https://api.weather.gov/zones/"):
+            continue
+        # Normalize id casing in path tail
+        head, tail = url.rsplit("/", 1)
+        url = f"{head}/{tail.upper()}"
+        if url not in seen:
+            seen.add(url)
+            urls.append(url)
+    if not urls:
+        for ugc in (props.get("geocode") or {}).get("UGC") or []:
+            if not isinstance(ugc, str):
+                continue
+            code = ugc.strip().upper()
+            if not _NWS_UGC_RE.fullmatch(code):
+                continue
+            url = _ugc_to_zone_url(code)
+            if url not in seen:
+                seen.add(url)
+                urls.append(url)
+    return urls[:_NWS_ZONE_MAX_PER_ALERT]
+
+
+def _merge_zone_geometries(geoms: list[dict]) -> dict | None:
+    """Combine one or more zone GeoJSON geometries into a single geometry."""
+    polygons: list = []
+    for g in geoms:
+        if not isinstance(g, dict):
+            continue
+        gtype = g.get("type")
+        coords = g.get("coordinates")
+        if not coords:
+            continue
+        if gtype == "Polygon":
+            polygons.append(coords)
+        elif gtype == "MultiPolygon":
+            polygons.extend(coords)
+    if not polygons:
+        return None
+    if len(polygons) == 1:
+        return {"type": "Polygon", "coordinates": polygons[0]}
+    return {"type": "MultiPolygon", "coordinates": polygons}
+
+
+def _fetch_one_nws_zone_geom(zone_url: str, headers: dict) -> tuple[str, dict | None]:
+    """Fetch a single zone Feature and return (url, geometry|None)."""
+    try:
+        resp = fetch_with_curl(zone_url, timeout=12, headers=headers)
+        if resp.status_code != 200:
+            return zone_url, None
+        body = resp.json() or {}
+        geom = body.get("geometry")
+        if isinstance(geom, dict) and geom.get("type") and geom.get("coordinates"):
+            return zone_url, geom
+        # Some responses nest the Feature
+        if body.get("type") == "FeatureCollection":
+            for feat in body.get("features") or []:
+                g = feat.get("geometry")
+                if isinstance(g, dict) and g.get("coordinates"):
+                    return zone_url, g
+    except (ConnectionError, TimeoutError, OSError, ValueError, KeyError, TypeError):
+        return zone_url, None
+    return zone_url, None
+
+
+def _fetch_missing_nws_zone_geoms(zone_urls: list[str], headers: dict) -> None:
+    """Concurrently fetch per-zone polygons for URLs not already cached."""
+    _load_nws_zone_geom_cache()
+    missing = [u for u in zone_urls if u not in _NWS_ZONE_GEOM_CACHE]
+    if not missing:
+        return
+    if len(missing) > _NWS_ZONE_MAX_FETCH_PER_CYCLE:
+        logger.info(
+            "NWS zone geom fetch capped: %d needed, fetching %d this cycle",
+            len(missing),
+            _NWS_ZONE_MAX_FETCH_PER_CYCLE,
+        )
+        missing = missing[:_NWS_ZONE_MAX_FETCH_PER_CYCLE]
+
+    fetched = 0
+    workers = min(_NWS_ZONE_FETCH_WORKERS, max(1, len(missing)))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_fetch_one_nws_zone_geom, url, headers) for url in missing]
+        for fut in concurrent.futures.as_completed(futures):
+            try:
+                url, geom = fut.result()
+            except Exception as e:  # noqa: BLE001 — isolate worker failures
+                logger.debug("NWS zone worker error: %s", e)
+                continue
+            if geom is not None:
+                _NWS_ZONE_GEOM_CACHE[url] = geom
+                fetched += 1
+    if fetched:
+        _persist_nws_zone_geom_cache()
+        logger.info(
+            "NWS zone geoms resolved: +%d (cache size %d)",
+            fetched,
+            len(_NWS_ZONE_GEOM_CACHE),
+        )
+
+
+def _resolve_alert_geometry(props: dict, inline_geom: dict | None) -> dict | None:
+    """Return polygon geometry for an alert (inline or from cached zone polys)."""
+    if isinstance(inline_geom, dict) and inline_geom.get("coordinates"):
+        return inline_geom
+    zone_urls = _nws_zone_urls_from_alert(props)
+    if not zone_urls:
+        return None
+    geoms = []
+    for url in zone_urls:
+        g = _NWS_ZONE_GEOM_CACHE.get(url)
+        if isinstance(g, dict) and g.get("coordinates"):
+            geoms.append(g)
+    return _merge_zone_geometries(geoms)
+
+
+def _nws_zone_urls_round_robin(features: list) -> list[str]:
+    """Build a de-duplicated zone URL list, fair across alerts.
+
+    Taking zones alert-by-alert would let a 40-zone East Coast flood product
+    burn the entire cold-start budget before any Oregon heat zone is queued.
+    """
+    per_alert: list[deque[str]] = []
+    seen: set[str] = set()
+    for f in features:
+        if not isinstance(f, dict):
+            continue
+        inline = f.get("geometry")
+        if isinstance(inline, dict) and inline.get("coordinates"):
+            continue
+        q: deque[str] = deque()
+        for zurl in _nws_zone_urls_from_alert(f.get("properties") or {}):
+            if zurl not in seen:
+                seen.add(zurl)
+                q.append(zurl)
+        if q:
+            per_alert.append(q)
+    need: list[str] = []
+    while per_alert:
+        next_round: list[deque[str]] = []
+        for q in per_alert:
+            need.append(q.popleft())
+            if q:
+                next_round.append(q)
+        per_alert = next_round
+    return need
+
+
 @with_retry(max_retries=1, base_delay=2)
 def fetch_weather_alerts():
-    """Fetch active severe weather alerts from NOAA/NWS (US coverage, GeoJSON polygons)."""
+    """Fetch active severe weather alerts from NOAA/NWS (US coverage, GeoJSON polygons).
+
+    Zone-only alerts (geometry=null) — common for Heat Advisory / Freeze Warning —
+    are expanded via NWS forecast/county zone polygons so they render on the map.
+    """
     from services.fetchers._store import is_any_active
 
     if not is_any_active("weather_alerts"):
@@ -360,11 +579,20 @@ def fetch_weather_alerts():
         response = fetch_with_curl(url, timeout=15, headers=headers)
         if response.status_code == 200:
             features = response.json().get("features", [])
+            # Prefetch zone polygons for alerts that lack inline geometry.
+            # Round-robin across alerts so a few multi-zone East Coast products
+            # cannot consume the whole fetch budget before West Coast heat/etc.
+            need_zones = _nws_zone_urls_round_robin(features)
+            if need_zones:
+                _fetch_missing_nws_zone_geoms(need_zones, headers)
+
+            skipped_no_geom = 0
             for f in features:
                 props = f.get("properties", {})
-                geom = f.get("geometry")
+                geom = _resolve_alert_geometry(props, f.get("geometry"))
                 if not geom:
-                    continue  # skip zone-only alerts with no polygon
+                    skipped_no_geom += 1
+                    continue
                 alerts.append(
                     {
                         "id": props.get("id", ""),
@@ -378,7 +606,13 @@ def fetch_weather_alerts():
                         "geometry": geom,
                     }
                 )
-        logger.info(f"Weather alerts: {len(alerts)} active (with polygons)")
+            logger.info(
+                "Weather alerts: %d active with polygons (%d skipped, no resolvable geometry)",
+                len(alerts),
+                skipped_no_geom,
+            )
+        else:
+            logger.warning("Weather alerts HTTP %s", response.status_code)
     except (ConnectionError, TimeoutError, OSError, ValueError, KeyError, TypeError) as e:
         logger.error(f"Error fetching weather alerts: {e}")
     with _data_lock:
