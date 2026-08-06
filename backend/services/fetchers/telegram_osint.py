@@ -26,6 +26,10 @@ _DEFAULT_CHANNELS = (
     "war_monitor",
     "OSINTtechnical",
     "Liveuamap",
+    # Breaking / aggregator channels (public t.me/s previews)
+    "DiscloseTV",
+    "Breaking911",
+    "rnintel",  # Rerum Novarum — intel + geopolitical commentary
 )
 
 _EXTRA_PROTEST_CHANNELS = (
