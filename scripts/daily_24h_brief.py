@@ -2305,51 +2305,257 @@ def write_outputs(md: str, html_doc: str) -> dict[str, str]:
     return {"markdown": str(OUT_MD), "html": str(OUT_HTML)}
 
 
-def send_email_html(html_doc: str, md: str, subject: str) -> bool:
-    """Send HTML email if SMTP is configured. Prefers DAILY_BRIEF_SMTP_*, falls back to DELTA_REPORT_SMTP_*."""
-    host = _env("DAILY_BRIEF_SMTP_HOST") or _env("DELTA_REPORT_SMTP_HOST")
-    to_addr = _env("DAILY_BRIEF_SMTP_TO") or _env("DELTA_REPORT_SMTP_TO")
-    if not host or not to_addr:
-        return False
-    port = int(_env("DAILY_BRIEF_SMTP_PORT") or _env("DELTA_REPORT_SMTP_PORT") or "587")
-    user = _env("DAILY_BRIEF_SMTP_USER") or _env("DELTA_REPORT_SMTP_USER")
-    password = _env("DAILY_BRIEF_SMTP_PASSWORD") or _env("DELTA_REPORT_SMTP_PASSWORD")
-    from_addr = (
-        _env("DAILY_BRIEF_SMTP_FROM")
-        or _env("DELTA_REPORT_SMTP_FROM")
-        or user
-        or "shadowbroker@localhost"
-    )
-    use_tls = _env_bool("DAILY_BRIEF_SMTP_TLS", True)
-    if _env("DELTA_REPORT_SMTP_TLS") and not _env("DAILY_BRIEF_SMTP_TLS"):
-        use_tls = _env_bool("DELTA_REPORT_SMTP_TLS", True)
+def _thunderbird_connection() -> dict[str, Any] | None:
+    """Read Thunderbird MCP connection.json written by the extension."""
+    candidates = [
+        Path(os.environ.get("TMPDIR") or "/tmp") / "thunderbird-mcp" / "connection.json",
+        Path("/tmp/thunderbird-mcp/connection.json"),
+    ]
+    for path in candidates:
+        try:
+            if path.is_file():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if data.get("port") and data.get("token"):
+                    return data
+        except (OSError, json.JSONDecodeError):
+            continue
+    return None
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = from_addr
-    msg["To"] = to_addr
-    msg.attach(MIMEText(md, "plain", "utf-8"))
-    msg.attach(MIMEText(html_doc, "html", "utf-8"))
-    recipients = [a.strip() for a in to_addr.split(",") if a.strip()]
+
+def _send_via_thunderbird(
+    *,
+    to_addr: str,
+    subject: str,
+    html_doc: str,
+    md: str,
+    from_addr: str | None = None,
+) -> bool:
+    """Send via Thunderbird MCP extension (localhost HTTP + Bearer token)."""
+    conn = _thunderbird_connection()
+    if not conn:
+        print("[info] Thunderbird MCP not available (no connection.json)", file=sys.stderr)
+        return False
+
+    port = int(conn["port"])
+    token = str(conn["token"])
+    skip_review = _env_bool("DAILY_BRIEF_TB_SKIP_REVIEW", True)
+    identity = (
+        (from_addr or "").strip()
+        or _env("DAILY_BRIEF_TB_FROM")
+        or _env("DAILY_BRIEF_SMTP_FROM")
+        or _env("DELTA_REPORT_SMTP_FROM")
+        or "rpickett@pat-labs.com"
+    )
+
+    attachments: list[str] = []
+    for path in (OUT_HTML, OUT_MD):
+        try:
+            if path.is_file():
+                attachments.append(str(path.resolve()))
+        except OSError:
+            pass
+
+    args: dict[str, Any] = {
+        "to": to_addr,
+        "subject": subject,
+        "body": html_doc or md,
+        "isHtml": bool(html_doc),
+        "skipReview": skip_review,
+        "from": identity,
+    }
+    if attachments:
+        args["attachments"] = attachments
+
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "sendMail", "arguments": args},
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+            "Content-Length": str(len(body)),
+        },
+        method="POST",
+    )
     try:
-        with smtplib.SMTP(host, port, timeout=45) as smtp:
-            if use_tls:
-                smtp.starttls()
-            if user and password:
-                smtp.login(user, password)
-            smtp.sendmail(from_addr, recipients, msg.as_string())
-        print(f"[ok] email sent to {to_addr}")
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+        data = json.loads(raw)
+        if data.get("error"):
+            print(f"[warn] Thunderbird MCP error: {data['error']}", file=sys.stderr)
+            return False
+        result = data.get("result") or {}
+        text_bits = []
+        for item in result.get("content") or []:
+            if isinstance(item, dict) and item.get("text"):
+                text_bits.append(str(item["text"]))
+        joined = " ".join(text_bits)
+        if "error" in joined.lower() and "success" not in joined.lower():
+            print(f"[warn] Thunderbird send failed: {joined[:400]}", file=sys.stderr)
+            return False
+        mode = "sent" if skip_review else "compose window opened"
+        print(f"[ok] email via Thunderbird MCP ({mode}) to {to_addr} from {identity}")
         return True
     except Exception as exc:
-        print(f"[warn] SMTP failed: {exc}", file=sys.stderr)
+        print(f"[warn] Thunderbird MCP send failed: {exc}", file=sys.stderr)
         return False
+
+
+def _send_via_himalaya(raw_eml: bytes, *, to_addr: str) -> bool:
+    """Fallback — local himalaya CLI."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    himalaya = shutil.which("himalaya")
+    if not himalaya:
+        return False
+    account = _env("DAILY_BRIEF_HIMALAYA_ACCOUNT") or _env("WEEKLY_BRIEF_HIMALAYA_ACCOUNT") or "titan"
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".eml", delete=False) as tmp:
+            tmp.write(raw_eml)
+            tmp_path = tmp.name
+        try:
+            proc = subprocess.run(
+                [himalaya, "message", "send", "-a", account, "-o", "json"],
+                input=raw_eml,
+                capture_output=True,
+                timeout=90,
+            )
+        finally:
+            try:
+                Path(tmp_path).unlink(missing_ok=True)
+            except OSError:
+                pass
+        if proc.returncode == 0:
+            print(f"[ok] email sent via himalaya ({account}) to {to_addr}")
+            return True
+        err = (proc.stderr or proc.stdout or b"").decode("utf-8", errors="replace")[:400]
+        print(f"[warn] himalaya send failed: {err}", file=sys.stderr)
+        return False
+    except Exception as exc:
+        print(f"[warn] himalaya send error: {exc}", file=sys.stderr)
+        return False
+
+
+def send_email_html(html_doc: str, md: str, subject: str, *, to_override: str | None = None) -> bool:
+    """Send HTML email: Thunderbird MCP → SMTP → himalaya.
+
+    Config from ~/.shadowbroker/daily_brief.env (loaded by run_daily_24h_brief.sh):
+      DAILY_BRIEF_EMAIL=true
+      DAILY_BRIEF_SMTP_TO=you@example.com
+      DAILY_BRIEF_USE_THUNDERBIRD=true
+      DAILY_BRIEF_TB_FROM=rpickett@pat-labs.com
+    """
+    to_addr = (
+        (to_override or "").strip()
+        or _env("DAILY_BRIEF_SMTP_TO")
+        or _env("DELTA_REPORT_SMTP_TO")
+    ).strip().strip(",")
+    if not to_addr:
+        print(
+            "[warn] email skipped — set DAILY_BRIEF_SMTP_TO in ~/.shadowbroker/daily_brief.env",
+            file=sys.stderr,
+        )
+        return False
+
+    prefer_tb = _env_bool("DAILY_BRIEF_USE_THUNDERBIRD", True)
+    from_addr = (
+        _env("DAILY_BRIEF_TB_FROM")
+        or _env("DAILY_BRIEF_SMTP_FROM")
+        or _env("DELTA_REPORT_SMTP_FROM")
+        or _env("DAILY_BRIEF_SMTP_USER")
+        or "rpickett@pat-labs.com"
+    )
+
+    print(f"[info] email attempt → {to_addr} (Thunderbird={prefer_tb})")
+
+    if prefer_tb and _send_via_thunderbird(
+        to_addr=to_addr,
+        subject=subject,
+        html_doc=html_doc,
+        md=md,
+        from_addr=from_addr,
+    ):
+        return True
+
+    host = _env("DAILY_BRIEF_SMTP_HOST") or _env("DELTA_REPORT_SMTP_HOST")
+
+    mixed = MIMEMultipart("mixed")
+    mixed["Subject"] = subject
+    mixed["From"] = from_addr
+    mixed["To"] = to_addr
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(md, "plain", "utf-8"))
+    alt.attach(MIMEText(html_doc, "html", "utf-8"))
+    mixed.attach(alt)
+
+    for attach_path, filename, maintype, subtype in (
+        (OUT_HTML, "shadowbroker_24h_brief.html", "text", "html"),
+        (OUT_MD, "shadowbroker_24h_brief.md", "text", "markdown"),
+    ):
+        try:
+            if attach_path.is_file():
+                from email import encoders
+                from email.mime.base import MIMEBase
+
+                part = MIMEBase(maintype, subtype)
+                part.set_payload(attach_path.read_bytes())
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", "attachment", filename=filename)
+                mixed.attach(part)
+        except OSError:
+            pass
+
+    raw_eml = mixed.as_bytes()
+    recipients = [a.strip() for a in to_addr.split(",") if a.strip()]
+
+    if host:
+        port = int(_env("DAILY_BRIEF_SMTP_PORT") or _env("DELTA_REPORT_SMTP_PORT") or "587")
+        user = _env("DAILY_BRIEF_SMTP_USER") or _env("DELTA_REPORT_SMTP_USER")
+        password = _env("DAILY_BRIEF_SMTP_PASSWORD") or _env("DELTA_REPORT_SMTP_PASSWORD")
+        use_tls = _env_bool("DAILY_BRIEF_SMTP_TLS", True)
+        try:
+            with smtplib.SMTP(host, port, timeout=45) as smtp:
+                if use_tls:
+                    smtp.starttls()
+                if user and password:
+                    smtp.login(user, password)
+                smtp.sendmail(from_addr, recipients, mixed.as_string())
+            print(f"[ok] email sent via SMTP to {to_addr}")
+            return True
+        except Exception as exc:
+            print(f"[warn] SMTP failed: {exc}", file=sys.stderr)
+    else:
+        print("[info] no DAILY_BRIEF_SMTP_HOST — skipping direct SMTP", file=sys.stderr)
+
+    if _send_via_himalaya(raw_eml, to_addr=to_addr):
+        return True
+
+    print(
+        "[warn] email NOT sent — start Thunderbird with MCP extension at 6:30 AM, "
+        "or set DAILY_BRIEF_SMTP_HOST + credentials in ~/.shadowbroker/daily_brief.env",
+        file=sys.stderr,
+    )
+    return False
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="PAT Labs Threat Assessment 24h brief (fixed filenames)")
     parser.add_argument("--no-ollama", action="store_true", help="Skip Ollama; structured fallback only")
-    parser.add_argument("--no-email", action="store_true", help="Do not attempt SMTP delivery")
-    parser.add_argument("--email", action="store_true", help="Force email attempt when SMTP is configured")
+    parser.add_argument("--no-email", action="store_true", help="Do not attempt email delivery")
+    parser.add_argument("--email", action="store_true", help="Force email attempt")
+    parser.add_argument(
+        "--to",
+        default="",
+        help="Recipient override (comma-separated). Implies --email when set.",
+    )
     args = parser.parse_args()
 
     print(f"[info] collecting from {SB_BASE} …")
@@ -2392,14 +2598,21 @@ def main() -> int:
     print(f"[ok] wrote {paths['html']}")
     print(f"[ok] wrote {HISTORY_JSON}")
 
-    want_email = args.email or (
+    want_email = args.email or bool((args.to or "").strip()) or (
         not args.no_email and _env_bool("DAILY_BRIEF_EMAIL", False)
     )
     if want_email:
-        send_email_html(
+        ok = send_email_html(
             html_doc,
             md,
             subject=f"[PAT Labs] Threat Assessment — past 24 hours — {_now_local().strftime('%Y-%m-%d')}",
+            to_override=(args.to or "").strip() or None,
+        )
+        if not ok:
+            print("[warn] brief files written but email delivery failed", file=sys.stderr)
+    else:
+        print(
+            "[info] email not requested (set DAILY_BRIEF_EMAIL=true or pass --email)",
         )
 
     return 0
