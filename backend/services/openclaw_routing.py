@@ -33,6 +33,8 @@ LATENCY_TIER_MS: dict[str, int] = {
     "brief_area": 30,
     "get_layer_slice": 50,
     "correlate_entity": 15,
+    "get_entity_trail": 20,
+    "get_entity_profile": 35,
     "entity_expand": 40,
     "osint_lookup": 200,
     "run_playbook": 120,
@@ -175,7 +177,7 @@ def routing_manifest() -> dict[str, Any]:
             },
             {
                 "intent": "known person/aircraft",
-                "use": "find_entity(query=...) or find_flights(owner=...)",
+                "use": "get_entity_profile(query=...) or find_entity(query=...)",
             },
             {
                 "intent": "news / telegram topic",
@@ -640,17 +642,55 @@ def plan_playbook(name: str, args: dict[str, Any] | None = None) -> dict[str, An
         return {
             "ok": True,
             "playbook": playbook,
-            "description": "Resolve entity for tracking",
+            "description": "Resolve entity and return full movement profile",
             "batch": [
                 {
-                    "cmd": "find_entity",
+                    "cmd": "get_entity_profile",
                     "args": {
                         "query": query,
                         "entity_type": params.get("entity_type", ""),
-                        "fallback_search": True,
                         "compact": True,
+                        "include_datalink": True,
+                        "include_nearby_context": True,
                     },
                 }
+            ],
+        }
+
+    if playbook == "jet_recon":
+        query = str(params.get("query", "") or params.get("registration", "") or params.get("owner", "") or "").strip()
+        if not query:
+            return {"ok": False, "detail": "jet_recon requires query, registration, or owner"}
+        return {
+            "ok": True,
+            "playbook": playbook,
+            "description": "VIP/aircraft dossier: profile + correlation evidence",
+            "batch": [
+                {
+                    "cmd": "get_entity_profile",
+                    "args": {
+                        "query": query,
+                        "entity_type": params.get("entity_type", "aircraft"),
+                        "registration": params.get("registration", ""),
+                        "icao24": params.get("icao24", ""),
+                        "owner": params.get("owner", ""),
+                        "compact": True,
+                        "include_datalink": True,
+                        "include_news": True,
+                    },
+                },
+                {
+                    "cmd": "correlate_entity",
+                    "args": {
+                        "query": query,
+                        "entity_type": params.get("entity_type", "aircraft"),
+                        "registration": params.get("registration", ""),
+                        "icao24": params.get("icao24", ""),
+                        "owner": params.get("owner", ""),
+                        "radius_km": params.get("radius_km", 150),
+                        "compact": True,
+                    },
+                },
             ],
         }
 
@@ -694,7 +734,7 @@ def plan_playbook(name: str, args: dict[str, Any] | None = None) -> dict[str, An
 
     spec = PLAYBOOKS.get(playbook)
     if not spec:
-        known = sorted(PLAYBOOKS) + ["track_snapshot", "area_brief", "entity_recon"]
+        known = sorted(PLAYBOOKS) + ["track_snapshot", "jet_recon", "area_brief", "entity_recon"]
         return {"ok": False, "detail": f"unknown playbook: {playbook}", "known": known}
 
     return {

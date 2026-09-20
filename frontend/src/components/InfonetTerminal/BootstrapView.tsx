@@ -66,6 +66,8 @@ export default function BootstrapView({ marketId, onBack }: BootstrapViewProps) 
   const swarmPullOk = Boolean(swarmPull?.ok) && !swarmPull?.skipped;
   const lastPeerUrl = String(nodeStatus?.sync_runtime?.last_peer_url || '').trim();
   const privateTransportRequired = Boolean(nodeStatus?.private_transport_required);
+  const bootstrapState = String(nodeStatus?.bootstrap?.bootstrap_state || '').toLowerCase();
+  const bootstrapDetail = String(nodeStatus?.bootstrap?.bootstrap_detail || '').trim();
 
   const toggleNode = useCallback(async (enabled: boolean) => {
     setNodeToggleBusy(true);
@@ -179,14 +181,16 @@ export default function BootstrapView({ marketId, onBack }: BootstrapViewProps) 
                     ? 'LOCAL FILE'
                     : swarmPull?.skipped
                       ? 'WAITING'
-                      : 'NOT LOADED'}
+                      : bootstrapState === 'connecting'
+                        ? 'CONNECTING'
+                        : 'LOCAL ONLY'}
               </div>
             </div>
           </div>
           <div className="mt-3 flex flex-col md:flex-row md:items-center gap-3">
             <div className="flex-1 text-[11px] text-gray-500 leading-relaxed">
               {nodeEnabled
-                ? `Infonet sync is ${syncOutcome || 'active'}${lastPeerUrl ? ` via ${lastPeerUrl}` : ''}.`
+                ? (bootstrapDetail || `Infonet sync is ${syncOutcome || 'active'}${lastPeerUrl ? ` via ${lastPeerUrl}` : ''}.`)
                 : 'Start a local participant node to sync through available Wormhole onion/RNS peers while this backend is running.'}
             </div>
             <button

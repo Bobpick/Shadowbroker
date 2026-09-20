@@ -301,8 +301,9 @@ def refresh_swarm_manifest_from_seeds(*, now: float | None = None, force: bool =
     if not _signer_public_key_b64():
         return {"ok": False, "detail": "MESH_BOOTSTRAP_SIGNER_PUBLIC_KEY is not configured"}
 
-    last_error = "manifest fetch failed"
-    for seed_url in _configured_seed_peer_urls():
+    seed_urls = _configured_seed_peer_urls()
+    last_error = "bootstrap seeds unreachable; local node will retry"
+    for seed_url in seed_urls:
         manifest = fetch_remote_bootstrap_manifest(seed_url, now=timestamp)
         if manifest is None:
             continue
@@ -311,12 +312,18 @@ def refresh_swarm_manifest_from_seeds(*, now: float | None = None, force: bool =
             return {
                 "ok": True,
                 "seed_peer_url": seed_url,
+                "tried_seed_count": len(seed_urls),
                 "peer_count": len(manifest.peers),
                 "merged_peer_count": merged,
             }
         except Exception as exc:
             last_error = str(exc or type(exc).__name__)
-    return {"ok": False, "detail": last_error}
+    return {
+        "ok": False,
+        "detail": last_error,
+        "tried_seed_count": len(seed_urls),
+        "retrying": bool(seed_urls),
+    }
 
 
 def announce_local_peer_to_seeds(*, now: float | None = None, force: bool = False) -> dict[str, Any]:

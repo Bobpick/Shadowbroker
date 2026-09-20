@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from '@/lib/motion';
 import { AlertTriangle, Clock, Minus, Plus, ExternalLink, Brain, Loader2, TrendingUp } from 'lucide-react';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { usePredictionMarketsOptIn } from '@/hooks/usePredictionMarketsOptIn';
@@ -17,6 +17,8 @@ import type {
 } from "@/types/dashboard";
 import { useDataKeys } from '@/hooks/useDataStore';
 import { API_BASE } from '@/lib/api';
+import DatalinkMessagesBlock from '@/components/DatalinkMessagesBlock';
+
 import { compareEventTimestampsDesc, formatEventTimestamp } from '@/lib/eventDateTime';
 import { CollectionPlannerBadge } from '@/components/CollectionPlannerBadge';
 import { useTemperatureUnit } from '@/hooks/useTemperatureUnit';
@@ -1009,6 +1011,11 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                                 <span className={`text-xs font-bold ${flight.squawk === '7700' ? 'text-red-400 animate-pulse' : flight.squawk === '7600' ? 'text-yellow-400' : 'text-[var(--text-primary)]'}`}>{flight.squawk}{flight.squawk === '7700' ? ' ⚠ EMERGENCY' : flight.squawk === '7600' ? ' COMMS LOST' : ''}</span>
                             </div>
                         )}
+                        <DatalinkMessagesBlock
+                            icao24={flight.icao24}
+                            registration={flight.registration}
+                            callsign={flight.callsign}
+                        />
                         <EmissionsEstimateBlock flight={flightForEmissions} />
                         {flight.alert_link && (
                             <div className="flex justify-between items-center border-b border-[var(--border-primary)] pb-2">
@@ -1262,6 +1269,11 @@ function NewsFeedInner({ selectedEntity, regionDossier, regionDossierLoading, gt
                                 <span className={`text-xs font-bold ${flight.squawk === '7700' ? 'text-red-400 animate-pulse' : flight.squawk === '7600' ? 'text-yellow-400' : 'text-[var(--text-primary)]'}`}>{flight.squawk}{flight.squawk === '7700' ? ' ⚠ EMERGENCY' : flight.squawk === '7600' ? ' COMMS LOST' : ''}</span>
                             </div>
                         )}
+                        <DatalinkMessagesBlock
+                            icao24={flight.icao24}
+                            registration={flight.registration}
+                            callsign={flight.callsign}
+                        />
                         <div className="flex justify-between items-center border-b border-[var(--border-primary)] pb-2">
                             <span className="text-[var(--text-muted)] text-[10px]">ROUTE</span>
                             <span className="text-cyan-400 text-xs font-bold">{flight.origin_name !== "UNKNOWN" ? `[${flight.origin_name}] → [${flight.dest_name}]` : "UNKNOWN"}</span>

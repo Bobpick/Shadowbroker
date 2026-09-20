@@ -218,7 +218,10 @@
     "scmSuppliers": "Fournisseurs SCM",
     "cyberThreats": "Cybermenaces",
     "telegramOsint": "OSINT Telegram",
-    "strategicRisk": "Carte de risque stratégique"
+    "strategicRisk": "Carte de risque stratégique",
+    "resetToDefaults": "Réinitialiser les couches par défaut",
+    "derivedOsint": "OSINT dérivé (risque stratégique)",
+    "derivedOsintSource": "Expérimental · désactivé par défaut"
   },
   "gtHud": {
     "title": "ANALYTIQUE THÉORIE DES JEUX",
@@ -376,5 +379,11 @@
     "translatedFrom": "Traduit depuis {lang}",
     "showOriginal": "AFFICHER L'ORIGINAL ({lang})",
     "showTranslation": "AFFICHER LA TRADUCTION"
+  },
+  "gtLean": {
+    "title": "Activer l'OSINT dérivé sur un nœud limité ?",
+    "message": "Shadowbroker a détecté une limite de 1 vCPU. La couche carte peut s'afficher, mais activer le moteur backend peut ralentir les flux OSINT.",
+    "confirm": "Activer la couche",
+    "cancel": "Annuler"
   }
 }

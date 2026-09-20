@@ -19,26 +19,41 @@
 
 **ShadowBroker** is a decentralized intelligence platform that aggregates real-time, multi-domain OSINT telemetry from 60+ live intelligence feeds into a single dark-ops map interface. Aircraft, ships, satellites, conflict zones, CCTV networks, GPS jamming, internet-connected devices, police scanners, mesh radio nodes, and breaking geopolitical events — all updating in real time on one screen as well as an obfuscated communications protocol and information exchange infrastructure.
 
+<details>
+<summary>🛰️ Project Description</summary>
+
 Built with **Next.js**, **MapLibre GL**, **FastAPI**, and **Python**. 40+ toggleable data layers, including SAR ground-change detection, **Telegram OSINT** (public channel previews geoparsed onto the map), a **server-side recon toolkit** (DNS, WHOIS, sanctions, BGP, IP sweep, and more), supply-chain risk overlays, and malware/C2 + CISA KEV cyber threat feeds. Multiple visual modes (DEFAULT / SATELLITE / FLIR / NVG / CRT). Right-click any point on Earth for a country dossier, head-of-state lookup, entity-graph expansion, and the latest Sentinel-2 satellite photo. ShadowBroker has no accounts, product telemetry, or analytics; the dashboard talks to your self-hosted backend. Sensitive recon and Shodan queries never hit third-party APIs from the browser — they are proxied through the backend with SSRF guards and local-operator auth. The **OpenClaw / agent command channel** exposes the same recon backends plus full telemetry search — no separate API integration required.
 
 Designed for analysts, researchers, radio operators, and anyone who wants to see what the world looks like when every public signal is on the same map.
+</details>
 
+---
 
-## Why This Exists
+<details>
+<summary>🌍 Why This Exists</summary>
 
 A surprising amount of global telemetry is already public — aircraft ADS-B broadcasts, maritime AIS signals, satellite orbital data, earthquake sensors, mesh radio networks, police scanner feeds, environmental monitoring stations, internet infrastructure telemetry, and more. This data is scattered across dozens of tools and APIs. ShadowBroker combines all of it into a single interface.
 
 The project does not introduce new surveillance capabilities — it aggregates and visualizes existing public datasets. It is fully open-source so anyone can audit exactly what data is accessed and how. ShadowBroker does not include product telemetry, analytics, or accounts. Operator-supplied keys stay in your local deployment, but live OSINT features necessarily make outbound requests to the public data providers you enable or query.
 
-### Shodan & Recon (security-first)
-
-ShadowBroker includes an optional **Shodan connector** for operator-supplied API access (`SHODAN_API_KEY`) and a **Recon Toolkit** panel for keyless OSINT lookups. Both run **server-side only**: the browser calls your self-hosted `/api/osint/*` and `/api/tools/shodan/*` routes; outbound requests are made by the backend after SSRF validation. Recon requires **local-operator** access (same trust model as layer toggles and admin routes). Shodan results render as a separate map overlay and remain subject to Shodan’s terms of service.
-
-> **Not included:** embedded live-news YouTube grids or a built-in Gemini AI analyst panel — use the **OpenClaw / agent channel** for AI-assisted analysis instead.
+</details>
 
 ---
 
-## Interesting Use Cases
+
+<details>
+<summary>📡 Shodan & Recon (security-first)</summary>
+
+ShadowBroker includes an optional **Shodan connector** for operator-supplied API access (`SHODAN_API_KEY`) and a **Recon Toolkit** panel for keyless OSINT lookups. Both run **server-side only**: the browser calls your self-hosted `/api/osint/*` and `/api/tools/shodan/*` routes; outbound requests are made by the backend after SSRF validation. Recon requires **local-operator** access (same trust model as layer toggles and admin routes). Shodan results render as a separate map overlay and remain subject to Shodan’s terms of service.
+
+
+</details>
+
+---
+
+
+<details>
+<summary>🗺️ Interesting Use Cases</summary>
 
 * **Track Air Force One**, the private jets of billionaires and dictators, and every military tanker, ISR, and fighter broadcasting ADS-B. Air Force One and all of the accompanying Presidential/Vice Presidential planes are highlighted and monitored from the moment they leave the ground. 
 * **Connect an AI agent as a co-analyst** through ShadowBroker's HMAC-signed agentic command channel — supports OpenClaw and any other agent that speaks the protocol (Claude, GPT, LangChain, custom). The agent gets full read/write access to all 40+ data layers, compact cross-layer search (`search_telemetry`, `search_news`), the full recon toolkit (`osint_lookup` for IP/DNS/WHOIS/sanctions/CVE/etc.), entity-graph expansion, pin placement, map control, SAR ground-change, mesh networking, and alert delivery. It sees everything the operator sees and can take actions on the map in real time.
@@ -66,10 +81,12 @@ ShadowBroker includes an optional **Shodan connector** for operator-supplied API
 * **Nash / Deterrence flashpoints** — 2×2 payoff matrices, pure-strategy Nash stability (0–100), and a live deterrence meter fused from GT region risk + Telegram/Reddit keywords (Taiwan Strait, South China Sea, Hormuz, Ukraine, Korean Peninsula, Baltic). Inside the Game Theory HUD when `gt_risk` is on.
 * **Automated strategic delta reports** — every N hours (default 6), only if GT risk or flashpoint deterrence moved past a threshold; Markdown + HTML under `backend/data/delta_reports/`, optional SMTP/webhook delivery, Preview / Generate Now in the HUD
 
+</details>
 
 ---
 
-## ⚡ Quick Start (Docker)
+
+⚡ Quick Start (Docker)</summary>
 
 ### From GitHub (default — uses GHCR images)
 
@@ -101,9 +118,11 @@ Open `http://localhost:3000` to view the dashboard! *(Requires [Docker Desktop](
 
 > **Podman users:** Podman works, but `podman compose` is a wrapper and still needs a Compose provider installed. On Windows/WSL, if you see `looking up compose provider failed`, install `podman-compose` and run `podman-compose pull` followed by `podman-compose up -d` from inside the cloned `Shadowbroker` folder. On Linux/macOS/WSL shells you can also use `./compose.sh --engine podman pull` and `./compose.sh --engine podman up -d`.
 
+
+
 ---
 
-##  🔄 **How to Update**
+🔄 How to Update
 
 ShadowBroker uses pre-built Docker images — no local building required. Updating takes seconds:
 
@@ -161,9 +180,11 @@ docker compose up -d
 * **Prune old images:** `docker image prune -f`
 * **Check logs:** `docker compose logs -f backend`
 
+
 ---
 
-### **☸️ Kubernetes / Helm (Advanced)**
+<details>
+<summary>☸️ Kubernetes / Helm (Advanced)</summary>
 
 For high-availability deployments or home-lab clusters, ShadowBroker supports deployment via **Helm**. This chart is based on the `bjw-s-labs` template and provides a robust, modular setup for both the backend and frontend.
 
@@ -191,9 +212,13 @@ helm install shadowbroker ./helm/chart --create-namespace --namespace shadowbrok
 
 *Special thanks to [@chr0n1x](https://github.com/chr0n1x) for contributing the initial Kubernetes architecture.*
 
+</details>
+
 ---
 
-## Experimental Testnet — No Privacy Guarantee
+<details>
+<summary>🌐 Experimental Testnet — No Privacy Guarantee</summary>
+
 
 ShadowBroker v0.9.7 ships **InfoNet** (decentralized intelligence mesh + Sovereign Shell governance economy), an **agentic AI command channel** (supports OpenClaw and any HMAC-signing agent), **Time Machine snapshot playback**, and **SAR satellite ground-change detection**. This is an **experimental testnet** — not a private messenger and not a production governance system.
 
@@ -214,10 +239,12 @@ ShadowBroker v0.9.7 ships **InfoNet** (decentralized intelligence mesh + Soverei
 > sentence above is mapped there to the code path that enforces it (or
 > doesn't).**
 
+</details>
+
 ---
 
-
-## ✨ Features
+<details>
+<summary>✨ Features</summary>
 
 ### 🧅 InfoNet — Decentralized Intelligence Mesh + Sovereign Shell (expanded in v0.9.7)
 
@@ -434,6 +461,16 @@ v0.9.7 turns ShadowBroker from a dashboard a human watches into an intelligence 
 
 **Connect an agent:** Open the AI Intel panel in the left sidebar, click **Connect Agent**, and copy the HMAC secret. From there, point any compatible agent at the channel — for OpenClaw, import `ShadowBrokerClient` from `openclaw-skills/shadowbroker/sb_query.py` (see `SKILL.md` for examples); for any other agent, use the same HMAC contract documented above (timestamp + nonce + body digest, tier-gated). Discovery: `GET /api/ai/tools` and `GET /api/ai/capabilities`. The channel is the protocol, not the agent.
 
+**Docker Compose + remote agents:** The dashboard UI talks to the backend over Docker's private bridge (trusted automatically). An OpenClaw agent running on the **host** (outside the container) hits `http://localhost:8000` from the Docker gateway IP — **HMAC is required** there. In AI Intel → **Connect Agent**, click **Bootstrap** then **Reveal**, copy `SHADOWBROKER_HMAC_SECRET` into your agent env, and restart the backend once so `data/openclaw.env` on the `backend_data` volume is loaded. Smoke-test with:
+
+```bash
+export SHADOWBROKER_URL=http://127.0.0.1:8000
+export SHADOWBROKER_HMAC_SECRET=<from Connect Agent modal>
+python openclaw-skills/shadowbroker/verify_hmac.py
+```
+
+Use the backend port (`:8000`), not the Next.js dashboard port (`:3000`). Hand-rolled signers must hash the exact POST bytes: `json.dumps(payload, separators=(",", ":"), sort_keys=True)`.
+
 ### ⏱️ Time Machine — Snapshot Playback (NEW in v0.9.7)
 
 A media-style transport for the entire telemetry feed. Treat the live map as a recording that can be scrubbed, paused, and replayed.
@@ -456,9 +493,12 @@ Settings → API Keys is now a read-only registry. Key values never reach the br
 
 OpenSky API credentials are now a **critical-warn** environment requirement: the startup environment check flags missing OpenSky OAuth2 credentials with a strong warning, and the changelog modal links directly to the free registration page. Without them, the flights layer falls back to ADS-B-only coverage with significant gaps in Africa, Asia, and Latin America.
 
+</details>
+
 ---
 
-## 🏗️ Architecture
+<details>
+<summary>🏗️ Architecture</summary>
 
 ShadowBroker v0.9.7 is composed of three vertically-stacked planes — the **Operator UI**, the **Backend Service Plane**, and the **Decentralized Layer (InfoNet)** — plus two cross-cutting bridges (the **Time Machine** and the **Agentic AI Channel**, which is the protocol that OpenClaw and any other compatible agent connects through) and a **Privacy Core** Rust crate that backstops both the legacy mesh and the future shielded coin / DEX work.
 
@@ -567,9 +607,12 @@ ShadowBroker v0.9.7 is composed of three vertically-stacked planes — the **Ope
      Desktop:           Tauri shell  →  packaged backend-runtime  +  Next.js frontend
 ```
 
+</details>
+
 ---
 
-## 📊 Data Sources & APIs
+<details>
+<summary>📊 Data Sources & APIs</summary>
 
 | Source | Data | Update Frequency | API Key Required |
 |---|---|---|---|
@@ -595,6 +638,7 @@ ShadowBroker v0.9.7 is composed of three vertically-stacked planes — the **Ope
 | [DigiTraffic](https://www.digitraffic.fi) | European rail positions | ~60s | No |
 | [Global Fishing Watch](https://globalfishingwatch.org) | Fishing vessel activity events | ~1hr | **Yes** (`GFW_API_TOKEN`) |
 | [Telegram public previews](https://t.me/s) | War/OSINT channel posts (`telegram_osint`) | ~1hr | No (optional `TELEGRAM_OSINT_CHANNELS`) |
+| [Xquik](https://docs.xquik.com) | Public X posts from an operator-defined search | ~30min | **Yes** (opt-in) |
 | Transport for London, NYC DOT, TxDOT | CCTV cameras (UK, US) | ~10min | No |
 | Caltrans, WSDOT, GDOT, IDOT, MDOT | CCTV cameras (5 US states) | ~10min | No |
 | Spain DGT, Madrid City | CCTV cameras (Spain) | ~10min | No |
@@ -624,13 +668,16 @@ ShadowBroker v0.9.7 is composed of three vertically-stacked planes — the **Ope
 | [Wikidata SPARQL](https://query.wikidata.org) | Head of state data | On-demand (cached 24h) | No |
 | [Wikipedia API](https://en.wikipedia.org/api) | Location summaries & aircraft images | On-demand (cached) | No |
 | [OSM Nominatim](https://nominatim.openstreetmap.org) | Place name geocoding (LOCATE bar) | On-demand | No |
-| [CARTO Basemaps](https://carto.com) | Dark map tiles | Continuous | No |
+| [CARTO Basemaps](https://carto.com) | Dark/light map tiles | Continuous | **Yes** (free, `CARTO_API_KEY`) |
 
 **Outbound privacy & audit (#348–#366):** Each self-hosted install uses its own backend IP and per-install User-Agent handle. See [docs/OUTBOUND_DATA.md](docs/OUTBOUND_DATA.md) for what contacts third parties, opt-in/env controls, and accepted tradeoffs (CCTV Referer, basemap CDN, LiveUAMap, etc.).
 
+</details>
+
 ---
 
-## 🚀 Getting Started
+<details>
+<summary>🚀 Getting Started</summary>
 
 ### 🐳 Docker Setup (Recommended for Self-Hosting)
 
@@ -701,10 +748,12 @@ If you are in a bash-compatible shell, the included wrapper can auto-detect Dock
 ./compose.sh --engine podman pull
 ./compose.sh --engine podman up -d
 ```
+</details>
 
 ---
 
-### 🐋 Standalone Deploy (Portainer, Uncloud, NAS, etc.)
+<details>
+<summary>🐋 Standalone Deploy (Portainer, Uncloud, NAS, etc.)</summary>
 
 No need to clone the repo. Use the pre-built images from GitHub Container Registry. GitLab registry images may be used as a mirror if you publish them there.
 
@@ -756,9 +805,12 @@ volumes:
 >
 > `BACKEND_URL` is a plain runtime environment variable (not a build-time `NEXT_PUBLIC_*`), so you can change it in Portainer, Uncloud, or any compose editor without rebuilding the image. Set it to the address where your backend is reachable from inside the Docker network (e.g. `http://backend:8000`, `http://192.168.1.50:8000`).
 
+</details>
+
 ---
 
-### 📦 Quick Start (No Code Required)
+<details>
+<summary>📦 Quick Start (No Code Required)</summary>
 
 If you just want to run the dashboard without dealing with terminal commands:
 
@@ -776,9 +828,12 @@ Local launcher notes:
 - For DM root witness, transparency, and operator monitoring rollout, start with `docs/mesh/wormhole-dm-root-operations-runbook.md`.
 - For sample DM root ops bridge assets, also see `scripts/mesh/poll-dm-root-health-alerts.mjs`, `scripts/mesh/export-dm-root-health-prometheus.mjs`, `scripts/mesh/publish-external-root-witness-package.mjs`, `scripts/mesh/smoke-external-root-witness-flow.mjs`, `scripts/mesh/smoke-root-transparency-publication-flow.mjs`, `scripts/mesh/smoke-dm-root-deployment-flow.mjs`, `scripts/mesh/sync-dm-root-external-assurance.mjs`, and `docs/mesh/examples/`.
 
+</details>
+
 ---
 
-### 💻 Developer Setup
+<details>
+<summary>💻 Developer Setup</summary>
 
 If you want to modify the code or run from source:
 
@@ -866,9 +921,13 @@ AIS-catcher decodes VHF radio signals on 161.975 MHz and 162.025 MHz and POSTs d
 
 **Note:** AIS range depends on your antenna — typically 20-40 nautical miles with a basic setup, 60+ nm with a marine VHF antenna at elevation.
 
+</details>
+
+
 ---
 
-## 🎛️ Data Layers
+<details>
+<summary>🎛️ Data Layers</summary>
 
 All 41 layers are independently toggleable from the left panel:
 
@@ -931,9 +990,12 @@ All 41 layers are independently toggleable from the left panel:
 
 † `osint_sweep` (active InternetDB scan) requires `OPENCLAW_ACCESS_TIER=full`.
 
+</details>
+
 ---
 
-## 🔧 Performance
+<details>
+<summary>🔧 Performance</summary>
 
 The platform is optimized for handling massive real-time datasets:
 
@@ -947,9 +1009,14 @@ The platform is optimized for handling massive real-time datasets:
 * **React.memo** — Heavy components wrapped to prevent unnecessary re-renders
 * **Coordinate Precision** — Lat/lng rounded to 5 decimals (~1m) to reduce JSON size
 
+</details>
+
 ---
 
-## 📁 Project Structure
+<details>
+<summary>📁 Project Structure</summary>
+
+New contributors can use [docs/contributor-map.md](docs/contributor-map.md) for a shorter orientation guide.
 
 ```
 Shadowbroker/
@@ -1047,9 +1114,12 @@ Shadowbroker/
 │   └── package.json
 ```
 
+</details>
+
 ---
 
-## 🔑 Environment Variables
+<details>
+<summary>🔑 Environment Variables</summary>
 
 ### Backend (`backend/.env`)
 
@@ -1062,6 +1132,7 @@ OPENSKY_CLIENT_SECRET=your_opensky_secret     # OAuth2 — paired with Client ID
 # Optional (enhances data quality)
 AIS_API_KEY=your_aisstream_key                # Maritime vessel tracking (aisstream.io) — ships layer empty without it
 LTA_ACCOUNT_KEY=your_lta_key                  # Singapore CCTV cameras
+CARTO_API_KEY=your_carto_key                  # CARTO basemap tiles — DEFAULT map shows an "API KEY REQUIRED" watermark without it (free: carto.com/basemaps/apikey)
 SHODAN_API_KEY=your_shodan_key                # Shodan device search overlay
 SH_CLIENT_ID=your_sentinel_hub_id             # Copernicus CDSE Sentinel Hub imagery
 SH_CLIENT_SECRET=your_sentinel_hub_secret     # Paired with Sentinel Hub Client ID
@@ -1070,9 +1141,13 @@ MESH_SAR_EARTHDATA_TOKEN=                     # NASA Earthdata token (paired wit
 MESH_SAR_COPERNICUS_USER=                     # Copernicus Data Space user (SAR Mode B — EGMS / EMS)
 MESH_SAR_COPERNICUS_TOKEN=                    # Copernicus token (paired with user above)
 OPENCLAW_ACCESS_TIER=restricted               # OpenClaw agent tier: "restricted" (read-only) or "full"
+# OPENCLAW_HMAC_SECRET=                         # Optional; UI Bootstrap persists to data/openclaw.env in Docker
 GFW_API_TOKEN=your_gfw_token                  # Global Fishing Watch — fishing_activity layer (Settings → Maritime)
 TELEGRAM_OSINT_ENABLED=true                   # Telegram OSINT layer (default on)
 TELEGRAM_OSINT_CHANNELS=osintdefender,...     # Comma-separated public channel slugs (see .env.example)
+XQUIK_ENABLED=false                           # Opt-in X search enrichment
+XQUIK_API_KEY=                                # Server-side API key
+XQUIK_SEARCH_QUERY=                           # Operator-defined search query
 
 # --- Strategic Analysis (Nash / Deterrence + Delta Reports) ---
 # Empty NASH_DETERRENCE_ENABLED / DELTA_REPORT_ENABLED follow GT_ANALYTICS_ENABLED.
@@ -1131,9 +1206,13 @@ Then confirm authenticated `GET /api/wormhole/status` or `GET /api/settings/worm
 
 **How it works:** The frontend proxies all `/api/*` requests through the Next.js server to `BACKEND_URL` using Docker's internal networking. Browsers only talk to port 3000; the backend host port is only for local diagnostics. For local dev without Docker, `BACKEND_URL` defaults to `http://localhost:8000`.
 
+</details>
+
 ---
 
-## 🤝 Contributors
+
+<details>
+<summary>🤝 Contributors</summary>
 
 ShadowBroker is built in the open. These people shipped real code:
 
@@ -1148,6 +1227,8 @@ ShadowBroker is built in the open. These people shipped real code:
 | [@csysp](https://github.com/csysp) | Dismissible threat alerts + stable entity IDs for GDELT & News | #48, #63 |
 | [@suranyami](https://github.com/suranyami) | Parallel multi-arch Docker builds (11min → 3min) + runtime BACKEND_URL fix | #35, #44 |
 | [@chr0n1x](https://github.com/chr0n1x) | Kubernetes / Helm chart architecture for HA deployments | — |
+
+</details>
 
 ---
 

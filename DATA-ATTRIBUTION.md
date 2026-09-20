@@ -34,6 +34,7 @@ These sources have their own terms; consult each link before redistributing.
 | Source | URL | License / Terms | Notes |
 |---|---|---|---|
 | OpenSky Network | https://opensky-network.org | OpenSky API terms | Commercial and private aircraft tracking |
+| Airframes.io | https://airframes.io | Airframes API terms | Optional ACARS/VDL datalink messages in aircraft dossiers |
 | CelesTrak | https://celestrak.org | Public domain / no restrictions | Satellite TLE data |
 | USGS Earthquake Hazards | https://earthquake.usgs.gov | Public domain (US Federal) | Seismic events |
 | NASA FIRMS | https://firms.modaps.eosdis.nasa.gov | NASA Open Data | Fire/thermal anomalies (VIIRS) |

@@ -1930,6 +1930,9 @@ def correlate_entity(
         })
 
     status = "context_found" if signals else "no_nearby_context"
+    from services.entity_trail import movement_context_for_entity
+
+    movement = movement_context_for_entity(best, max_points=40)
     return {
         "status": status,
         "claim_level": "evidence_pack_not_verdict",
@@ -1938,11 +1941,13 @@ def correlate_entity(
         "center": {"lat": lat, "lng": lng},
         "radius_km": radius,
         "signals": signals,
+        "movement": movement,
         "evidence": {
             "proximate_entities": proximate_entities,
             "context_layers": context,
         },
         "recommended_next": [
+            "Use get_entity_trail for full observed path and route enrichment.",
             "Use track_entity to keep monitoring this exact entity.",
             "Use watch_area on the returned center if the area matters more than the entity.",
             "Treat co-location as a lead, not proof of intent or causation.",

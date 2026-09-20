@@ -219,7 +219,10 @@
     "cyberThreats": "Cyber Threats",
     "telegramOsint": "Telegram OSINT",
     "redditOsint": "Reddit OSINT",
-    "strategicRisk": "Strategic Risk Heatmap"
+    "strategicRisk": "Strategic Risk Heatmap",
+    "resetToDefaults": "Reset layers to defaults",
+    "derivedOsint": "Derived OSINT (Strategic Risk)",
+    "derivedOsintSource": "Experimental · off by default"
   },
   "gtHud": {
     "title": "GAME THEORY ANALYTICS",
@@ -437,5 +440,11 @@
     "translatedFrom": "Translated from {lang}",
     "showOriginal": "SHOW ORIGINAL ({lang})",
     "showTranslation": "SHOW TRANSLATION"
+  },
+  "gtLean": {
+    "title": "Enable Derived OSINT on a lean node?",
+    "message": "Shadowbroker detected a 1 vCPU cap on this node. Turning on the Strategic Risk map layer is safe for display, but enabling the backend engine (GT_ANALYTICS_ENABLED) may slow Telegram, GDELT, and other OSINT fetches. Use OpenClaw watchdog alerts without the full engine on fleet nodes.",
+    "confirm": "Turn on layer anyway",
+    "cancel": "Cancel"
   }
 }

@@ -299,6 +299,9 @@ class BaseCCTVIngestor(ABC):
         pass
 
     def ingest(self):
+        # Ingestors may run independently (including from worker threads), so
+        # make sure a fresh checkout has both the directory and schema ready.
+        init_db()
         conn = sqlite3.connect(str(DB_PATH))
         try:
             cameras = self.fetch_data()
@@ -1031,7 +1034,8 @@ out body;
 # ---------------------------------------------------------------------------
 # DGT Spain — National Road Cameras
 # ---------------------------------------------------------------------------
-# Image URL pattern confirmed working: infocar.dgt.es/etraffic/data/camaras/{id}.jpg
+# Image URL pattern confirmed working: etraffic.dgt.es/camarasEtraffic/{id}.jpg
+# (DGT migrated 2026: old infocar.dgt.es/etraffic/data/camaras path now 302->etrafficWEB)
 # Source: DGT (Dirección General de Tráfico) — public open data (Ley 37/2007).
 # Author credit: Alborz Nazari (github.com/AlborzNazari) — PR #91
 
@@ -1065,10 +1069,10 @@ class DGTNationalIngestor(BaseCCTVIngestor):
         cameras = []
         probe_headers = {
             "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-            "Referer": "https://infocar.dgt.es/",
+            "Referer": "https://etraffic.dgt.es/",
         }
         for cam_id, lat, lon, description in self.KNOWN_CAMERAS:
-            media_url = f"https://infocar.dgt.es/etraffic/data/camaras/{cam_id}.jpg"
+            media_url = f"https://etraffic.dgt.es/camarasEtraffic/{cam_id}.jpg"
             if not _media_url_reachable(media_url, timeout=6, headers=probe_headers):
                 continue
             cameras.append({
@@ -1344,7 +1348,6 @@ class NetherlandsRWSIngestor(BaseCCTVIngestor):
     """
 
     URL = "https://opendata.ndw.nu/cameras.json"
-    MAX_CAMERAS = 1200
 
     def fetch_data(self) -> List[Dict[str, Any]]:
         resp = fetch_with_curl(self.URL, timeout=25, headers={"Accept": "application/json"})
@@ -1361,7 +1364,7 @@ class NetherlandsRWSIngestor(BaseCCTVIngestor):
             return []
 
         cameras: List[Dict[str, Any]] = []
-        for i, cam in enumerate(data[: self.MAX_CAMERAS]):
+        for i, cam in enumerate(data):
             if not isinstance(cam, dict):
                 continue
             lat = cam.get("lat") if cam.get("lat") is not None else cam.get("latitude")
@@ -1445,16 +1448,51 @@ def run_all_ingestors():
             logger.warning(f"Ingestor {ingestor.__class__.__name__} failed during seed: {e}")
 
 
-def get_all_cameras() -> List[Dict[str, Any]]:
+# Columns the map / live-data path actually needs — skip refresh_rate / timestamps.
+_CAMERA_SELECT_COLS = (
+    "id",
+    "source_agency",
+    "lat",
+    "lon",
+    "direction_facing",
+    "media_url",
+    "media_type",
+)
+
+
+def get_camera_count() -> int:
+    """Cheap total for UI badges without loading the full table."""
+    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        row = conn.execute("SELECT COUNT(*) FROM cameras").fetchone()
+        return int(row[0] if row else 0)
+    finally:
+        conn.close()
+
+
+def get_all_cameras(
+    *,
+    south: float | None = None,
+    west: float | None = None,
+    north: float | None = None,
+    east: float | None = None,
+) -> List[Dict[str, Any]]:
+    """Load map-facing camera rows (full catalog; viewport args ignored)."""
+    cols = ", ".join(_CAMERA_SELECT_COLS)
+    sql = f"SELECT {cols} FROM cameras"
+
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM cameras")
-    rows = cursor.fetchall()
-    conn.close()
+    try:
+        rows = conn.execute(sql).fetchall()
+    finally:
+        conn.close()
+
     cameras = []
     for row in rows:
-        cam = dict(row)
-        cam["media_type"] = str(cam.get("media_type") or _detect_media_type(cam.get("media_url", "")) or "image")
+        cam = {k: row[k] for k in _CAMERA_SELECT_COLS}
+        cam["media_type"] = str(
+            cam.get("media_type") or _detect_media_type(cam.get("media_url", "")) or "image"
+        )
         cameras.append(cam)
     return cameras

@@ -103,11 +103,12 @@ def _invite_lookup_request_timeout(peer_url: str) -> tuple[int, int]:
 def _bootstrap_seed_peer_urls() -> set[str]:
     try:
         from services.config import get_settings
+        from services.mesh.mesh_fleet_defaults import configured_bootstrap_seed_peers_with_fleet_default
         from services.mesh.mesh_router import parse_configured_relay_peers
 
         seeds: set[str] = set()
         raw = str(getattr(get_settings(), "MESH_BOOTSTRAP_SEED_PEERS", "") or "")
-        for peer in parse_configured_relay_peers(raw):
+        for peer in configured_bootstrap_seed_peers_with_fleet_default(parse_configured_relay_peers(raw)):
             normalized = str(peer or "").strip().rstrip("/")
             if normalized:
                 seeds.add(normalized)
@@ -318,6 +319,8 @@ def _configured_public_lookup_peer_urls() -> list[str]:
         from services.mesh.mesh_router import active_sync_peer_urls, parse_configured_relay_peers
 
         settings = get_settings()
+        from services.mesh.mesh_fleet_defaults import configured_bootstrap_seed_peers_with_fleet_default
+
         candidates: list[str] = []
         # Operator-configured peers first, then recently active fleet nodes.
         # Invite handles are minted on a specific node; cold bootstrap seeds
@@ -330,7 +333,11 @@ def _configured_public_lookup_peer_urls() -> list[str]:
         for raw in (
             getattr(settings, "MESH_BOOTSTRAP_SEED_PEERS", ""),
         ):
-            candidates.extend(parse_configured_relay_peers(str(raw or "")))
+            candidates.extend(
+                configured_bootstrap_seed_peers_with_fleet_default(
+                    parse_configured_relay_peers(str(raw or ""))
+                )
+            )
     except Exception:
         return []
 

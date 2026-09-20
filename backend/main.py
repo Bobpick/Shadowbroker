@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from json import JSONDecodeError
 
-APP_VERSION = "0.9.82"
+APP_VERSION = "0.9.84"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -168,6 +168,7 @@ def _gate_privileged_access_status_snapshot_local() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 _SECRET_VARS = [
     "AIS_API_KEY",
+    "AISHUB_USERNAME",
     "OPENSKY_CLIENT_ID",
     "OPENSKY_CLIENT_SECRET",
     "LTA_ACCOUNT_KEY",
@@ -202,14 +203,40 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.background import BackgroundTask
 from contextlib import asynccontextmanager
-from services.data_fetcher import (
-    start_scheduler,
-    stop_scheduler,
-    get_latest_data,
-    seed_startup_caches,
-)
-from services.ais_stream import start_ais_stream, stop_ais_stream
-from services.carrier_tracker import start_carrier_tracker, stop_carrier_tracker
+if not _MESH_ONLY:
+    from services.data_fetcher import (
+        start_scheduler,
+        stop_scheduler,
+        get_latest_data,
+        seed_startup_caches,
+    )
+    from services.ais_stream import start_ais_stream, stop_ais_stream
+    from services.carrier_tracker import start_carrier_tracker, stop_carrier_tracker
+else:
+    # Lean mesh/wormhole process — avoid importing the OSINT fetcher graph.
+    def start_scheduler(*_a, **_k):  # type: ignore[misc]
+        return None
+
+    def stop_scheduler(*_a, **_k):  # type: ignore[misc]
+        return None
+
+    def get_latest_data():  # type: ignore[misc]
+        return {}
+
+    def seed_startup_caches(*_a, **_k):  # type: ignore[misc]
+        return None
+
+    def start_ais_stream(*_a, **_k):  # type: ignore[misc]
+        return None
+
+    def stop_ais_stream(*_a, **_k):  # type: ignore[misc]
+        return None
+
+    def start_carrier_tracker(*_a, **_k):  # type: ignore[misc]
+        return None
+
+    def stop_carrier_tracker(*_a, **_k):  # type: ignore[misc]
+        return None
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from services.schemas import HealthResponse, RefreshResponse
@@ -352,28 +379,46 @@ def _load_optional_router(module_name: str) -> APIRouter:
 
 
 health_router = _load_optional_router("routers.health")
-cctv_router = _load_optional_router("routers.cctv")
-radio_router = _load_optional_router("routers.radio")
-sigint_router = _load_optional_router("routers.sigint")
-tools_router = _load_optional_router("routers.tools")
-admin_router = _load_optional_router("routers.admin")
-data_router = _load_optional_router("routers.data")
 mesh_peer_sync_router = _load_optional_router("routers.mesh_peer_sync")
 mesh_operator_router = _load_optional_router("routers.mesh_operator")
 mesh_oracle_router = _load_optional_router("routers.mesh_oracle")
 mesh_dm_router = _load_optional_router("routers.mesh_dm")
 mesh_public_router = _load_optional_router("routers.mesh_public")
 wormhole_router = _load_optional_router("routers.wormhole")
-ai_intel_router = _load_optional_router("routers.ai_intel")
-sar_router = _load_optional_router("routers.sar")
 infonet_router = _load_optional_router("routers.infonet")
-road_corridors_router = _load_optional_router("routers.road_corridors")
-osint_router = _load_optional_router("routers.osint")
-scm_router = _load_optional_router("routers.scm")
-entity_graph_router = _load_optional_router("routers.entity_graph")
-intel_feeds_router = _load_optional_router("routers.intel_feeds")
-analytics_router = _load_optional_router("routers.analytics")
-agent_shell_router = _load_optional_router("routers.agent_shell")
+if _MESH_ONLY:
+    # Empty routers keep include_router() call sites unchanged without loading OSINT.
+    cctv_router = APIRouter()
+    radio_router = APIRouter()
+    sigint_router = APIRouter()
+    tools_router = APIRouter()
+    admin_router = APIRouter()
+    data_router = APIRouter()
+    ai_intel_router = APIRouter()
+    sar_router = APIRouter()
+    road_corridors_router = APIRouter()
+    osint_router = APIRouter()
+    scm_router = APIRouter()
+    entity_graph_router = APIRouter()
+    intel_feeds_router = APIRouter()
+    analytics_router = APIRouter()
+    agent_shell_router = APIRouter()
+else:
+    cctv_router = _load_optional_router("routers.cctv")
+    radio_router = _load_optional_router("routers.radio")
+    sigint_router = _load_optional_router("routers.sigint")
+    tools_router = _load_optional_router("routers.tools")
+    admin_router = _load_optional_router("routers.admin")
+    data_router = _load_optional_router("routers.data")
+    ai_intel_router = _load_optional_router("routers.ai_intel")
+    sar_router = _load_optional_router("routers.sar")
+    road_corridors_router = _load_optional_router("routers.road_corridors")
+    osint_router = _load_optional_router("routers.osint")
+    scm_router = _load_optional_router("routers.scm")
+    entity_graph_router = _load_optional_router("routers.entity_graph")
+    intel_feeds_router = _load_optional_router("routers.intel_feeds")
+    analytics_router = _load_optional_router("routers.analytics")
+    agent_shell_router = _load_optional_router("routers.agent_shell")
 
 
 # ---------------------------------------------------------------------------
@@ -1489,9 +1534,21 @@ def _refresh_node_peer_store(*, now: float | None = None) -> dict[str, Any]:
         push_records = [record for record in push_records if _is_private_infonet_transport(record.transport)]
     swarm_sync_peer_count = len([record for record in sync_records if str(record.source or "") == "swarm"])
     swarm_push_peer_count = len([record for record in push_records if str(record.source or "") == "swarm"])
+    swarm_pull_ok = bool(swarm_pull.get("ok")) and not bool(swarm_pull.get("skipped"))
+    if swarm_pull_ok or manifest is not None or swarm_sync_peer_count > 0:
+        bootstrap_state = "ready"
+        bootstrap_detail = "Bootstrap peer discovery is ready."
+    elif bootstrap_seed_peers:
+        bootstrap_state = "connecting"
+        bootstrap_detail = "Bootstrap seeds are configured; local node stays active and retries in the background."
+    else:
+        bootstrap_state = "solo"
+        bootstrap_detail = "No bootstrap seeds configured; local node is running in solo mode."
     snapshot = {
         "node_mode": mode,
         "private_transport_required": private_transport_required,
+        "bootstrap_state": bootstrap_state,
+        "bootstrap_detail": bootstrap_detail,
         "skipped_clearnet_peer_count": skipped_clearnet_peers,
         "pruned_clearnet_peer_count": pruned_clearnet_peers,
         "manifest_loaded": manifest is not None,
@@ -2702,13 +2759,15 @@ async def lifespan(app: FastAPI):
         # in _scheduler_loop, so we do NOT call it again in the preload thread.
         start_carrier_tracker()
 
-        # Start SIGINT grid eagerly â€” APRS-IS TCP + Meshtastic MQTT connections
-        # take a few seconds to handshake and start receiving packets. By starting
-        # now, the bridges are already accumulating signals by the time the first
-        # fetch_sigint() reads them during the preload cycle.
-        from services.sigint_bridge import sigint_grid
+        # Route startup through the bounded production APRS bridge. The old
+        # SIGINTGrid.start() also opened an unbounded public APRS-IS feed.
+        from services.fetchers._store import is_any_active
+        from services.fetchers.sigint import _reconcile_sigint_bridges
 
-        sigint_grid.start()
+        _reconcile_sigint_bridges(
+            aprs_requested=is_any_active("sigint_aprs"),
+            mesh_requested=is_any_active("sigint_meshtastic"),
+        )
 
     # Start Reticulum bridge (optional)
     try:
@@ -2840,7 +2899,11 @@ async def lifespan(app: FastAPI):
         stop_scheduler()
         stop_carrier_tracker()
         try:
+            from services.aprs_is_bridge import aprs_is_bridge
+            from services.sigint_bridge import sigint_grid
+
             sigint_grid.stop()
+            aprs_is_bridge.stop()
         except Exception:
             pass
     if not _MESH_ONLY:
@@ -3927,7 +3990,9 @@ class LayerUpdate(BaseModel):
 async def update_layers(update: LayerUpdate, request: Request):
     """Receive frontend layer toggle state. Starts/stops streams accordingly."""
     from services.fetchers._store import active_layers, bump_active_layers_version, is_any_active
+    from services.layer_enable_refresh import refresh_newly_enabled_layers, snapshot_active_layers
 
+    layers_before = snapshot_active_layers()
     # Snapshot old stream states before applying changes
     old_ships = is_any_active(
         "ships_military", "ships_cargo", "ships_civilian", "ships_passenger", "ships_tracked_yachts"
@@ -3935,8 +4000,6 @@ async def update_layers(update: LayerUpdate, request: Request):
     old_mesh = is_any_active("sigint_meshtastic")
     old_aprs = is_any_active("sigint_aprs")
     old_viirs = is_any_active("viirs_nightlights")
-    old_datacenters = is_any_active("datacenters")
-    old_fishing = is_any_active("fishing_activity")
 
     # Update only known keys
     changed = False
@@ -3955,8 +4018,6 @@ async def update_layers(update: LayerUpdate, request: Request):
     new_mesh = is_any_active("sigint_meshtastic")
     new_aprs = is_any_active("sigint_aprs")
     new_viirs = is_any_active("viirs_nightlights")
-    new_datacenters = is_any_active("datacenters")
-    new_fishing = is_any_active("fishing_activity")
 
     # Start/stop AIS stream on transition
     if old_ships and not new_ships:
@@ -3972,6 +4033,7 @@ async def update_layers(update: LayerUpdate, request: Request):
 
     # Start/stop SIGINT bridges on transition
     from services.sigint_bridge import sigint_grid
+    from services.aprs_is_bridge import aprs_is_bridge
 
     if old_mesh and not new_mesh:
         try:
@@ -4002,27 +4064,22 @@ async def update_layers(update: LayerUpdate, request: Request):
             )
 
     if old_aprs and not new_aprs:
-        sigint_grid.aprs.stop()
-        logger.info("APRS bridge stopped (layer disabled)")
+        aprs_is_bridge.reconcile(False)
+        logger.info("Bounded APRS-IS bridge stopped (layer disabled)")
     elif not old_aprs and new_aprs:
-        sigint_grid.aprs.start()
-        logger.info("APRS bridge started (layer enabled)")
+        aprs_is_bridge.reconcile(True)
+        logger.info("Bounded APRS-IS bridge reconciled (layer enabled)")
 
     if not old_viirs and new_viirs:
         _queue_viirs_change_refresh()
         logger.info("VIIRS change refresh queued (layer enabled)")
 
-    if not old_datacenters and new_datacenters:
-        from services.fetchers.infrastructure import fetch_datacenters
+    if old_mesh != new_mesh or old_aprs != new_aprs:
+        from services.fetchers.sigint import fetch_sigint
 
-        fetch_datacenters()
-        logger.info("Datacenters loaded (layer enabled)")
+        threading.Thread(target=fetch_sigint, daemon=True, name="sigint-layer-refresh").start()
 
-    if not old_fishing and new_fishing:
-        from services.fetchers.geo import fetch_fishing_activity
-
-        fetch_fishing_activity()
-        logger.info("Fishing activity refresh queued (layer enabled)")
+    refresh_newly_enabled_layers(layers_before)
 
     return {"status": "ok"}
 
@@ -8152,6 +8209,7 @@ _CCTV_PROXY_ALLOWED_HOSTS = {
     "tripcheck.com",  # Oregon DOT / TripCheck
     "www.tripcheck.com",
     "infocar.dgt.es",  # Spain DGT
+    "etraffic.dgt.es",  # Spain DGT (etrafficWEB cameras host, 2026)
     "informo.madrid.es",  # Madrid
     "webcams2.asfinag.at",  # Austria ASFINAG motorway cameras
     "odo.asfinag.at",  # ASFINAG catalog API host
@@ -8348,14 +8406,14 @@ def _cctv_proxy_profile_for_url(target_url: str) -> _CCTVProxyProfile:
             cache_seconds=30,
             headers={"Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"},
         )
-    if host == "infocar.dgt.es":
+    if host in {"infocar.dgt.es", "etraffic.dgt.es"}:
         return _CCTVProxyProfile(
             name="dgt-spain",
             timeout=(5.0, 8.0),
             cache_seconds=60,
             headers={
                 "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-                "Referer": "https://infocar.dgt.es/",
+                "Referer": "https://etraffic.dgt.es/",
             },
         )
     if host == "informo.madrid.es":
@@ -9013,7 +9071,7 @@ async def api_sentinel_tile(request: Request):
 # ---------------------------------------------------------------------------
 # API Settings â€” key registry & management
 # ---------------------------------------------------------------------------
-from services.api_settings import get_api_keys, get_env_path_info
+from services.api_settings import get_api_keys, get_basemap_config, get_env_path_info
 from services.shodan_connector import (
     ShodanConnectorError,
     count_shodan,
@@ -9050,6 +9108,12 @@ async def api_get_keys(request: Request):
 @limiter.limit("30/minute")
 async def api_get_keys_meta(request: Request):
     return get_env_path_info()
+
+
+@app.get("/api/basemap-config")
+@limiter.limit("60/minute")
+async def api_basemap_config(request: Request):
+    return get_basemap_config()
 
 
 @app.get("/api/tools/shodan/status", dependencies=[Depends(require_local_operator)])

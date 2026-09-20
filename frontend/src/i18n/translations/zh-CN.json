@@ -218,7 +218,10 @@
     "scmSuppliers": "供应链供应商",
     "cyberThreats": "网络威胁",
     "telegramOsint": "Telegram OSINT",
-    "strategicRisk": "战略风险热力图"
+    "strategicRisk": "战略风险热力图",
+    "resetToDefaults": "将图层重置为默认",
+    "derivedOsint": "衍生 OSINT（战略风险）",
+    "derivedOsintSource": "实验功能 · 默认关闭"
   },
   "gtHud": {
     "title": "博弈论分析",
@@ -376,5 +379,11 @@
     "translatedFrom": "由 {lang} 翻译",
     "showOriginal": "显示原文（{lang}）",
     "showTranslation": "显示译文"
+  },
+  "gtLean": {
+    "title": "在低配节点上启用衍生 OSINT？",
+    "message": "Shadowbroker 检测到该节点 CPU 上限为 1 vCPU。开启地图图层通常安全，但启用后端引擎可能会拖慢 Telegram、GDELT 等 OSINT 抓取。",
+    "confirm": "仍要开启图层",
+    "cancel": "取消"
   }
 }

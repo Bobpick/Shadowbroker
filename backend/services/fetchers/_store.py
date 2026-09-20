@@ -7,6 +7,7 @@ Every fetcher imports from here instead of maintaining its own copy.
 import copy
 import threading
 import logging
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TypedDict
 
@@ -160,6 +161,123 @@ source_timestamps = {}
 source_freshness: dict[str, dict] = {}
 
 
+# Layers that support row-level live-data deltas (P2).
+_DELTA_LAYER_KEYS: frozenset[str] = frozenset(
+    {
+        "ships",
+        "commercial_flights",
+        "military_flights",
+        "tracked_flights",
+        "private_flights",
+        "private_jets",
+    }
+)
+# Ring of (layer_version, id→item) snapshots for delta computation.
+_LAYER_ID_RING: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+_LAYER_ID_RING_MAX = 4
+
+
+def entity_id_for_layer(layer: str, item: dict) -> str:
+    """Stable entity id for delta upsert/delete keys."""
+    if not isinstance(item, dict):
+        return ""
+    if layer == "ships":
+        return str(item.get("mmsi") or item.get("id") or "").strip()
+    return str(
+        item.get("icao24") or item.get("icao") or item.get("id") or item.get("hex") or ""
+    ).strip().lower()
+
+
+def _track_fingerprint(item: dict) -> tuple:
+    lng = item.get("lng")
+    if lng is None:
+        lng = item.get("lon")
+    return (
+        item.get("lat"),
+        lng,
+        item.get("heading") or item.get("hdg") or item.get("cog") or item.get("true_track"),
+        item.get("speed_knots") or item.get("sog") or item.get("spd"),
+        item.get("alt") or item.get("altitude") or item.get("alt_km"),
+    )
+
+
+def _capture_layer_id_map(layer: str, items: list) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        eid = entity_id_for_layer(layer, item)
+        if eid:
+            out[eid] = item
+    return out
+
+
+def _record_delta_layer_snapshot_locked(layer: str) -> None:
+    """Caller must hold ``_data_lock``."""
+    if layer not in _DELTA_LAYER_KEYS:
+        return
+    ver = _layer_versions.get(layer, 0)
+    val = latest_data.get(layer)
+    items = val if isinstance(val, list) else []
+    id_map = _capture_layer_id_map(layer, items)
+    ring = _LAYER_ID_RING.setdefault(layer, [])
+    ring.append((ver, id_map))
+    while len(ring) > _LAYER_ID_RING_MAX:
+        ring.pop(0)
+
+
+def compute_layer_row_delta(layer: str, since_version: int) -> dict[str, Any] | None:
+    """Build upsert/delete delta vs a prior layer version.
+
+    Returns ``None`` when the base version is no longer in the ring (client
+    must take a full snapshot). Returns an empty upsert/delete when unchanged.
+    """
+    if layer not in _DELTA_LAYER_KEYS:
+        return None
+    try:
+        since = int(since_version)
+    except (TypeError, ValueError):
+        return None
+
+    with _data_lock:
+        current_ver = int(_layer_versions.get(layer, 0) or 0)
+        if since == current_ver or since > current_ver:
+            return {
+                "upsert": [],
+                "delete": [],
+                "version": current_ver,
+                "unchanged": True,
+            }
+        ring = list(_LAYER_ID_RING.get(layer) or [])
+        base_map = None
+        for ver, id_map in ring:
+            if ver == since:
+                base_map = id_map
+                break
+        if base_map is None:
+            # Base version aged out of the ring — full snapshot required.
+            return None
+        if ring and ring[-1][0] == current_ver:
+            cur_map = ring[-1][1]
+        else:
+            val = latest_data.get(layer)
+            items = val if isinstance(val, list) else []
+            cur_map = _capture_layer_id_map(layer, items)
+
+    upsert: list[Any] = []
+    for eid, item in cur_map.items():
+        prev = base_map.get(eid)
+        if prev is None or _track_fingerprint(prev) != _track_fingerprint(item):
+            upsert.append(item)
+    delete = [eid for eid in base_map if eid not in cur_map]
+    return {
+        "upsert": upsert,
+        "delete": delete,
+        "version": current_ver,
+        "unchanged": not upsert and not delete,
+    }
+
+
 def _mark_fresh(*keys):
     """Record the current UTC time for one or more data source keys."""
     now = datetime.utcnow().isoformat()
@@ -173,6 +291,7 @@ def _mark_fresh(*keys):
             val = latest_data.get(k)
             count = len(val) if isinstance(val, list) else (1 if val is not None else 0)
             changed.append((k, _layer_versions[k], count))
+            _record_delta_layer_snapshot_locked(k)
         # Publish partial fetch progress immediately so the frontend can
         # observe newly available data without waiting for the entire tier.
         _data_version += 1
@@ -287,7 +406,10 @@ def get_latest_data_subset(*keys: str) -> DashboardData:
 
 
 def get_latest_data_deepcopy_snapshot() -> DashboardData:
-    """Deep-copy the full dashboard for /api/health and legacy /api/live-data.
+    """Deep-copy the full dashboard for callers that need an isolated mutate-safe snap.
+
+    Prefer ``get_latest_data_refs_snapshot`` / ``get_latest_data_subset_refs`` on
+    read-only hot paths (legacy ``/api/live-data`` uses refs + orjson).
 
     The per-value deepcopy runs OUTSIDE ``_data_lock`` so a large clone cannot
     block fetcher writers (#375). The store contract is replace-don't-mutate,
@@ -324,6 +446,17 @@ def get_latest_data_subset_refs(*keys: str) -> DashboardData:
         return snap
 
 
+def get_latest_data_refs_snapshot() -> DashboardData:
+    """Return a shallow dict of all top-level store refs (read-only callers).
+
+    Copies the mapping under the lock without deep-copying values. Safe for
+    orjson serialization and other read-only consumers; callers MUST NOT
+    mutate nested objects.
+    """
+    with _data_lock:
+        return {key: value for key, value in latest_data.items()}
+
+
 def get_source_timestamps_snapshot() -> dict[str, str]:
     """Return a stable copy of per-source freshness timestamps."""
     with _data_lock:
@@ -348,15 +481,15 @@ active_layers: dict[str, bool] = {
     "ships_passenger": True,
     "ships_tracked_yachts": True,
     "earthquakes": True,
-    "cctv": True,
+    "cctv": False,
     "ukraine_frontline": True,
     "global_incidents": True,
     "gps_jamming": True,
     "kiwisdr": True,
     "scanners": True,
-    "firms": True,
+    "firms": False,
     "internet_outages": True,
-    "datacenters": True,
+    "datacenters": False,
     "military_bases": True,
     "sigint_meshtastic": True,
     "sigint_aprs": True,
@@ -371,9 +504,9 @@ active_layers: dict[str, bool] = {
     "satnogs": True,
     "tinygs": True,
     "ukraine_alerts": True,
-    "power_plants": True,
+    "power_plants": False,
     "viirs_nightlights": False,
-    "psk_reporter": True,
+    "psk_reporter": False,
     "correlations": True,
     "contradictions": True,
     "uap_sightings": True,
@@ -394,6 +527,69 @@ active_layers: dict[str, bool] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Layer overrides — additive, agent-driven, never persisted.
+# An automation (e.g. a hotspot daemon) can switch an overlay on for a while
+# without touching the operator's own toggles. Overrides merge ON TOP of
+# active_layers for reads; active_layers itself is only ever written by the
+# operator via POST /api/layers. The whole map shares one expiry, evaluated
+# lazily on read so no background task is needed. When it lapses the operator's
+# own view returns with no save/restore bookkeeping.
+# ---------------------------------------------------------------------------
+_MAX_OVERRIDE_TTL_S = 3600.0
+
+layer_overrides: dict[str, bool] = {}
+_layer_overrides_expires_at: float = 0.0
+
+
+def get_layer_overrides() -> dict[str, bool]:
+    """Return the live overrides, or {} once the TTL has lapsed."""
+    global _layer_overrides_expires_at
+    if not layer_overrides:
+        return {}
+    if time.monotonic() >= _layer_overrides_expires_at:
+        layer_overrides.clear()
+        _layer_overrides_expires_at = 0.0
+        bump_active_layers_version()
+        return {}
+    return dict(layer_overrides)
+
+
+def set_layer_overrides(overrides: dict[str, bool], ttl_seconds: float) -> dict[str, bool]:
+    """Replace the override map, returning the entries that were accepted.
+
+    Keys that are not real layers are dropped so a typo cannot silently do
+    nothing — the caller compares the return value against what it sent.
+    """
+    global _layer_overrides_expires_at
+    ttl = max(0.0, min(float(ttl_seconds), _MAX_OVERRIDE_TTL_S))
+    accepted = {k: bool(v) for k, v in overrides.items() if k in active_layers}
+    layer_overrides.clear()
+    layer_overrides.update(accepted)
+    _layer_overrides_expires_at = time.monotonic() + ttl if accepted else 0.0
+    bump_active_layers_version()
+    return accepted
+
+
+def clear_layer_overrides() -> None:
+    """Drop all overrides, restoring the operator's own layer state."""
+    global _layer_overrides_expires_at
+    if layer_overrides:
+        layer_overrides.clear()
+        _layer_overrides_expires_at = 0.0
+        bump_active_layers_version()
+
+
+def effective_layers() -> dict[str, bool]:
+    """Operator layer state merged with any live overrides."""
+    overrides = get_layer_overrides()
+    return {**active_layers, **overrides} if overrides else dict(active_layers)
+
+
 def is_any_active(*layer_names: str) -> bool:
     """Return True if any of the given layer names is currently active."""
-    return any(active_layers.get(name, True) for name in layer_names)
+    overrides = get_layer_overrides()
+    return any(
+        overrides.get(name, active_layers.get(name, True))
+        for name in layer_names
+    )

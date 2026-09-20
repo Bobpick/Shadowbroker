@@ -10,6 +10,9 @@ FLEET_NETWORK_ID = "sb-testnet-0"
 FLEET_SEED_ONION_URL = (
     "http://gqpbunqbgtkcqilvclm3xrkt3zowjyl3s62kkktvojgvxzizamvbrqid.onion:8000"
 )
+FLEET_SEED_ONION_URLS = (
+    FLEET_SEED_ONION_URL,
+)
 FLEET_BOOTSTRAP_SIGNER_PUBLIC_KEY_B64 = (
     "ul1d0kj/ODPIp0OhHzX8eLAVXzJ3CVvzW1vn2IC6q3I="
 )
@@ -56,9 +59,35 @@ def effective_peer_push_secret() -> str:
     return ""
 
 
+def _dedupe_peer_urls(peers: list[str]) -> list[str]:
+    from services.mesh.mesh_router import parse_configured_relay_peers
+
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for peer in parse_configured_relay_peers(",".join(str(item or "") for item in peers)):
+        if peer in seen:
+            continue
+        seen.add(peer)
+        normalized.append(peer)
+    return normalized
+
+
+def effective_fleet_seed_peers() -> list[str]:
+    try:
+        from services.config import get_settings
+
+        configured = str(getattr(get_settings(), "MESH_FLEET_SEED_PEERS", "") or "").strip()
+        if configured:
+            return _dedupe_peer_urls([configured])
+    except Exception:
+        pass
+    return _dedupe_peer_urls(list(FLEET_SEED_ONION_URLS))
+
+
 def configured_bootstrap_seed_peers_with_fleet_default(peers: list[str]) -> list[str]:
-    if peers:
-        return peers
+    normalized_peers = _dedupe_peer_urls(peers)
+    if normalized_peers:
+        return normalized_peers
     if infonet_fleet_join_enabled():
-        return [FLEET_SEED_ONION_URL]
+        return effective_fleet_seed_peers()
     return []

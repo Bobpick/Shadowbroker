@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from '@/lib/motion';
 import { X, ChevronDown, ChevronUp } from 'lucide-react';
 import ExternalImage from '@/components/ExternalImage';
 import { useTranslation } from '@/i18n';
@@ -113,7 +113,7 @@ const LEGEND: LegendCategory[] = [
       { svg: heli('#32CD32'), label: 'Medical / Fire / Rescue (lime)' },
       { svg: airliner('yellow'), label: 'Military / Intelligence (yellow)' },
       { svg: airliner('#222'), label: 'PIA — Privacy / Stealth (black)' },
-      { svg: airliner('#FF8C00'), label: 'Private Flights / Joe Cool (orange)' },
+      { svg: airliner('#FF8C00'), label: 'As Seen on TV / Joe Cool (orange)' },
       { svg: airliner('white'), label: 'Climate Crisis (white)' },
       { svg: airliner('#9B59B6'), label: 'Private Jets / Historic / Other (purple)' },
     ],

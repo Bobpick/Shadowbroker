@@ -14,7 +14,10 @@ services:
       MESH_SYNC_MAX_PEERS_PER_CYCLE: "5"
       MESH_INFONET_ALLOW_CLEARNET_SYNC: "false"
       MESH_PUBLIC_PEER_URL: ""
-      MESH_BOOTSTRAP_SEED_PEERS: "http://gqpbunqbgtkcqilvclm3xrkt3zowjyl3s62kkktvojgvxzizamvbrqid.onion:8000"
+      # Empty means: use the sb-testnet fleet seed list from code/config.
+      # Operators can rotate/add public fleet seeds with MESH_FLEET_SEED_PEERS.
+      MESH_BOOTSTRAP_SEED_PEERS: ""
+      MESH_FLEET_SEED_PEERS: "${MESH_FLEET_SEED_PEERS:-}"
       MESH_RELAY_PEERS: ""
       MESH_DEFAULT_SYNC_PEERS: ""
       MESH_BOOTSTRAP_SIGNER_PUBLIC_KEY: "ul1d0kj/ODPIp0OhHzX8eLAVXzJ3CVvzW1vn2IC6q3I="

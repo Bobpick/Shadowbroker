@@ -14,12 +14,15 @@ interface Stats {
   nodeEnabled: boolean;
   syncOutcome: string;
   syncError: string;
+  bootstrapState: string;
+  bootstrapDetail: string;
   artiReady: boolean | null;
 }
 
 const EMPTY: Stats = {
   meshtastic: 0, aprs: 0, ledgerNodes: 0, infonetEvents: 0,
   syncPeers: 0, seedPeers: 0, nodeEnabled: false, syncOutcome: 'offline', syncError: '',
+  bootstrapState: 'offline', bootstrapDetail: '',
   artiReady: null,
 };
 
@@ -57,6 +60,7 @@ export default function NetworkStats() {
           ?? 0,
         );
         const syncOutcome = String(infonet?.sync_runtime?.last_outcome || 'offline').toLowerCase();
+        const bootstrapState = String(infonet?.bootstrap?.bootstrap_state || '').toLowerCase();
         const artiReady = typeof wormholeRes?.arti_ready === 'boolean' ? wormholeRes.arti_ready : null;
         setStats({
           meshtastic: Number(channelsRes?.total_live || channelsRes?.total_nodes || meshRes?.signal_counts?.meshtastic || 0),
@@ -68,6 +72,8 @@ export default function NetworkStats() {
           nodeEnabled: Boolean(infonet?.node_enabled),
           syncOutcome,
           syncError: String(infonet?.sync_runtime?.last_error || '').trim(),
+          bootstrapState,
+          bootstrapDetail: String(infonet?.bootstrap?.bootstrap_detail || '').trim(),
           artiReady,
         });
       } catch { /* ignore */ }
@@ -78,17 +84,21 @@ export default function NetworkStats() {
   }, []);
 
   const artiBlocked = isArtiTransportBlocked(stats.syncError, stats.artiReady);
+  const connecting = stats.bootstrapState === 'connecting';
+  const localActive = stats.syncOutcome === 'solo' || (stats.nodeEnabled && connecting);
   const nodeColor = stats.syncOutcome === 'ok' || stats.syncOutcome === 'solo' ? 'text-green-400'
     : stats.syncOutcome === 'running' ? 'text-amber-400'
     : stats.nodeEnabled ? 'text-amber-400' : 'text-gray-600';
   const nodeLabel = stats.syncOutcome === 'ok' ? 'SEED SYNCED'
-    : stats.syncOutcome === 'solo' ? 'SOLO'
+    : localActive ? 'LOCAL ACTIVE'
     : stats.syncOutcome === 'running' ? 'SYNCING'
     : stats.syncOutcome === 'error' || stats.syncOutcome === 'fork'
-      ? (artiBlocked ? 'ARTI WARMING' : 'SYNC BACKOFF')
+      ? (artiBlocked ? 'ARTI WARMING' : 'CONNECTING')
     : stats.nodeEnabled ? 'WAITING' : 'OFFLINE';
-  const nodeTitle = stats.syncError
-    ? `Infonet seed sync: ${stats.syncError}`
+  const nodeTitle = stats.bootstrapDetail
+    ? stats.bootstrapDetail
+    : stats.syncError
+      ? `Infonet seed sync is retrying in the background: ${stats.syncError}`
     : stats.nodeEnabled
       ? 'Participant node enabled; waiting for seed ledger sync.'
       : 'Participant node offline.';

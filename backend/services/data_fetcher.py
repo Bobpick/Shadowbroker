@@ -79,6 +79,7 @@ from services.fetchers.infrastructure import (  # noqa: F401
     fetch_psk_reporter,
 )
 from services.fetchers.road_corridor_sat import fetch_road_corridor_trends  # noqa: F401
+from services.fetchers.airframes import sync_airframes_messages  # noqa: F401
 from services.fetchers.geo import (  # noqa: F401
     fetch_ships,
     fetch_airports,
@@ -484,24 +485,27 @@ def update_slow_data():
         fetch_military_bases,
         fetch_scanners,
         fetch_psk_reporter,
-        fetch_weather_alerts,
+        # weather_alerts + ukraine_alerts: owned by dedicated scheduler jobs
+        # (5 min and 2 min) — keep off slow tier to avoid duplicate upstream work.
         fetch_air_quality,
         fetch_fishing_activity,
         fetch_power_plants,
-        fetch_ukraine_air_raid_alerts,
         fetch_malware_threats,
         fetch_cyber_threats,
         fetch_scm_suppliers,
     ]
     _run_tasks("slow-tier", slow_funcs)
-    # Run correlation engine after all data is fresh
+    # Run correlation engine after all data is fresh (skip when overlay is off).
     try:
+        from services.fetchers._store import is_any_active
         from services.correlation_engine import compute_correlations
-        with _data_lock:
-            snapshot = dict(latest_data)
-        correlations = compute_correlations(snapshot)
-        with _data_lock:
-            latest_data["correlations"] = correlations
+
+        if is_any_active("correlations"):
+            with _data_lock:
+                snapshot = dict(latest_data)
+            correlations = compute_correlations(snapshot)
+            with _data_lock:
+                latest_data["correlations"] = correlations
     except Exception as e:
         logger.error("Correlation engine failed: %s", e)
     try:
@@ -1020,10 +1024,10 @@ def start_scheduler():
             logger.error("GT rolling auto-label failed: %s", exc)
 
     try:
-        from analytics.settings import get_gt_settings
+        from analytics.settings import get_gt_settings, gt_engine_operational
 
         _gt_settings = get_gt_settings()
-        if _gt_settings.enabled:
+        if gt_engine_operational():
             _scheduler.add_job(
                 _recompute_gt_clusters,
                 "interval",
@@ -1378,6 +1382,17 @@ def start_scheduler():
         max_instances=1,
         misfire_grace_time=300,
         next_run_time=datetime.utcnow() + timedelta(minutes=5),  # first snapshot 5m after startup
+    )
+
+    _airframes_interval_m = max(5, int(os.environ.get("AIRFRAMES_SYNC_INTERVAL_MINUTES", "15")))
+    _scheduler.add_job(
+        lambda: _run_task_with_health(sync_airframes_messages, "sync_airframes_messages"),
+        "interval",
+        minutes=_airframes_interval_m,
+        id="airframes_datalink",
+        max_instances=1,
+        misfire_grace_time=120,
+        next_run_time=datetime.utcnow() + timedelta(seconds=90),
     )
 
     _scheduler.start()

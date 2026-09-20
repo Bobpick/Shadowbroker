@@ -85,7 +85,7 @@ def test_plan_playbook_track_snapshot_requires_query():
     assert plan["ok"] is False
     plan_ok = plan_playbook("track_snapshot", {"query": "patriots jet"})
     assert plan_ok["ok"] is True
-    assert plan_ok["batch"][0]["cmd"] == "find_entity"
+    assert plan_ok["batch"][0]["cmd"] == "get_entity_profile"
 
 
 def test_expensive_commands_set():

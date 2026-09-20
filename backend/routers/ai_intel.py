@@ -125,8 +125,8 @@ class LayerUpdate(BaseModel):
 
 class InjectRequest(BaseModel):
     layer: str
-    items: list[dict[str, Any]] = Field(..., max_length=200)
-    mode: str = "append"  # "append" or "replace"
+    items: list[Any] = Field(..., max_length=200)
+    mode: str = "append"  # validated by inject_layer_data
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +382,50 @@ async def api_refresh_layer_feed(request: Request, layer_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Native map layer overrides — additive, transient, agent-driven.
+#
+# These are the DATA LAYERS toggles, not the pin layers above. An override
+# switches an overlay on without touching the operator's own toggle state, and
+# lapses on its own after the TTL. Agents holding an overlay open should re-PUT
+# on their refresh tick rather than sending a long TTL.
+# ---------------------------------------------------------------------------
+
+class LayerOverrideUpdate(BaseModel):
+    layers: dict[str, bool]
+    ttl_seconds: float = 300.0
+
+
+@router.put("/api/ai/layer-overrides", dependencies=[Depends(require_openclaw_or_local)])
+@limiter.limit("30/minute")
+async def put_layer_overrides(request: Request, body: LayerOverrideUpdate):
+    """Replace the override map. Returns which keys were accepted and ignored."""
+    from services.fetchers._store import set_layer_overrides
+
+    accepted = set_layer_overrides(body.layers, body.ttl_seconds)
+    ignored = sorted(set(body.layers) - set(accepted))
+    return {"ok": True, "overrides": accepted, "ignored": ignored}
+
+
+@router.get("/api/ai/layer-overrides", dependencies=[Depends(require_openclaw_or_local)])
+@limiter.limit("60/minute")
+async def read_layer_overrides(request: Request):
+    """Return the overrides that are currently live."""
+    from services.fetchers._store import get_layer_overrides
+
+    return {"ok": True, "overrides": get_layer_overrides()}
+
+
+@router.delete("/api/ai/layer-overrides", dependencies=[Depends(require_openclaw_or_local)])
+@limiter.limit("30/minute")
+async def delete_layer_overrides(request: Request):
+    """Drop all overrides, restoring the operator's own layer state."""
+    from services.fetchers._store import clear_layer_overrides
+
+    clear_layer_overrides()
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
 # Agent Actions endpoint — frontend polls this for UI commands from the agent
 # ---------------------------------------------------------------------------
 
@@ -597,39 +641,15 @@ INJECTABLE_LAYERS = {
 @router.post("/api/ai/inject", dependencies=[Depends(require_openclaw_or_local)])
 @limiter.limit("30/minute")
 async def inject_data(request: Request, body: InjectRequest):
-    """Inject custom data into ANY native ShadowBroker layer.
-    Items appear as real telemetry alongside automated feeds.
-    Tagged with _source='user:openclaw' so they can be filtered/removed."""
-    from services.fetchers._store import latest_data, _data_lock, bump_data_version
+    """Inject custom data through the shared validated layer helper."""
+    from services.ai_intel_store import inject_layer_data
 
-    if body.layer not in INJECTABLE_LAYERS:
-        raise HTTPException(400, f"Layer '{body.layer}' is not injectable. "
-                            f"Valid layers: {sorted(INJECTABLE_LAYERS)}")
+    result = inject_layer_data(body.layer, body.items, mode=body.mode)
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("detail", "invalid injection payload"))
 
-    now = time.time()
-    items = body.items[:200]  # cap at 200
-
-    # Tag every injected item
-    for item in items:
-        item["_injected"] = True
-        item["_source"] = "user:openclaw"
-        item["_injected_at"] = now
-
-    with _data_lock:
-        existing = list(latest_data.get(body.layer) or [])
-        if body.mode == "replace":
-            existing = [x for x in existing if not x.get("_injected")]
-        existing.extend(items)
-        latest_data[body.layer] = existing
-        bump_data_version()
-
-    total = len(latest_data.get(body.layer, []))
-    return {
-        "ok": True,
-        "layer": body.layer,
-        "injected": len(items),
-        "total": total,
-    }
+    total = len(_latest_data.get(body.layer, []))
+    return {**result, "total": total}
 
 
 @router.delete("/api/ai/inject", dependencies=[Depends(require_openclaw_or_local)])
@@ -1609,6 +1629,13 @@ async def agent_tool_manifest(request: Request):
                 "returns": "{counts: {...}, available_layers: [...], non_empty_layers: [...], layer_aliases: {...}, last_updated, version}",
             },
             {
+                "name": "get_fetch_health",
+                "type": "read",
+                "description": "Get process-local outcomes for instrumented fetch and maintenance tasks. Reports counters, timestamps, latest condition, and duration without raw error text. This is not a data-freshness or upstream-availability check.",
+                "parameters": {},
+                "returns": "{scope: 'process', persistent: false, observed_only: true, semantics: 'latest_recorded_task_outcome', tasks: {...}}",
+            },
+            {
                 "name": "get_layer_slice",
                 "type": "read",
                 "description": "Get only specific top-level telemetry layers, with optional version gating so unchanged reads return empty. Accepts friendly aliases like gfw/global_fishing_watch → fishing_activity and uap/ufo → uap_sightings. Layer slices are uncapped unless you pass a positive limit_per_layer.",
@@ -1687,8 +1714,52 @@ async def agent_tool_manifest(request: Request):
                     "radius_km": {"type": "float", "required": False, "description": "Context radius in km (default 100, max 1000)"},
                     "limit": {"type": "integer", "required": False, "description": "Max records per evidence group (default 10, max 50)"},
                 },
-                "returns": "{status, claim_level, entity, center, radius_km, signals, evidence: {proximate_entities, context_layers}, recommended_next}",
+                "returns": "{status, claim_level, entity, center, radius_km, signals, movement, evidence: {proximate_entities, context_layers}, recommended_next}",
                 "example": {"cmd": "correlate_entity", "args": {"entity_type": "aircraft", "callsign": "AF1", "radius_km": 150}},
+            },
+            {
+                "name": "get_entity_trail",
+                "type": "read",
+                "description": "Resolve an aircraft or vessel and return its observed movement trail, route enrichment (from entity fields or route database), bearing/heading, and optional ACARS datalink hints. Trails accumulate while ShadowBroker is running.",
+                "parameters": {
+                    "query": {"type": "string", "required": False, "description": "Natural-language name, owner, callsign, tail, MMSI, or vessel name"},
+                    "entity_type": {"type": "string", "required": False, "description": "Optional type hint: aircraft or ship"},
+                    "callsign": {"type": "string", "required": False, "description": "Aircraft or vessel callsign"},
+                    "registration": {"type": "string", "required": False, "description": "Aircraft tail number / registration"},
+                    "icao24": {"type": "string", "required": False, "description": "Aircraft ICAO24 hex identifier"},
+                    "mmsi": {"type": "string", "required": False, "description": "Ship MMSI"},
+                    "imo": {"type": "string", "required": False, "description": "Ship IMO number"},
+                    "name": {"type": "string", "required": False, "description": "Known aircraft/vessel name"},
+                    "owner": {"type": "string", "required": False, "description": "Owner or operator"},
+                    "max_points": {"type": "integer", "required": False, "description": "Max trail points returned (default 80, max 200)"},
+                    "include_datalink": {"type": "boolean", "required": False, "description": "Include ACARS/VDL summaries when available (default true)"},
+                },
+                "returns": "{status, entity, trail: [{lat,lng,alt_ft,ts}], route, movement, datalink_hints, notes}",
+                "example": {"cmd": "get_entity_trail", "args": {"registration": "N424PX", "icao24": "a50bd6"}},
+            },
+            {
+                "name": "get_entity_profile",
+                "type": "read",
+                "description": "One-shot aircraft or vessel dossier: identity, VIP/plane-alert metadata, position, trail, route, holding/emissions, ACARS datalink, nearby correlations/jamming/SAR, and related news.",
+                "parameters": {
+                    "query": {"type": "string", "required": False, "description": "Natural-language name, owner, callsign, tail, MMSI, or vessel name"},
+                    "entity_type": {"type": "string", "required": False, "description": "Optional type hint: aircraft or ship"},
+                    "callsign": {"type": "string", "required": False, "description": "Aircraft or vessel callsign"},
+                    "registration": {"type": "string", "required": False, "description": "Aircraft tail number / registration"},
+                    "icao24": {"type": "string", "required": False, "description": "Aircraft ICAO24 hex identifier"},
+                    "mmsi": {"type": "string", "required": False, "description": "Ship MMSI"},
+                    "imo": {"type": "string", "required": False, "description": "Ship IMO number"},
+                    "name": {"type": "string", "required": False, "description": "Known aircraft/vessel name"},
+                    "owner": {"type": "string", "required": False, "description": "Owner or operator"},
+                    "max_trail_points": {"type": "integer", "required": False, "description": "Max trail points (default 80)"},
+                    "include_datalink": {"type": "boolean", "required": False, "description": "Include ACARS summaries (default true)"},
+                    "include_datalink_messages": {"type": "boolean", "required": False, "description": "Include full summarized datalink messages (default false)"},
+                    "include_news": {"type": "boolean", "required": False, "description": "Search news for owner/operator (default true)"},
+                    "include_nearby_context": {"type": "boolean", "required": False, "description": "Include nearby correlations, GPS jamming, SAR (default true)"},
+                    "context_radius_km": {"type": "float", "required": False, "description": "Radius for nearby context (default 120 km)"},
+                },
+                "returns": "{status, identity, position, trail, route, movement, aircraft_state, datalink, nearby_context, related_news, recommended_next}",
+                "example": {"cmd": "get_entity_profile", "args": {"registration": "N424PX", "owner": "Katzman"}},
             },
             {
                 "name": "search_telemetry",
@@ -2387,6 +2458,7 @@ async def api_capabilities(request: Request):
                 "get_telemetry": {"args": {}, "description": "All live fast-refresh data (flights, ships, sigint, earthquakes, weather, CCTV, etc)"},
                 "get_slow_telemetry": {"args": {}, "description": "Slow-refresh data (prediction markets, news, military bases, power plants, volcanoes, etc)"},
                 "get_summary": {"args": {}, "description": "Counts and discovery metadata for all live telemetry layers, including available layer names and common aliases."},
+                "get_fetch_health": {"args": {}, "description": "Process-local outcomes for instrumented fetch and maintenance tasks, without raw error text. Condition reflects the latest recorded task outcome, not data freshness or upstream availability."},
                 "get_layer_slice": {
                     "args": {"layers": "list[str]", "limit_per_layer": "int (optional, omit or <=0 for full layer)", "since_version": "int (optional)"},
                     "description": "Fetch only selected top-level layers. Accepts aliases such as gfw/global_fishing_watch → fishing_activity. If since_version matches current version, returns changed=false and no layer payload.",
@@ -2413,7 +2485,15 @@ async def api_capabilities(request: Request):
                 },
                 "correlate_entity": {
                     "args": {"query": "str (optional)", "entity_type": "str (optional)", "callsign": "str (optional)", "registration": "str (optional)", "icao24": "str (optional)", "mmsi": "str (optional)", "imo": "str (optional)", "name": "str (optional)", "owner": "str (optional)", "radius_km": "float (default 100)", "limit": "int (default 10)"},
-                    "description": "Resolve an entity and return nearby context/correlation evidence. Co-location is reported as a lead, not proof.",
+                    "description": "Resolve an entity and return nearby context/correlation evidence plus observed movement trail summary. Co-location is reported as a lead, not proof.",
+                },
+                "get_entity_trail": {
+                    "args": {"query": "str (optional)", "entity_type": "str (optional)", "callsign": "str (optional)", "registration": "str (optional)", "icao24": "str (optional)", "mmsi": "str (optional)", "imo": "str (optional)", "name": "str (optional)", "owner": "str (optional)", "max_points": "int (default 80)", "include_datalink": "bool (default true)"},
+                    "description": "Observed aircraft/vessel trail, route enrichment, bearing, and ACARS hints. Use instead of Time Machine for live-session history.",
+                },
+                "get_entity_profile": {
+                    "args": {"query": "str (optional)", "entity_type": "str (optional)", "registration": "str (optional)", "icao24": "str (optional)", "owner": "str (optional)", "include_datalink": "bool (default true)", "include_news": "bool (default true)", "include_nearby_context": "bool (default true)"},
+                    "description": "Preferred one-shot dossier for aircraft/vessels — identity, trail, route, VIP tags, datalink, jamming/correlations, news.",
                 },
                 "search_telemetry": {
                     "args": {"query": "str", "layers": "list[str] (optional)", "limit": "int (default 25)"},
@@ -2935,6 +3015,12 @@ def _write_env_value(key: str, value: str) -> None:
 
     # Also set in current process env so Settings picks it up
     os.environ[key] = value
+
+    try:
+        from services.api_settings import persist_openclaw_env_value
+        persist_openclaw_env_value(key, value)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

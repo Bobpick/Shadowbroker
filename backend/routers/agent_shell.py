@@ -15,20 +15,17 @@ import struct
 import sys
 import termios
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from auth import (
-    _current_admin_key,
-    _debug_mode_enabled,
-    _is_trusted_local_runtime_host,
-    require_local_operator,
-)
+from auth import _current_admin_key, require_local_operator
 from services.agent_shell_settings import (
     get_agent_shell_settings,
     set_agent_shell_working_directory,
 )
+from services.agent_shell_ws_token import consume_agent_shell_ws_token, mint_agent_shell_ws_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["agent-shell"])
@@ -43,38 +40,76 @@ def _set_winsize(fd: int, rows: int, cols: int) -> None:
     fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
 
 
-def _published_local_dashboard_ws(ws: WebSocket) -> bool:
-    """Browser → published Docker port appears as a bridge IP, not loopback.
+def _configured_agent_shell_origins() -> set[str]:
+    """Return explicitly configured browser origins accepted by the shell."""
+    allowed: set[str] = set()
+    for env_name in ("SHADOWBROKER_AGENT_SHELL_ALLOWED_ORIGINS", "CORS_ORIGINS"):
+        for raw in os.environ.get(env_name, "").split(","):
+            candidate = raw.strip()
+            if not candidate:
+                continue
+            try:
+                parsed = urlsplit(candidate)
+            except ValueError:
+                continue
+            if parsed.scheme in {"http", "https"} and parsed.hostname:
+                allowed.add(f"{parsed.scheme.lower()}://{parsed.netloc.lower()}")
+    return allowed
 
-    For the operator shell only, also accept when the upgrade request clearly
-    targets the local dashboard (Host/Origin on localhost).
-    """
-    host_header = str(ws.headers.get("host") or "").strip().lower()
-    host_name = host_header.split(":", 1)[0]
-    if host_name in {"127.0.0.1", "localhost", "::1"}:
+
+def _agent_shell_origin_allowed(ws: WebSocket) -> bool:
+    """Reject drive-by browser origins while preserving local/LAN dashboard use."""
+    origin = str(ws.headers.get("origin", "") or "").strip()
+    if not origin:
+        # Non-browser clients do not normally send Origin; they still need an
+        # explicit one-time token or X-Admin-Key below.
+        return True
+    try:
+        parsed_origin = urlsplit(origin)
+    except ValueError:
+        return False
+    if parsed_origin.scheme not in {"http", "https"} or not parsed_origin.hostname:
+        return False
+
+    normalized_origin = f"{parsed_origin.scheme.lower()}://{parsed_origin.netloc.lower()}"
+    if normalized_origin in _configured_agent_shell_origins():
         return True
 
-    origin = str(ws.headers.get("origin") or "").strip().lower()
-    if origin.startswith("http://127.0.0.1:") or origin.startswith("http://localhost:"):
-        return True
-    if origin.startswith("https://127.0.0.1:") or origin.startswith("https://localhost:"):
-        return True
-    return False
+    # The browser UI connects directly to the backend port on the same host
+    # (for example localhost:3000 -> localhost:8000). Match the hostname, not
+    # the port, so normal source, Docker-host, and LAN deployments stay silent.
+    host_header = str(ws.headers.get("host", "") or "").strip()
+    if not host_header:
+        return False
+    try:
+        target_host = urlsplit(f"//{host_header}").hostname
+    except ValueError:
+        return False
+    return bool(target_host and parsed_origin.hostname.lower() == target_host.lower())
 
 
-async def _authorize_agent_shell_ws(ws: WebSocket, admin_key_query: str = "") -> None:
-    host = (ws.client.host or "").lower() if ws.client else ""
-    if (
-        _is_trusted_local_runtime_host(host)
-        or _published_local_dashboard_ws(ws)
-        or (_debug_mode_enabled() and host == "test")
-    ):
+async def _authorize_agent_shell_ws(
+    ws: WebSocket,
+    ws_token_query: str = "",
+) -> None:
+    """Require an explicit capability; source IP is never authorization."""
+    if not _agent_shell_origin_allowed(ws):
+        await ws.close(code=4403, reason="agent shell origin rejected")
+        raise WebSocketDisconnect()
+
+    if consume_agent_shell_ws_token(ws_token_query):
         return
-    admin_key = _current_admin_key()
-    presented = str(admin_key_query or ws.headers.get("x-admin-key", "") or "").strip()
-    if admin_key and presented and hmac.compare_digest(presented.encode(), admin_key.encode()):
-        return
-    await ws.close(code=4403, reason="local operator access only")
+
+    # Browser WebSocket clients cannot set arbitrary authentication headers.
+    # Keep header auth only for non-browser/native tooling, and never accept a
+    # long-lived ADMIN_KEY in the URL query string.
+    if not ws.headers.get("origin"):
+        admin_key = _current_admin_key()
+        presented = str(ws.headers.get("x-admin-key", "") or "").strip()
+        if admin_key and presented and hmac.compare_digest(presented.encode(), admin_key.encode()):
+            return
+
+    await ws.close(code=4403, reason="agent shell credential required")
     raise WebSocketDisconnect()
 
 
@@ -142,6 +177,12 @@ async def read_agent_shell_settings() -> dict[str, Any]:
     return get_agent_shell_settings()
 
 
+@router.post("/api/agent-shell/ws-token", dependencies=[Depends(require_local_operator)])
+async def mint_agent_shell_ws_token_route() -> dict[str, Any]:
+    token, expires_in = mint_agent_shell_ws_token()
+    return {"token": token, "expires_in": expires_in}
+
+
 @router.put("/api/agent-shell/settings", dependencies=[Depends(require_local_operator)])
 async def write_agent_shell_settings(body: AgentShellSettingsUpdate) -> dict[str, Any]:
     try:
@@ -159,11 +200,11 @@ async def agent_shell_websocket(
     cwd: str = Query(default=""),
     cols: int = Query(default=80),
     rows: int = Query(default=24),
-    admin_key: str = Query(default=""),
+    ws_token: str = Query(default=""),
 ) -> None:
     await ws.accept()
     try:
-        await _authorize_agent_shell_ws(ws, admin_key)
+        await _authorize_agent_shell_ws(ws, ws_token)
     except WebSocketDisconnect:
         return
 

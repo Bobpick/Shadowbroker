@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from '@/lib/motion';
 import {
   Layers,
   Minus,
@@ -47,6 +47,7 @@ import {
   MapPin,
   Truck,
   MessageSquare,
+  RefreshCw,
 } from 'lucide-react';
 import RoadCorridorLayerControls from '@/components/RoadCorridorLayerControls';
 import { API_BASE } from '@/lib/api';
@@ -61,6 +62,12 @@ import KiwiSdrConsentDialog from './ui/KiwiSdrConsentDialog';
 import { extractGtAlerts } from '@/lib/gtAlerts';
 import { OPEN_METEO_FORECAST_STEPS } from '@/lib/openMeteoMap';
 import { SAR_GUIDE_EVENT, type SarGuideDetail } from '@/lib/sarGuide';
+import {
+  getDefaultLayerSectionExpanded,
+  loadLayerSectionExpanded,
+  saveLayerSectionExpanded,
+} from '@/lib/layerPreferences';
+import { gtLeanLayerWarning, useRuntimeProfile } from '@/hooks/useRuntimeProfile';
 
 function relativeTime(iso: string | undefined): string {
   if (!iso) return '';
@@ -152,8 +159,61 @@ import type {
   KiwiSDR,
   Scanner,
   TrackedFlight,
+  DashboardData,
 } from '@/types/dashboard';
-import { useDataSnapshot } from '@/hooks/useDataStore';
+import { useDataKeys } from '@/hooks/useDataStore';
+
+/** Keys the layer panel reads — avoids re-rendering on unrelated fast-poll keys. */
+const WORLDVIEW_PANEL_DATA_KEYS = [
+  'ships',
+  'sigint_totals',
+  'sigint',
+  'cctv_total',
+  'cctv',
+  'satnogs_total',
+  'satnogs_stations',
+  'tinygs_total',
+  'tinygs_satellites',
+  'tracked_flights',
+  'commercial_flights',
+  'private_flights',
+  'private_jets',
+  'military_flights',
+  'gps_jamming',
+  'fishing_activity',
+  'satellite_source',
+  'satellite_analysis',
+  'satellites',
+  'road_corridor_trends',
+  'earthquakes',
+  'firms_fires',
+  'ukraine_alerts',
+  'weather_alerts',
+  'volcanoes',
+  'air_quality',
+  'sar_anomalies',
+  'sar_scenes',
+  'uap_sightings',
+  'wastewater',
+  'datacenters',
+  'internet_outages',
+  'power_plants',
+  'military_bases',
+  'trains',
+  'malware_threats',
+  'scm_suppliers',
+  'cyber_threats',
+  'kiwisdr',
+  'psk_reporter',
+  'scanners',
+  'frontlines',
+  'gdelt',
+  'telegram_osint',
+  'crowdthreat',
+  'correlations',
+  'gt_risk',
+  'freshness',
+] as const satisfies readonly (keyof DashboardData)[];
 
 // ---------------------------------------------------------------------------
 // ScannerTracker — in-app audio player for tracked police scanner systems
@@ -658,6 +718,7 @@ const TOGGLE_ALL_EXCLUDED_LAYERS = new Set<string>([
 const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   activeLayers,
   setActiveLayers,
+  onResetLayers,
   onSettingsClick,
   onLegendClick,
   gibsDate,
@@ -692,6 +753,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
 }: {
   activeLayers: ActiveLayers;
   setActiveLayers: React.Dispatch<React.SetStateAction<ActiveLayers>>;
+  onResetLayers?: () => void;
   onSettingsClick?: () => void;
   onLegendClick?: () => void;
   gibsDate?: string;
@@ -724,7 +786,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   sarKindFilter?: import('@/lib/sarKinds').SarKindFilter;
   setSarKindFilter?: (filter: import('@/lib/sarKinds').SarKindFilter) => void;
 }) {
-  const data = useDataSnapshot() as import('@/types/dashboard').DashboardData;
+  const data = useDataKeys(WORLDVIEW_PANEL_DATA_KEYS) as DashboardData;
   const { t } = useTranslation();
   const [internalMinimized, setInternalMinimized] = useState(true);
   const isMinimized = isMinimizedProp !== undefined ? isMinimizedProp : internalMinimized;
@@ -736,7 +798,10 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
   const { theme, toggleTheme, hudColor, cycleHudColor } = useTheme();
   const [gibsPlaying, setGibsPlaying] = useState(false);
   const [potusEnabled, setPotusEnabled] = useState(true);
+  const [meshtasticScanning, setMeshtasticScanning] = useState(false);
+  const [meshtasticScanMessage, setMeshtasticScanMessage] = useState('');
   const gibsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const meshtasticScanPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // SAR mode chooser — prompts the first time the user enables the SAR
   // layer, remembers the choice, and auto-detects server-side Mode B.
@@ -771,7 +836,11 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
 
   const [liveuamapModalOpen, setLiveuamapModalOpen] = useState(false);
   const [liveuamapPendingEnable, setLiveuamapPendingEnable] = useState<(() => void) | null>(null);
+  const [gtLeanModalOpen, setGtLeanModalOpen] = useState(false);
+  const [gtLeanPendingEnable, setGtLeanPendingEnable] = useState<(() => void) | null>(null);
   const { needsConsentBeforeEnable, confirmOptIn } = useLiveUamapScraperOptIn();
+  const runtimeProfile = useRuntimeProfile();
+  const gtLeanWarning = gtLeanLayerWarning(runtimeProfile);
 
   const withGlobalIncidentsConsent = useCallback(
     (layerId: string, turningOn: boolean, apply: () => void) => {
@@ -783,6 +852,18 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
       apply();
     },
     [needsConsentBeforeEnable],
+  );
+
+  const withGtRiskLeanWarning = useCallback(
+    (layerId: string, turningOn: boolean, apply: () => void) => {
+      if (layerId === 'gt_risk' && turningOn && gtLeanWarning) {
+        setGtLeanPendingEnable(() => apply);
+        setGtLeanModalOpen(true);
+        return;
+      }
+      apply();
+    },
+    [gtLeanWarning],
   );
 
   const isAllToggleableLayersOn = useMemo(
@@ -823,7 +904,9 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
         });
         if (!res.ok || cancelled) return;
         const body = await res.json();
-        const modeBOn = Boolean(body?.products?.enabled);
+        const modeBOn = Boolean(
+          body?.products?.fully_configured ?? body?.products?.enabled,
+        );
         if (cancelled) return;
         if (modeBOn && sarChoice !== 'b_active') {
           try {
@@ -957,6 +1040,67 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
     return { meshtasticCount: mesh, aprsCount: aprs };
   }, [data?.sigint, data?.sigint_totals]);
 
+  const stopMeshtasticScanPoll = useCallback(() => {
+    if (meshtasticScanPollRef.current) {
+      clearInterval(meshtasticScanPollRef.current);
+      meshtasticScanPollRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => stopMeshtasticScanPoll(), [stopMeshtasticScanPoll]);
+
+  const scanMeshtasticPlanet = useCallback(
+    async (event: React.MouseEvent) => {
+      event.stopPropagation();
+      if (meshtasticScanning) return;
+
+      setMeshtasticScanning(true);
+      setMeshtasticScanMessage('Starting global node scan…');
+      stopMeshtasticScanPoll();
+
+      try {
+        const res = await fetch(`${API_BASE}/api/sigint/meshtastic/scan`, { method: 'POST' });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json.ok === false) {
+          setMeshtasticScanMessage(
+            typeof json.status === 'string' ? json.status : 'Meshtastic scan could not start.',
+          );
+          setMeshtasticScanning(false);
+          return;
+        }
+
+        setMeshtasticScanMessage('Scanning planet (~90s)…');
+        let polls = 0;
+        meshtasticScanPollRef.current = setInterval(async () => {
+          polls += 1;
+          try {
+            const statusRes = await fetch(`${API_BASE}/api/sigint/meshtastic/status`);
+            if (!statusRes.ok) return;
+            const status = await statusRes.json();
+            if (!status.scan_in_progress) {
+              stopMeshtasticScanPoll();
+              setMeshtasticScanning(false);
+              const count = Number(status.node_count || 0);
+              setMeshtasticScanMessage(
+                count > 0 ? `Scan complete — ${count.toLocaleString()} nodes on map.` : 'Scan complete.',
+              );
+            } else if (polls >= 40) {
+              stopMeshtasticScanPoll();
+              setMeshtasticScanning(false);
+              setMeshtasticScanMessage('Scan still running in background. Count will update when finished.');
+            }
+          } catch {
+            // keep polling until timeout
+          }
+        }, 3000);
+      } catch {
+        setMeshtasticScanning(false);
+        setMeshtasticScanMessage('Meshtastic scan request failed.');
+      }
+    },
+    [meshtasticScanning, stopMeshtasticScanPoll],
+  );
+
   const cctvCount = Number(data?.cctv_total || data?.cctv?.length || 0);
   const satnogsCount = Number(data?.satnogs_total || data?.satnogs_stations?.length || 0);
   const tinygsCount = Number(data?.tinygs_total || data?.tinygs_satellites?.length || 0);
@@ -982,6 +1126,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
 
   const sections = [
     {
+      id: 'aircraft',
       label: t('layers.aircraft').toUpperCase(),
       icon: Plane,
       layers: [
@@ -1030,6 +1175,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
       ],
     },
     {
+      id: 'maritime',
       label: t('layers.maritime').toUpperCase(),
       icon: Ship,
       layers: [
@@ -1078,6 +1224,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
       ],
     },
     {
+      id: 'space',
       label: t('layers.space').toUpperCase(),
       icon: Satellite,
       layers: [
@@ -1141,6 +1288,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
       ],
     },
     {
+      id: 'hazards',
       label: t('layers.hazards').toUpperCase(),
       icon: AlertTriangle,
       layers: [
@@ -1229,6 +1377,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
       ],
     },
     {
+      id: 'uap',
       label: t('layers.uapSightings').toUpperCase(),
       icon: Eye,
       layers: [
@@ -1242,6 +1391,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
       ],
     },
     {
+      id: 'biosurveillance',
       label: t('layers.biosurveillance').toUpperCase(),
       icon: Droplets,
       layers: [
@@ -1255,6 +1405,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
       ],
     },
     {
+      id: 'infrastructure',
       label: t('layers.infrastructure').toUpperCase(),
       icon: Server,
       layers: [
@@ -1331,6 +1482,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
       ],
     },
     {
+      id: 'shodan',
       label: t('layers.shodanOverlay').toUpperCase(),
       icon: Search,
       layers: [
@@ -1344,6 +1496,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
       ],
     },
     {
+      id: 'sigint',
       label: t('layers.sigint').toUpperCase(),
       icon: Radio,
       layers: [
@@ -1399,6 +1552,7 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
       ],
     },
     {
+      id: 'overlays',
       label: t('layers.overlays').toUpperCase(),
       icon: Globe,
       layers: [
@@ -1462,6 +1616,16 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
           icon: Zap,
         },
         {
+          id: 'gt_risk',
+          name: t('layers.derivedOsint'),
+          source: t('layers.derivedOsintSource'),
+          count:
+            extractGtAlerts(data?.gt_risk).plottedRegions ||
+            data?.gt_risk?.meta?.plotted_regions ||
+            0,
+          icon: Radar,
+        },
+        {
           id: 'day_night',
           name: t('layers.dayNight'),
           source: 'Solar Calc',
@@ -1479,16 +1643,20 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
     },
   ];
 
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {};
-    sections.forEach((s) => {
-      // Keep high-traffic intel overlays visible on first paint (GDELT, Telegram, etc.)
-      initial[s.label] = s.layers.some((l) =>
-        ['global_incidents', 'telegram_osint', 'ukraine_frontline', 'gt_risk'].includes(l.id),
-      );
-    });
-    return initial;
-  });
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(
+    getDefaultLayerSectionExpanded,
+  );
+  const [sectionPrefsHydrated, setSectionPrefsHydrated] = useState(false);
+
+  useEffect(() => {
+    setExpandedSections(loadLayerSectionExpanded());
+    setSectionPrefsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!sectionPrefsHydrated) return;
+    saveLayerSectionExpanded(expandedSections);
+  }, [expandedSections, sectionPrefsHydrated]);
 
   const shipIcon = (
     <svg
@@ -1580,6 +1748,20 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {onResetLayers ? (
+              <button
+                type="button"
+                title={t('layers.resetToDefaults')}
+                aria-label={t('layers.resetToDefaults')}
+                className="text-[var(--text-muted)] hover:text-cyan-400 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onResetLayers();
+                }}
+              >
+                <RefreshCw size={16} />
+              </button>
+            ) : null}
             <button
               title={isAllToggleableLayersOn ? 'Disable all layers' : 'Enable all layers'}
               className={`${
@@ -1713,20 +1895,21 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
                   const anyOn = sectionLayerIds.some(
                     (id) => activeLayers[id as keyof typeof activeLayers],
                   );
-                  const expanded = expandedSections[section.label] ?? true;
+                  const expanded =
+                    expandedSections[section.id] ?? getDefaultLayerSectionExpanded()[section.id] ?? false;
                   const totalCount = section.layers.reduce(
                     (sum, l) => sum + ((l.count as number) || 0),
                     0,
                   );
 
                   return (
-                    <div key={section.label} className="flex flex-col">
+                    <div key={section.id} className="flex flex-col">
                       {/* Section header */}
                       <div className="flex items-center justify-between mb-1">
                         <div
                           className="flex items-center gap-2 cursor-pointer flex-1"
                           onClick={() =>
-                            setExpandedSections((prev) => ({ ...prev, [section.label]: !expanded }))
+                            setExpandedSections((prev) => ({ ...prev, [section.id]: !expanded }))
                           }
                         >
                           <SectionIcon
@@ -1836,10 +2019,12 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
                                       return;
                                     }
                                     withGlobalIncidentsConsent(layer.id, !active, () => {
-                                      setActiveLayers((prev: ActiveLayers) => ({
-                                        ...prev,
-                                        [layer.id]: !active,
-                                      }));
+                                      withGtRiskLeanWarning(layer.id, !active, () => {
+                                        setActiveLayers((prev: ActiveLayers) => ({
+                                          ...prev,
+                                          [layer.id]: !active,
+                                        }));
+                                      });
                                     });
                                   }}
                                 >
@@ -2024,6 +2209,31 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
                                       ))}
                                     </div>
                                   )}
+                                {active && layer.id === 'sigint_meshtastic' && (
+                                  <div
+                                    className="ml-7 mt-2 flex flex-col gap-1.5"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={scanMeshtasticPlanet}
+                                      disabled={meshtasticScanning}
+                                      className="inline-flex items-center gap-1.5 self-start px-2 py-1 text-[10px] font-mono tracking-wider border border-cyan-500/40 text-cyan-400 hover:bg-cyan-950/30 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                                      title="Re-fetch all Meshtastic node positions from the global map API"
+                                    >
+                                      <RefreshCw
+                                        size={11}
+                                        className={meshtasticScanning ? 'animate-spin' : ''}
+                                      />
+                                      {meshtasticScanning ? 'SCANNING…' : 'SCAN PLANET'}
+                                    </button>
+                                    {meshtasticScanMessage ? (
+                                      <span className="text-[10px] font-mono text-cyan-500/80 leading-snug">
+                                        {meshtasticScanMessage}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                )}
                                 {/* GIBS Imagery inline controls */}
                                 {active &&
                                   layer.id === 'gibs_imagery' &&
@@ -2289,6 +2499,23 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
             setLiveuamapPendingEnable(null);
           }
         })();
+      }}
+    />
+    <ConfirmDialog
+      open={gtLeanModalOpen}
+      title={t('gtLean.title')}
+      message={gtLeanWarning || t('gtLean.message')}
+      confirmLabel={t('gtLean.confirm')}
+      cancelLabel={t('gtLean.cancel')}
+      danger={false}
+      onCancel={() => {
+        setGtLeanModalOpen(false);
+        setGtLeanPendingEnable(null);
+      }}
+      onConfirm={() => {
+        gtLeanPendingEnable?.();
+        setGtLeanModalOpen(false);
+        setGtLeanPendingEnable(null);
       }}
     />
     </>

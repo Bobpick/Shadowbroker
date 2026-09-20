@@ -53,12 +53,15 @@ READ_COMMANDS = frozenset({
     "get_telemetry",
     "get_slow_telemetry",
     "get_summary",
+    "get_fetch_health",
     "get_report",
     "get_layer_slice",
     "find_flights",
     "find_ships",
     "find_entity",
     "correlate_entity",
+    "get_entity_trail",
+    "get_entity_profile",
     "brief_area",
     "what_changed",
     "search_telemetry",
@@ -744,6 +747,10 @@ def _dispatch_command(cmd: str, args: dict[str, Any]) -> dict[str, Any]:
         summary = get_telemetry_summary()
         return {"ok": True, "data": summary, "version": summary.get("version")}
 
+    if cmd == "get_fetch_health":
+        from services.fetch_health import get_agent_health_snapshot
+        return {"ok": True, "data": get_agent_health_snapshot()}
+
     if cmd == "get_layer_slice":
         from services.telemetry import get_layer_slice
         layers = args.get("layers") or []
@@ -840,6 +847,62 @@ def _dispatch_command(cmd: str, args: dict[str, Any]) -> dict[str, Any]:
                     compact["lookup"]["best_match"] = _compact_result_entry(compact["lookup"]["best_match"])
             if isinstance(compact.get("entity"), dict):
                 compact["entity"] = _compact_result_entry(compact["entity"])
+            return {"ok": True, "data": compact, "format": "compressed_v1"}
+        return {"ok": True, "data": result}
+
+    if cmd == "get_entity_trail":
+        from services.entity_trail import get_entity_trail
+
+        result = get_entity_trail(
+            query=str(args.get("query", "") or ""),
+            entity_type=str(args.get("entity_type", "") or args.get("type", "") or ""),
+            callsign=str(args.get("callsign", "") or ""),
+            registration=str(args.get("registration", "") or args.get("tail_number", "") or ""),
+            icao24=str(args.get("icao24", "") or ""),
+            mmsi=str(args.get("mmsi", "") or ""),
+            imo=str(args.get("imo", "") or ""),
+            name=str(args.get("name", "") or ""),
+            owner=str(args.get("owner", "") or args.get("operator", "") or ""),
+            max_points=args.get("max_points", 80),
+            include_datalink=bool(args.get("include_datalink", True)),
+        )
+        if _wants_compact(args):
+            compact = dict(result)
+            if isinstance(compact.get("entity"), dict):
+                compact["entity"] = _compact_result_entry(compact["entity"])
+            return {"ok": True, "data": compact, "format": "compressed_v1"}
+        return {"ok": True, "data": result}
+
+    if cmd == "get_entity_profile":
+        from services.entity_profile import get_entity_profile
+
+        result = get_entity_profile(
+            query=str(args.get("query", "") or ""),
+            entity_type=str(args.get("entity_type", "") or args.get("type", "") or ""),
+            callsign=str(args.get("callsign", "") or ""),
+            registration=str(args.get("registration", "") or args.get("tail_number", "") or ""),
+            icao24=str(args.get("icao24", "") or ""),
+            mmsi=str(args.get("mmsi", "") or ""),
+            imo=str(args.get("imo", "") or ""),
+            name=str(args.get("name", "") or ""),
+            owner=str(args.get("owner", "") or args.get("operator", "") or ""),
+            max_trail_points=args.get("max_trail_points", args.get("max_points", 80)),
+            include_datalink=bool(args.get("include_datalink", True)),
+            include_datalink_messages=bool(args.get("include_datalink_messages", False)),
+            datalink_message_limit=args.get("datalink_message_limit", 8),
+            include_news=bool(args.get("include_news", True)),
+            news_limit=args.get("news_limit", 5),
+            context_radius_km=args.get("context_radius_km", 120),
+            include_nearby_context=bool(args.get("include_nearby_context", True)),
+        )
+        if _wants_compact(args):
+            compact = dict(result)
+            if isinstance(compact.get("identity"), dict):
+                compact["identity"] = _compact_result_entry(compact["identity"])
+            if isinstance(compact.get("position"), dict):
+                compact["position"] = _compact_result_entry(compact["position"])
+            if isinstance(compact.get("related_news"), dict):
+                compact["related_news"] = _compact_query_result(compact["related_news"])
             return {"ok": True, "data": compact, "format": "compressed_v1"}
         return {"ok": True, "data": result}
 
@@ -1299,7 +1362,9 @@ def _dispatch_command(cmd: str, args: dict[str, Any]) -> dict[str, Any]:
         if not layer or not items:
             return {"ok": False, "detail": "layer and items required"}
         from services.ai_intel_store import inject_layer_data
-        result = inject_layer_data(layer, items)
+        result = inject_layer_data(layer, items, mode=args.get("mode", "append"))
+        if not result.get("ok"):
+            return result
         return {"ok": True, "data": result}
 
     if cmd == "create_layer":

@@ -75,6 +75,7 @@ function sourceLangLabel(post: TelegramOsintPost): string {
     ru: 'Russian',
     en: 'English',
     ar: 'Arabic',
+    fa: 'Persian',
     he: 'Hebrew',
     'zh-cn': 'Chinese',
     fr: 'French',

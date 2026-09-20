@@ -962,6 +962,10 @@ export interface DashboardData {
   satellite_source?: string;
   financial_source?: string;
   cctv_total?: number;
+  /** World/continental sampling metadata from /api/live-data/fast (P5). */
+  payload_scale?: 'world' | 'continental' | 'regional';
+  payload_sampled?: boolean;
+  layer_totals?: Record<string, number>;
   satnogs_total?: number;
   tinygs_total?: number;
   bootstrap_ready?: boolean;
@@ -1552,7 +1556,7 @@ export interface MaplibreViewerProps {
   activeFilters?: Record<string, string[]>;
   effects?: MapEffects;
   onEntityClick: (entity: SelectedEntity | null) => void;
-  flyToLocation: { lat: number; lng: number; zoom?: number; ts?: number } | null;
+  flyToLocation: { lat: number; lng: number; zoom?: number; bounds?: [number, number, number, number]; ts?: number } | null;
   selectedEntity: SelectedEntity | null;
   onMouseCoords: (coords: { lat: number; lng: number }) => void;
   onRightClick: (coords: { lat: number; lng: number }) => void;

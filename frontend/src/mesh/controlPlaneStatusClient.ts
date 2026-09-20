@@ -15,6 +15,8 @@ export interface RnsStatusSnapshot {
 
 export interface InfonetBootstrapSnapshot {
   node_mode?: string;
+  bootstrap_state?: string;
+  bootstrap_detail?: string;
   manifest_loaded?: boolean;
   manifest_signer_id?: string;
   manifest_valid_until?: number;
@@ -32,6 +34,8 @@ export interface InfonetBootstrapSnapshot {
     skipped?: boolean;
     reason?: string;
     detail?: string;
+    retrying?: boolean;
+    tried_seed_count?: number;
     peer_count?: number;
     merged_peer_count?: number;
     seed_peer_url?: string;

@@ -210,6 +210,7 @@ docs/*
 !docs/Mesh.md
 !docs/install/
 !docs/install/**
+!docs/contributor-map.md
 !docs/mesh/
 docs/mesh/*
 !docs/mesh/threat-model.md

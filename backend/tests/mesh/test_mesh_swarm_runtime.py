@@ -16,6 +16,7 @@ from services.mesh.mesh_swarm_runtime import (
     merge_manifest_into_peer_store,
     peer_registry_enabled,
     publish_registry_manifest,
+    refresh_swarm_manifest_from_seeds,
     record_peer_announcement,
 )
 
@@ -178,6 +179,30 @@ def test_parse_bootstrap_manifest_dict_rejects_expired():
             signer_public_key_b64=signer["public_key_b64"],
             now=time.time(),
         )
+
+
+def test_refresh_swarm_manifest_reports_retrying_when_all_seeds_unreachable(monkeypatch):
+    from services.config import get_settings
+
+    monkeypatch.setenv("MESH_BOOTSTRAP_SIGNER_PUBLIC_KEY", "ul1d0kj/ODPIp0OhHzX8eLAVXzJ3CVvzW1vn2IC6q3I=")
+    monkeypatch.setenv(
+        "MESH_BOOTSTRAP_SEED_PEERS",
+        "http://seed-a.onion:8000,http://seed-b.onion:8000",
+    )
+    monkeypatch.setattr(
+        "services.mesh.mesh_swarm_runtime.fetch_remote_bootstrap_manifest",
+        lambda *_args, **_kwargs: None,
+    )
+    get_settings.cache_clear()
+    try:
+        result = refresh_swarm_manifest_from_seeds(force=True, now=1_750_000_000)
+    finally:
+        get_settings.cache_clear()
+
+    assert result["ok"] is False
+    assert result["retrying"] is True
+    assert result["tried_seed_count"] == 2
+    assert result["detail"] == "bootstrap seeds unreachable; local node will retry"
 
 
 @pytest.mark.asyncio

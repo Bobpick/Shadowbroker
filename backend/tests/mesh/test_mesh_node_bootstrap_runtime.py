@@ -479,4 +479,4 @@ def test_meshnode_scripts_enable_private_hashchain_runtime():
         assert "MESH_INFONET_ALLOW_CLEARNET_SYNC=false" in script
         assert "MESH_ARTI_ENABLED=true" in script
         assert "MESH_DM_HASHCHAIN_SPOOL_LIMIT=2" in script
-        assert "gqpbunqbgtkcqilvclm3xrkt3zowjyl3s62kkktvojgvxzizamvbrqid.onion:8000" in script
+        assert "sb-testnet fleet defaults" in script
