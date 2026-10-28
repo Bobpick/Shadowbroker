@@ -224,6 +224,19 @@
     "derivedOsint": "衍生 OSINT（战略风险）",
     "derivedOsintSource": "实验功能 · 默认关闭"
   },
+  "flockHud": {
+    "title": "FLOCK 摄像头",
+    "dragHint": "拖动移动",
+    "collapse": "收起面板",
+    "expand": "展开面板",
+    "on": "开",
+    "off": "关",
+    "show": "在地图上显示 Flock 摄像头",
+    "hide": "隐藏 Flock 摄像头",
+    "disabled": "图层关闭 — 点开即可绘制 Flock Safety ALPR（OSM / DeFlock）。",
+    "inView": "本视图 {n} · 目录 {total}",
+    "more": "视图中还有 +{n} — 缩放或平移地图"
+  },
   "gtHud": {
     "title": "博弈论分析",
     "dragHint": "拖动移动",

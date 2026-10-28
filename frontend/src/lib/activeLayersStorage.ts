@@ -43,7 +43,7 @@ export const DEFAULT_ACTIVE_LAYERS: ActiveLayers = {
   air_quality: true,
   // Infrastructure — military bases + internet outages only
   cctv: false,
-  cctv_flock: false,
+  cctv_flock: true,
   datacenters: false,
   internet_outages: true,
   power_plants: false,

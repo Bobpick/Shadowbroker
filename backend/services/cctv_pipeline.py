@@ -1,3 +1,5 @@
+import gzip
+import json
 import os
 import sqlite3
 import requests
@@ -1046,81 +1048,83 @@ def is_flock_camera(cam: Dict[str, Any]) -> bool:
 
 
 class OSMFlockCameraIngestor(BaseCCTVIngestor):
-    """Flock Safety camera locations from OpenStreetMap (DeFlock tagging).
+    """Flock Safety camera locations from the public DeFlock/OSM bulk feed.
 
-    Locations only — Flock units have no public media URL.
+    Overpass is 406/blocked from many hosts; the hourly GeoJSON dump is the
+    reliable path. Locations only — no public media URL.
     """
 
-    URL = "https://overpass-api.de/api/interpreter"
-    QUERY = """
-[out:json][timeout:60];
-(
-  node["manufacturer"="Flock Safety"];
-  node["brand"="Flock Safety"];
-  node["operator"="Flock Safety"];
-  node["manufacturer"="Flock"];
-  way["manufacturer"="Flock Safety"];
-  way["brand"="Flock Safety"];
-);
-out center;
-""".strip()
+    FEED_URL = "https://data.dontgetflocked.com/cameras.geojson.gz"
 
     def fetch_data(self) -> List[Dict[str, Any]]:
-        query = quote(self.QUERY, safe="")
         resp = fetch_with_curl(
-            f"{self.URL}?data={query}",
-            timeout=70,
-            headers={"Accept": "application/json"},
+            self.FEED_URL,
+            timeout=90,
+            headers={"Accept": "application/json, application/gzip, */*"},
+            follow_redirects=True,
         )
         if not resp or resp.status_code != 200:
             logger.warning(
-                "OSM Flock camera fetch failed: HTTP %s",
+                "Flock camera feed failed: HTTP %s",
                 resp.status_code if resp else "no response",
             )
             return []
-        data = resp.json()
+        payload = self._parse_feed_payload(getattr(resp, "content", b"") or b"", getattr(resp, "text", "") or "")
         cameras = []
-        for item in data.get("elements", []) if isinstance(data, dict) else []:
-            lat = item.get("lat")
-            lon = item.get("lon")
-            if lat is None or lon is None:
-                center = item.get("center") if isinstance(item.get("center"), dict) else {}
-                lat = center.get("lat")
-                lon = center.get("lon")
-            if lat is None or lon is None:
+        for feat in payload.get("features") or []:
+            if not isinstance(feat, dict):
+                continue
+            geom = feat.get("geometry") if isinstance(feat.get("geometry"), dict) else {}
+            coords = geom.get("coordinates") if geom.get("type") == "Point" else None
+            if not (isinstance(coords, (list, tuple)) and len(coords) >= 2):
                 continue
             try:
-                lat, lon = float(lat), float(lon)
-            except (ValueError, TypeError):
+                lon, lat = float(coords[0]), float(coords[1])
+            except (TypeError, ValueError):
                 continue
-            tags = item.get("tags", {}) if isinstance(item.get("tags"), dict) else {}
+            props = feat.get("properties") if isinstance(feat.get("properties"), dict) else {}
+            blob = " ".join(
+                str(props.get(k) or "")
+                for k in ("brand", "manufacturer", "operator", "name")
+            ).lower()
+            if "flock" not in blob:
+                continue
+            osm_id = props.get("osmId") or props.get("id") or f"{lat:.5f},{lon:.5f}"
             operator = (
-                tags.get("operator")
-                or tags.get("brand")
-                or tags.get("manufacturer")
+                props.get("operator")
+                or props.get("brand")
+                or props.get("manufacturer")
                 or "Flock Safety"
             )
-            description = tags.get("name") or tags.get("description") or "Flock Safety ALPR"
-            direction = (
-                tags.get("camera:direction")
-                or tags.get("direction")
-                or tags.get("surveillance:direction")
-                or "Unknown"
-            )
+            direction = props.get("direction") or props.get("camera:direction") or "Unknown"
             cameras.append(
                 {
-                    "id": f"FLOCK-{item.get('id')}",
+                    "id": f"FLOCK-{osm_id}",
                     "source_agency": str(operator)[:60],
                     "lat": lat,
                     "lon": lon,
-                    "direction_facing": f"Flock: {str(description)[:100]} ({str(direction)[:30]})",
+                    "direction_facing": f"Flock: {str(props.get('brand') or 'Flock Safety')[:80]} ({direction})",
                     "media_url": "",
                     "media_type": "none",
                     "refresh_rate_seconds": 0,
                 }
             )
-        logger.info("OSM Flock ingestor found %d cameras", len(cameras))
+        logger.info("Flock camera feed parsed %d cameras", len(cameras))
         return cameras
+
+    @staticmethod
+    def _parse_feed_payload(content: bytes, text: str) -> dict:
+        raw = content or b""
+        if raw[:2] == b"\x1f\x8b":
+            raw = gzip.decompress(raw)
+            text = raw.decode("utf-8", errors="replace")
+        elif not text.strip().startswith("{"):
+            try:
+                text = gzip.decompress(raw).decode("utf-8", errors="replace")
+            except Exception:
+                text = text or raw.decode("utf-8", errors="replace")
+        data = json.loads(text or "{}")
+        return data if isinstance(data, dict) else {}
 
 
 # ---------------------------------------------------------------------------

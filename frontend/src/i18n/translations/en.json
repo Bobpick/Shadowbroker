@@ -231,6 +231,19 @@
     "collapse": "Collapse panel",
     "expand": "Expand panel"
   },
+  "flockHud": {
+    "title": "FLOCK CAMERAS",
+    "dragHint": "drag to move",
+    "collapse": "Collapse panel",
+    "expand": "Expand panel",
+    "on": "ON",
+    "off": "OFF",
+    "show": "Show Flock cameras on the map",
+    "hide": "Hide Flock cameras",
+    "disabled": "Layer off — tap ON to plot Flock Safety ALPRs (OSM / DeFlock).",
+    "inView": "{n} in this view · {total} catalogued",
+    "more": "+{n} more in view — zoom or pan the map"
+  },
   "strategicAnalysis": {
     "title": "NASH / DETERRENCE",
     "counts": "{n} flashpoints · {fragile} fragile · {unstable} unstable Nash",

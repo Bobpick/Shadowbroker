@@ -70,14 +70,22 @@ export function getLiveDataBounds(): LiveDataBounds | null {
 /** Stable cache key for the active bbox-scoped fetch window (1° quantization,
  *  matching appendLiveDataBoundsParams / backend ETag). Returns null when
  *  world-scale fetching is active. */
+function quantizeBounds(b: LiveDataBounds): LiveDataBounds {
+  const qFloor = (n: number) => Math.floor(n * 100) / 100;
+  const qCeil = (n: number) => Math.ceil(n * 100) / 100;
+  return {
+    south: qFloor(b.south),
+    west: qFloor(b.west),
+    north: qCeil(b.north),
+    east: qCeil(b.east),
+  };
+}
+
 export function liveDataBoundsKey(): string | null {
   const b = _current;
   if (!b) return null;
-  const s = Math.floor(b.south);
-  const w = Math.floor(b.west);
-  const n = Math.ceil(b.north);
-  const e = Math.ceil(b.east);
-  return `${s},${w},${n},${e}`;
+  const q = quantizeBounds(b);
+  return `${q.south.toFixed(2)},${q.west.toFixed(2)},${q.north.toFixed(2)},${q.east.toFixed(2)}`;
 }
 
 /** Append `s/w/n/e` query params to a URL when bounds are set, otherwise
@@ -87,11 +95,6 @@ export function appendLiveDataBoundsParams(url: string): string {
   const b = _current;
   if (!b) return url;
   const sep = url.includes('?') ? '&' : '?';
-  // Match backend ETag quantization (1° floor/ceil) so the client and
-  // server agree on which bounds round to the same cache key.
-  const s = Math.floor(b.south);
-  const w = Math.floor(b.west);
-  const n = Math.ceil(b.north);
-  const e = Math.ceil(b.east);
-  return `${url}${sep}s=${s}&w=${w}&n=${n}&e=${e}`;
+  const q = quantizeBounds(b);
+  return `${url}${sep}s=${q.south.toFixed(2)}&w=${q.west.toFixed(2)}&n=${q.north.toFixed(2)}&e=${q.east.toFixed(2)}`;
 }

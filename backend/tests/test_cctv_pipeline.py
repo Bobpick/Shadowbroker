@@ -1,5 +1,6 @@
 """Regression tests for CCTV ingestion and persistence."""
 
+import json
 import threading
 
 from services import cctv_pipeline
@@ -77,6 +78,35 @@ def test_ingest_updates_existing_rows_in_persistent_data_dir(tmp_path, monkeypat
     assert len(cameras) == 1
     assert cameras[0]["media_url"] == "https://example.com/live.m3u8"
     assert cameras[0]["media_type"] == "hls"
+
+
+def test_flock_ingestor_parses_geojson_feed(monkeypatch):
+    payload = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [-84.39, 33.75]},
+                "properties": {"osmId": 1, "brand": "Flock Safety", "operator": "APD", "direction": 90},
+            },
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [-73.9, 40.7]},
+                "properties": {"osmId": 2, "brand": "Motorola Solutions"},
+            },
+        ],
+    }
+
+    class FakeResp:
+        status_code = 200
+        text = json.dumps(payload)
+        content = text.encode()
+
+    monkeypatch.setattr(cctv_pipeline, "fetch_with_curl", lambda *a, **k: FakeResp())
+    cams = cctv_pipeline.OSMFlockCameraIngestor().fetch_data()
+    assert len(cams) == 1
+    assert cams[0]["id"] == "FLOCK-1"
+    assert cams[0]["lat"] == 33.75
 
 
 def test_is_flock_camera_detects_prefix_and_tags():

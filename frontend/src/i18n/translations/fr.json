@@ -224,6 +224,19 @@
     "derivedOsint": "OSINT dérivé (risque stratégique)",
     "derivedOsintSource": "Expérimental · désactivé par défaut"
   },
+  "flockHud": {
+    "title": "CAMÉRAS FLOCK",
+    "dragHint": "glisser pour déplacer",
+    "collapse": "Réduire le panneau",
+    "expand": "Agrandir le panneau",
+    "on": "ON",
+    "off": "OFF",
+    "show": "Afficher les caméras Flock sur la carte",
+    "hide": "Masquer les caméras Flock",
+    "disabled": "Couche désactivée — tapez ON pour tracer les ALPR Flock Safety (OSM / DeFlock).",
+    "inView": "{n} dans cette vue · {total} au catalogue",
+    "more": "+{n} de plus dans la vue — zoomez ou déplacez la carte"
+  },
   "gtHud": {
     "title": "ANALYTIQUE THÉORIE DES JEUX",
     "dragHint": "glisser pour déplacer",

@@ -25,6 +25,7 @@ import ShodanPanel from '@/components/ShodanPanel';
 import ReconPanel from '@/components/ReconPanel';
 import ScmPanel from '@/components/ScmPanel';
 import GtAnalyticsHud from '@/components/GtAnalyticsHud';
+import FlockCamerasHud from '@/components/FlockCamerasHud';
 import CyberThreatPanel from '@/components/CyberThreatPanel';
 import EntityGraphPanel from '@/components/EntityGraphPanel';
 import { isEntityGraphEligible } from '@/lib/entityGraph';
@@ -547,7 +548,6 @@ export default function Dashboard() {
     return {
       ...activeLayers,
       cctv: false,
-      cctv_flock: false,
       sar: false,
       gibs_imagery: false,
       highres_satellite: false,
@@ -1085,6 +1085,16 @@ export default function Dashboard() {
             layerEnabled={activeLayers.gt_risk}
             onFlyTo={handleFlyTo}
             onSelectEntity={setSelectedEntity}
+          />
+        )}
+
+        {uiVisible && (
+          <FlockCamerasHud
+            layerEnabled={activeLayers.cctv_flock}
+            onToggle={(enabled) =>
+              setActiveLayers((prev) => ({ ...prev, cctv_flock: enabled }))
+            }
+            onFlyTo={(lat, lng) => setFlyToLocation({ lat, lng, zoom: 16, ts: Date.now() })}
           />
         )}
 

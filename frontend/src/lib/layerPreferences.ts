@@ -70,7 +70,7 @@ export function getDefaultActiveLayers(): ActiveLayers {
     volcanoes: true,
     air_quality: true,
     cctv: false,
-    cctv_flock: false,
+    cctv_flock: true,
     datacenters: false,
     internet_outages: true,
     power_plants: false,

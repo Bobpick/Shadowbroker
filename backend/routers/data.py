@@ -144,6 +144,19 @@ def _current_etag(prefix: str = "") -> str:
     return f"{prefix}v{get_data_version()}-l{get_active_layers_version()}"
 
 
+def _ensure_cctv_store(layers: dict) -> None:
+    """Load SQLite cameras into the live store the first time a CCTV layer is on."""
+    if not (layers.get("cctv") or layers.get("cctv_flock")):
+        return
+    from services.fetchers._store import latest_data
+
+    if latest_data.get("cctv"):
+        return
+    from services.fetchers.infrastructure import fetch_cctv
+
+    fetch_cctv()
+
+
 def _cctv_for_active_layers(cameras: list, layers: dict) -> list:
     """Traffic CCTV and Flock Safety pins are independent toggles."""
     want_cctv = bool(layers.get("cctv"))
@@ -196,8 +209,10 @@ def _has_full_bbox(s, w, n, e) -> bool:
 
 
 def _bbox_etag_suffix(s, w, n, e) -> str:
-    """Bbox no longer scopes payloads — keep a single world ETag cache key."""
-    return ""
+    """Scope the live-data byte cache per viewport so Flock pins follow the map."""
+    if not _has_full_bbox(s, w, n, e):
+        return "|world"
+    return f"|{round(float(s), 3)},{round(float(w), 3)},{round(float(n), 3)},{round(float(e), 3)}"
 
 
 def _apply_bbox_to_payload(payload: dict, heavy_keys: tuple[str, ...],
@@ -400,6 +415,32 @@ def _cap_fast_dashboard_payload(payload: dict, *, s=None, w=None, n=None, e=None
     else:
         payload["payload_scale"] = "regional"
     return payload
+
+
+def _limit_flock_cameras(cameras: list, s=None, w=None, n=None, e=None) -> list:
+    """Keep traffic cams; when the map sends a viewport, return every Flock pin in it."""
+    if not cameras:
+        return []
+    from services.cctv_pipeline import is_flock_camera
+
+    other = [c for c in cameras if not is_flock_camera(c)]
+    flock = [c for c in cameras if is_flock_camera(c)]
+    if not _has_full_bbox(s, w, n, e):
+        return other + flock
+    pad_lat = max(0.05, abs(float(n) - float(s)) * 0.25)
+    pad_lng = max(0.05, abs(float(e) - float(w)) * 0.25)
+    south, north = float(s) - pad_lat, float(n) + pad_lat
+    west, east = float(w) - pad_lng, float(e) + pad_lng
+    in_box = []
+    for cam in flock:
+        try:
+            lat = float(cam.get("lat"))
+            lon = float(cam.get("lon"))
+        except (TypeError, ValueError):
+            continue
+        if south <= lat <= north and west <= lon <= east:
+            in_box.append(cam)
+    return other + in_box
 
 
 def _filter_sigint_by_layers(items: list, active_layers: dict) -> list:
@@ -999,6 +1040,7 @@ async def live_data_fast(
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
     from services.fetchers._store import (active_layers, get_latest_data_subset_refs, get_source_timestamps_snapshot)
+    _ensure_cctv_store(active_layers)
     d = get_latest_data_subset_refs(
         "last_updated", "commercial_flights", "military_flights", "private_flights",
         "private_jets", "tracked_flights", "ships", "cctv", "uavs", "liveuamap",
@@ -1018,7 +1060,10 @@ async def live_data_fast(
         "private_jets": (d.get("private_jets") or []) if active_layers.get("jets", True) else [],
         "tracked_flights": (d.get("tracked_flights") or []) if active_layers.get("tracked", True) else [],
         "ships": (d.get("ships") or []) if ships_enabled else [],
-        "cctv": _cctv_for_active_layers(d.get("cctv") or [], active_layers),
+        "cctv": _limit_flock_cameras(
+            _cctv_for_active_layers(d.get("cctv") or [], active_layers),
+            s=s, w=w, n=n, e=e,
+        ),
         "uavs": (d.get("uavs") or []) if active_layers.get("military", True) else [],
         "liveuamap": (
             _fresh_liveuamap_incidents(d.get("liveuamap") or [])
@@ -1035,15 +1080,13 @@ async def live_data_fast(
         "trains": (d.get("trains") or []) if active_layers.get("trains", True) else [],
         "freshness": freshness,
     }
+    # Bbox first so Flock sampling uses cameras actually in view.
+    if _has_full_bbox(s, w, n, e):
+        payload = _apply_bbox_to_payload(payload, _FAST_BBOX_HEAVY_KEYS, s, w, n, e)
     if initial:
         payload = _cap_fast_startup_payload(payload)
     else:
-        payload = _cap_fast_dashboard_payload(payload)
-    # Issue #288: bbox filter heavy/dense layers only when all four bounds
-    # are supplied. Without bounds, behaviour is byte-for-byte identical
-    # to the pre-#288 implementation.
-    if _has_full_bbox(s, w, n, e):
-        payload = _apply_bbox_to_payload(payload, _FAST_BBOX_HEAVY_KEYS, s, w, n, e)
+        payload = _cap_fast_dashboard_payload(payload, s=s, w=w, n=n, e=e)
     return await _cached_json_response(
         etag, payload, extra_headers={"X-SB-Mode": "snapshot"}
     )

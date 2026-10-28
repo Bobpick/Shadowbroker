@@ -51,7 +51,7 @@ describe('viewport privacy helper', () => {
 
   it('liveDataBoundsKey matches quantized fetch params and clears for world view', () => {
     setLiveDataBounds({ south: 33.6, west: -84.5, north: 33.8, east: -84.2 });
-    expect(liveDataBoundsKey()).toBe('33,-85,34,-84');
+    expect(liveDataBoundsKey()).toBe('33.60,-84.50,33.80,-84.20');
 
     setLiveDataBounds(null);
     expect(liveDataBoundsKey()).toBeNull();
