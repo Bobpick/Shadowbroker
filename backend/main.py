@@ -8690,12 +8690,28 @@ async def cctv_media_proxy(request: Request, url: str = Query(...)):
 
 
 @app.get("/api/health", response_model=HealthResponse)
-@limiter.limit("30/minute")
+@limiter.limit("120/minute")
 async def health_check(request: Request):
     import time
-    from services.fetchers._store import get_source_timestamps_snapshot
+    from services.fetchers._store import (
+        get_latest_data_subset_refs,
+        get_source_timestamps_snapshot,
+    )
 
-    d = get_latest_data()
+    d = get_latest_data_subset_refs(
+        "last_updated",
+        "commercial_flights",
+        "military_flights",
+        "ships",
+        "satellites",
+        "earthquakes",
+        "cctv",
+        "news",
+        "uavs",
+        "firms_fires",
+        "liveuamap",
+        "gdelt",
+    )
     last = d.get("last_updated")
     return {
         "status": "ok",
@@ -9102,6 +9118,13 @@ class ShodanHostRequest(BaseModel):
 @limiter.limit("30/minute")
 async def api_get_keys(request: Request):
     return get_api_keys()
+
+
+@app.get("/api/map/basemap")
+@limiter.limit("60/minute")
+async def api_map_basemap(request: Request):
+    """Public tile templates for the dashboard basemap (CARTO key or Esri fallback)."""
+    return get_basemap_config()
 
 
 @app.get("/api/settings/api-keys/meta")

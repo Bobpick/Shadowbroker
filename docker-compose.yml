@@ -10,6 +10,9 @@ services:
   backend:
     image: ghcr.io/bigbodycobain/shadowbroker-backend:latest
     container_name: shadowbroker-backend
+    # Allow chown of Desktop SITREP exports to HOST_UID so Snap Firefox can open them
+    cap_add:
+      - CHOWN
     ports:
       - "${BIND:-127.0.0.1}:${BACKEND_PORT:-3050}:8000"
     environment:
@@ -141,8 +144,12 @@ services:
       # Nash/Deterrence + delta reports (empty NASH/DELTA flags follow GT_ANALYTICS_ENABLED)
       - NASH_DETERRENCE_ENABLED=${NASH_DETERRENCE_ENABLED:-}
       - NASH_BLOC_LADDER_ENABLED=${NASH_BLOC_LADDER_ENABLED:-}
+      - TZ=${TZ:-America/Los_Angeles}
       - DELTA_REPORT_ENABLED=${DELTA_REPORT_ENABLED:-}
-      - DELTA_REPORT_INTERVAL_HOURS=${DELTA_REPORT_INTERVAL_HOURS:-6}
+      - DELTA_REPORT_INTERVAL_HOURS=${DELTA_REPORT_INTERVAL_HOURS:-24}
+      - DELTA_REPORT_HOUR=${DELTA_REPORT_HOUR:-6}
+      - DELTA_REPORT_MINUTE=${DELTA_REPORT_MINUTE:-45}
+      - DELTA_REPORT_TZ=${DELTA_REPORT_TZ:-${TZ:-America/Los_Angeles}}
       - DELTA_REPORT_GT_THRESHOLD=${DELTA_REPORT_GT_THRESHOLD:-0.08}
       - DELTA_REPORT_WEBHOOK_URL=${DELTA_REPORT_WEBHOOK_URL:-}
       - DELTA_REPORT_SMTP_HOST=${DELTA_REPORT_SMTP_HOST:-}
@@ -171,9 +178,9 @@ services:
       - ${DELTA_REPORT_DESKTOP_DIR:-${HOME}/Desktop/Daily_Inspiration}:/export/daily_inspiration
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/ping"]
       interval: 15s
-      timeout: 10s
+      timeout: 3s
       retries: 5
       start_period: 60s
     deploy:

@@ -285,6 +285,25 @@ export function buildCorrelationsGeoJSON(alerts?: CorrelationAlert[]): FC {
 
 // ─── CCTV Cameras ──────────────────────────────────────────────────────────
 
+export function isFlockCamera(c: Pick<CCTVCamera, 'id' | 'source_agency' | 'direction_facing'>): boolean {
+  if (String(c.id || '').startsWith('FLOCK-')) return true;
+  const blob = `${c.source_agency || ''} ${c.direction_facing || ''}`.toLowerCase();
+  return blob.includes('flock');
+}
+
+export function filterCctvCameras(
+  cameras: CCTVCamera[] | undefined,
+  layers: Pick<ActiveLayers, 'cctv' | 'cctv_flock'>,
+): CCTVCamera[] | undefined {
+  if (!cameras?.length) return cameras;
+  const wantCctv = !!layers.cctv;
+  const wantFlock = !!layers.cctv_flock;
+  if (!wantCctv && !wantFlock) return [];
+  if (wantCctv && wantFlock) return cameras;
+  if (wantFlock) return cameras.filter(isFlockCamera);
+  return cameras.filter((c) => !isFlockCamera(c));
+}
+
 export function buildCctvGeoJSON(cameras?: CCTVCamera[], inView?: InViewFilter): FC {
   if (!cameras?.length) return null;
   return {
@@ -296,6 +315,7 @@ export function buildCctvGeoJSON(cameras?: CCTVCamera[], inView?: InViewFilter):
         properties: {
           id: c.id || i,
           type: 'cctv',
+          flock: isFlockCamera(c),
           name: c.direction_facing || 'Camera',
           source_agency: c.source_agency || 'Unknown',
           media_url: c.media_url || '',

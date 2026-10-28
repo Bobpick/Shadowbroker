@@ -3,6 +3,7 @@
 import {
   buildAirQualityGeoJSON,
   buildCctvGeoJSON,
+  filterCctvCameras,
   buildDataCentersGeoJSON,
   buildFirmsGeoJSON,
   buildFishingActivityGeoJSON,
@@ -104,6 +105,7 @@ export type StaticMapLayersBuildPayload = {
   bounds: BoundsTuple;
   activeLayers: {
     cctv: boolean;
+    cctv_flock: boolean;
     kiwisdr: boolean;
     psk_reporter: boolean;
     satnogs: boolean;
@@ -186,7 +188,10 @@ function buildStaticLayers(payload: StaticMapLayersBuildPayload): StaticMapLayer
   const inView = createInView(payload.bounds);
 
   return {
-    cctvGeoJSON: payload.activeLayers.cctv ? buildCctvGeoJSON(staticData.cctv, inView) : null,
+    cctvGeoJSON:
+      payload.activeLayers.cctv || payload.activeLayers.cctv_flock
+        ? buildCctvGeoJSON(filterCctvCameras(staticData.cctv, payload.activeLayers), inView)
+        : null,
     kiwisdrGeoJSON: payload.activeLayers.kiwisdr ? buildKiwisdrGeoJSON(staticData.kiwisdr, inView) : null,
     pskReporterGeoJSON: payload.activeLayers.psk_reporter
       ? buildPskReporterGeoJSON(staticData.pskReporter, inView)

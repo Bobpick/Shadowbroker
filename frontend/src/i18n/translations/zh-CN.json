@@ -185,6 +185,7 @@
     "airQuality": "空气质量",
     "infrastructure": "基础设施",
     "cctv": "监控摄像头",
+    "flockCameras": "Flock 摄像头",
     "datacenters": "数据中心",
     "internetOutages": "互联网中断",
     "powerPlants": "发电厂",

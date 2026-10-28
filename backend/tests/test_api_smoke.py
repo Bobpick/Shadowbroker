@@ -6,6 +6,11 @@ import pytest
 
 
 class TestHealthEndpoint:
+    def test_ping_returns_ok_without_payload(self, client):
+        r = client.get("/api/ping")
+        assert r.status_code == 200
+        assert r.json() == {"ok": True}
+
     def test_health_returns_200(self, client):
         r = client.get("/api/health")
         assert r.status_code == 200

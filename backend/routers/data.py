@@ -144,6 +144,21 @@ def _current_etag(prefix: str = "") -> str:
     return f"{prefix}v{get_data_version()}-l{get_active_layers_version()}"
 
 
+def _cctv_for_active_layers(cameras: list, layers: dict) -> list:
+    """Traffic CCTV and Flock Safety pins are independent toggles."""
+    want_cctv = bool(layers.get("cctv"))
+    want_flock = bool(layers.get("cctv_flock"))
+    if not cameras or (not want_cctv and not want_flock):
+        return []
+    if want_cctv and want_flock:
+        return cameras
+    from services.cctv_pipeline import is_flock_camera
+
+    if want_flock:
+        return [c for c in cameras if is_flock_camera(c)]
+    return [c for c in cameras if not is_flock_camera(c)]
+
+
 # ── Issue #288: viewport-aware payloads ─────────────────────────────────────
 # Heavy, density-driven, time-sensitive layers that benefit from bbox
 # filtering. Light reference layers (datacenters, military_bases,
@@ -246,6 +261,19 @@ def _cached_live_data_bytes(etag: str, build_payload_fn: Callable[[], dict]) -> 
         while len(_LIVE_DATA_BYTES_CACHE) > _LIVE_DATA_BYTES_CACHE_MAX:
             _LIVE_DATA_BYTES_CACHE.popitem(last=False)
     return body
+
+
+async def _cached_json_response(
+    etag: str,
+    payload: dict,
+    extra_headers: dict[str, str] | None = None,
+) -> Response:
+    """Serialize off the event loop so health/ping stay responsive."""
+    body = await asyncio.to_thread(_cached_live_data_bytes, etag, lambda: payload)
+    headers = {"ETag": etag, "Cache-Control": "no-cache"}
+    if extra_headers:
+        headers.update(extra_headers)
+    return Response(content=body, media_type="application/json", headers=headers)
 
 
 def _item_lng(item: dict, lng_key: str = "lng"):
@@ -698,14 +726,8 @@ async def live_data(request: Request):
         return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
     from services.fetchers._store import get_latest_data_refs_snapshot
 
-    def _build() -> dict:
-        return get_latest_data_refs_snapshot()
-
-    return Response(
-        content=_cached_live_data_bytes(etag, _build),
-        media_type="application/json",
-        headers={"ETag": etag, "Cache-Control": "no-cache"},
-    )
+    payload = get_latest_data_refs_snapshot()
+    return await _cached_json_response(etag, payload)
 
 
 @router.get("/api/bootstrap/critical")
@@ -721,7 +743,7 @@ async def bootstrap_critical(request: Request):
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
     from services.fetchers._store import (
-        effective_layers,
+        active_layers,
         get_latest_data_subset_refs,
         get_source_timestamps_snapshot,
     )
@@ -801,11 +823,7 @@ async def bootstrap_critical(request: Request):
         "bootstrap_ready": True,
         "bootstrap_payload": True,
     }
-    return Response(
-        content=_cached_live_data_bytes(etag, _build),
-        media_type="application/json",
-        headers={"ETag": etag, "Cache-Control": "no-cache"},
-    )
+    return await _cached_json_response(etag, payload)
 
 
 _DELTA_FAST_KEYS: tuple[str, ...] = (
@@ -902,7 +920,7 @@ def _try_build_fast_delta(
         if client_ver is not None and int(client_ver) >= server_ver:
             continue
         if key == "cctv":
-            full_layers[key] = (d.get("cctv") or []) if active_layers.get("cctv", True) else []
+            full_layers[key] = _cctv_for_active_layers(d.get("cctv") or [], active_layers)
         elif key == "uavs":
             full_layers[key] = (d.get("uavs") or []) if active_layers.get("military", True) else []
         elif key == "liveuamap":
@@ -973,11 +991,8 @@ async def live_data_fast(
                 and request.headers.get("if-none-match") == etag
             ):
                 return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "no-cache"})
-            body = _live_data_json_bytes(delta_payload)
-            return Response(
-                content=body,
-                media_type="application/json",
-                headers={"ETag": etag, "Cache-Control": "no-cache", "X-SB-Mode": "delta"},
+            return await _cached_json_response(
+                etag, delta_payload, extra_headers={"X-SB-Mode": "delta"}
             )
 
     etag = _current_etag(prefix=("fast|initial|" if initial else "fast|full|") + bbox_suffix.lstrip("|") + ("|" if bbox_suffix else ""))
@@ -1003,7 +1018,7 @@ async def live_data_fast(
         "private_jets": (d.get("private_jets") or []) if active_layers.get("jets", True) else [],
         "tracked_flights": (d.get("tracked_flights") or []) if active_layers.get("tracked", True) else [],
         "ships": (d.get("ships") or []) if ships_enabled else [],
-        "cctv": (d.get("cctv") or []) if active_layers.get("cctv", True) else [],
+        "cctv": _cctv_for_active_layers(d.get("cctv") or [], active_layers),
         "uavs": (d.get("uavs") or []) if active_layers.get("military", True) else [],
         "liveuamap": (
             _fresh_liveuamap_incidents(d.get("liveuamap") or [])
@@ -1029,10 +1044,8 @@ async def live_data_fast(
     # to the pre-#288 implementation.
     if _has_full_bbox(s, w, n, e):
         payload = _apply_bbox_to_payload(payload, _FAST_BBOX_HEAVY_KEYS, s, w, n, e)
-    return Response(
-        content=_cached_live_data_bytes(etag, _build),
-        media_type="application/json",
-        headers={"ETag": etag, "Cache-Control": "no-cache", "X-SB-Mode": "snapshot"},
+    return await _cached_json_response(
+        etag, payload, extra_headers={"X-SB-Mode": "snapshot"}
     )
 
 
@@ -1164,11 +1177,7 @@ async def live_data_slow(
     # hides the infrastructure overlay the operator already has on screen.
     if _has_full_bbox(s, w, n, e):
         payload = _apply_bbox_to_payload(payload, _SLOW_BBOX_HEAVY_KEYS, s, w, n, e)
-    return Response(
-        content=_cached_live_data_bytes(etag, _build),
-        media_type="application/json",
-        headers={"ETag": etag, "Cache-Control": "no-cache"},
-    )
+    return await _cached_json_response(etag, payload)
 
 
 # ── Satellite Overflight Counting ───────────────────────────────────────────

@@ -79,17 +79,31 @@ def test_ingest_updates_existing_rows_in_persistent_data_dir(tmp_path, monkeypat
     assert cameras[0]["media_type"] == "hls"
 
 
+def test_is_flock_camera_detects_prefix_and_tags():
+    assert cctv_pipeline.is_flock_camera({"id": "FLOCK-12", "source_agency": "x"})
+    assert cctv_pipeline.is_flock_camera(
+        {"id": "ALPR-9", "source_agency": "Flock Safety", "direction_facing": "ALPR"}
+    )
+    assert cctv_pipeline.is_flock_camera(
+        {"id": "ALPR-9", "source_agency": "Unknown", "direction_facing": "Flock: pole cam"}
+    )
+    assert not cctv_pipeline.is_flock_camera(
+        {"id": "NYC-1", "source_agency": "NYCDOT", "direction_facing": "North"}
+    )
+
+
 def test_scheduled_cctv_ingestors_include_asfinag_and_alpr():
     names = {ing.__class__.__name__ for ing, _ in cctv_pipeline.scheduled_cctv_ingestors()}
     assert "AsfinagIngestor" in names
     assert "OSMALPRCameraIngestor" in names
+    assert "OSMFlockCameraIngestor" in names
     assert "OSMTrafficCameraIngestor" in names
     assert "Ontario511Ingestor" in names
     assert "Alberta511Ingestor" in names
     assert "Florida511Ingestor" in names
     assert "AustraliaLiveTrafficIngestor" in names
     assert "NetherlandsRWSIngestor" in names
-    assert len(names) == 21
+    assert len(names) == 22
 
 
 def test_fetch_traveliq_v2_cameras_parses_views(monkeypatch):

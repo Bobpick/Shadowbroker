@@ -1031,6 +1031,98 @@ out body;
         return cameras
 
 
+def is_flock_camera(cam: Dict[str, Any]) -> bool:
+    """True for Flock Safety ALPR pins (OSM DeFlock tags, no public stream)."""
+    cam_id = str(cam.get("id") or "")
+    if cam_id.startswith("FLOCK-"):
+        return True
+    blob = " ".join(
+        (
+            str(cam.get("source_agency") or ""),
+            str(cam.get("direction_facing") or ""),
+        )
+    ).lower()
+    return "flock" in blob
+
+
+class OSMFlockCameraIngestor(BaseCCTVIngestor):
+    """Flock Safety camera locations from OpenStreetMap (DeFlock tagging).
+
+    Locations only — Flock units have no public media URL.
+    """
+
+    URL = "https://overpass-api.de/api/interpreter"
+    QUERY = """
+[out:json][timeout:60];
+(
+  node["manufacturer"="Flock Safety"];
+  node["brand"="Flock Safety"];
+  node["operator"="Flock Safety"];
+  node["manufacturer"="Flock"];
+  way["manufacturer"="Flock Safety"];
+  way["brand"="Flock Safety"];
+);
+out center;
+""".strip()
+
+    def fetch_data(self) -> List[Dict[str, Any]]:
+        query = quote(self.QUERY, safe="")
+        resp = fetch_with_curl(
+            f"{self.URL}?data={query}",
+            timeout=70,
+            headers={"Accept": "application/json"},
+        )
+        if not resp or resp.status_code != 200:
+            logger.warning(
+                "OSM Flock camera fetch failed: HTTP %s",
+                resp.status_code if resp else "no response",
+            )
+            return []
+        data = resp.json()
+        cameras = []
+        for item in data.get("elements", []) if isinstance(data, dict) else []:
+            lat = item.get("lat")
+            lon = item.get("lon")
+            if lat is None or lon is None:
+                center = item.get("center") if isinstance(item.get("center"), dict) else {}
+                lat = center.get("lat")
+                lon = center.get("lon")
+            if lat is None or lon is None:
+                continue
+            try:
+                lat, lon = float(lat), float(lon)
+            except (ValueError, TypeError):
+                continue
+            tags = item.get("tags", {}) if isinstance(item.get("tags"), dict) else {}
+            operator = (
+                tags.get("operator")
+                or tags.get("brand")
+                or tags.get("manufacturer")
+                or "Flock Safety"
+            )
+            description = tags.get("name") or tags.get("description") or "Flock Safety ALPR"
+            direction = (
+                tags.get("camera:direction")
+                or tags.get("direction")
+                or tags.get("surveillance:direction")
+                or "Unknown"
+            )
+            cameras.append(
+                {
+                    "id": f"FLOCK-{item.get('id')}",
+                    "source_agency": str(operator)[:60],
+                    "lat": lat,
+                    "lon": lon,
+                    "direction_facing": f"Flock: {str(description)[:100]} ({str(direction)[:30]})",
+                    "media_url": "",
+                    "media_type": "none",
+                    "refresh_rate_seconds": 0,
+                }
+            )
+        logger.info("OSM Flock ingestor found %d cameras", len(cameras))
+        return cameras
+
+
 # ---------------------------------------------------------------------------
 # DGT Spain — National Road Cameras
 # ---------------------------------------------------------------------------
@@ -1431,6 +1523,7 @@ def scheduled_cctv_ingestors() -> List[tuple["BaseCCTVIngestor", str]]:
         (OSMTrafficCameraIngestor(), "cctv_osm"),
         (AsfinagIngestor(), "cctv_asfinag"),
         (OSMALPRCameraIngestor(), "cctv_osm_alpr"),
+        (OSMFlockCameraIngestor(), "cctv_osm_flock"),
         (Ontario511Ingestor(), "cctv_on511"),
         (Alberta511Ingestor(), "cctv_ab511"),
         (Florida511Ingestor(), "cctv_fl511"),

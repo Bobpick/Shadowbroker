@@ -24,6 +24,7 @@ const allShipLayers: ActiveLayers = {
   satellites: true,
   earthquakes: true,
   cctv: false,
+  cctv_flock: false,
   ukraine_frontline: true,
   global_incidents: true,
   firms_fires: true,

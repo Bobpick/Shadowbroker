@@ -9,8 +9,8 @@ services:
       # Other participants (e.g. Pete) are discovered via signed manifest pull.
       MESH_ARTI_ENABLED: "true"
       MESH_ARTI_SOCKS_PORT: "9050"
-      MESH_SYNC_TIMEOUT_S: "45"
-      MESH_RELAY_PUSH_TIMEOUT_S: "45"
+      MESH_SYNC_TIMEOUT_S: "5"
+      MESH_RELAY_PUSH_TIMEOUT_S: "5"
       MESH_SYNC_MAX_PEERS_PER_CYCLE: "5"
       MESH_INFONET_ALLOW_CLEARNET_SYNC: "false"
       MESH_PUBLIC_PEER_URL: ""
@@ -26,6 +26,25 @@ services:
       MESH_PEER_PUSH_SECRET: "b7GoqsvoUD9MV7tyt0ZOzMptLA84QG6KCfaV9nDqz5Y"
       # Dev fleet: allow wormhole child agent to start without release attestation.
       PRIVACY_CORE_DEV_OVERRIDE: "true"
+    command:
+      [
+        "uvicorn",
+        "main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--timeout-keep-alive",
+        "15",
+        "--limit-concurrency",
+        "40",
+      ]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/ping"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 90s
 
   frontend:
     build:

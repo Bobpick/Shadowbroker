@@ -185,6 +185,7 @@
     "airQuality": "Air Quality",
     "infrastructure": "Infrastructure",
     "cctv": "CCTV",
+    "flockCameras": "Flock Cameras",
     "datacenters": "Datacenters",
     "internetOutages": "Internet Outages",
     "powerPlants": "Power Plants",

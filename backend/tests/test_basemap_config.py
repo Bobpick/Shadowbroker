@@ -24,14 +24,20 @@ def client(tmp_path, monkeypatch):
 def test_unconfigured_when_env_unset(client):
     r = client.get("/api/basemap-config")
     assert r.status_code == 200
-    assert r.json() == {"carto": {"configured": False, "key": ""}}
+    body = r.json()
+    assert body["carto"] == {"configured": False, "key": ""}
+    assert body["provider"] == "esri"
+    assert "arcgisonline.com" in body["dark_tiles"][0]
 
 
 def test_returns_trimmed_key_without_admin_auth(client, monkeypatch):
     monkeypatch.setenv("CARTO_API_KEY", "  carto-test-key  ")
     r = client.get("/api/basemap-config")
     assert r.status_code == 200
-    assert r.json() == {"carto": {"configured": True, "key": "carto-test-key"}}
+    body = r.json()
+    assert body["carto"] == {"configured": True, "key": "carto-test-key"}
+    assert body["provider"] == "carto"
+    assert "key=carto-test-key" in body["dark_tiles"][0]
 
 
 def test_reads_persisted_operator_key_file(client, tmp_path):

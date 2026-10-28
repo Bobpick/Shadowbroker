@@ -63,6 +63,20 @@ describe('layer backend reconciliation', () => {
     expect(fetchMock.mock.calls.every((call) => call[1]?.method !== 'POST')).toBe(true);
   });
 
+  it('stops probing after GET /api/layers is not allowed (older backends)', async () => {
+    const prefs = await import('@/lib/layerPreferences');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 405,
+      json: async () => ({ detail: 'Method Not Allowed' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(prefs.reconcileActiveLayersWithBackend()).resolves.toBe('offline');
+    await expect(prefs.reconcileActiveLayersWithBackend()).resolves.toBe('offline');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('retries saved state after an observed backend outage', async () => {
     const prefs = await import('@/lib/layerPreferences');
     const desired = { ...prefs.getDefaultActiveLayers(), cctv: true };

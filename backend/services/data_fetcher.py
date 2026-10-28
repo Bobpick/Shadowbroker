@@ -1070,16 +1070,22 @@ def start_scheduler():
                 id="gt_rolling_startup_auto_label",
                 max_instances=1,
             )
-            # Strategic delta reports (GT + Nash) — every DELTA_REPORT_INTERVAL_HOURS (default 6)
+            # Strategic delta / threat-matrix SITREP — once daily morning (default 06:45 local)
             try:
                 from analytics.delta_report import (
                     delta_report_enabled,
+                    delta_report_hour,
                     delta_report_interval_hours,
+                    delta_report_minute,
+                    delta_report_tz_name,
                     maybe_run_scheduled_delta_report,
                 )
 
                 if delta_report_enabled():
                     hours = delta_report_interval_hours()
+                    hour = delta_report_hour()
+                    minute = delta_report_minute()
+                    tz_name = delta_report_tz_name()
 
                     def _run_delta_report() -> None:
                         try:
@@ -1100,27 +1106,60 @@ def start_scheduler():
                         except Exception as exc:  # noqa: BLE001
                             logger.error("Delta report job failed: %s", exc)
 
-                    # First file ~15 min after startup (feeds warm), then every N hours
-                    _scheduler.add_job(
-                        _run_delta_report,
-                        "date",
-                        run_date=datetime.utcnow() + timedelta(minutes=15),
-                        id="gt_delta_report_startup",
-                        max_instances=1,
-                    )
-                    _scheduler.add_job(
-                        _run_delta_report,
-                        "interval",
-                        hours=hours,
-                        id="gt_delta_report",
-                        max_instances=1,
-                        misfire_grace_time=3600,
-                        next_run_time=datetime.utcnow() + timedelta(hours=hours),
-                    )
-                    logger.info(
-                        "Delta report scheduler registered: first in 15m, then every %sh",
-                        hours,
-                    )
+                    cron_kwargs: dict = {
+                        "hour": hour,
+                        "minute": minute,
+                        "id": "gt_delta_report",
+                        "max_instances": 1,
+                        # Allow late fire if backend was down at the exact minute
+                        "misfire_grace_time": 3600,
+                    }
+                    if tz_name:
+                        cron_kwargs["timezone"] = tz_name
+
+                    if hours >= 24:
+                        # Catch-up once after startup if no report yet today (feeds warm)
+                        _scheduler.add_job(
+                            _run_delta_report,
+                            "date",
+                            run_date=datetime.utcnow() + timedelta(minutes=15),
+                            id="gt_delta_report_startup",
+                            max_instances=1,
+                        )
+                        _scheduler.add_job(
+                            _run_delta_report,
+                            "cron",
+                            **cron_kwargs,
+                        )
+                        logger.info(
+                            "Delta report scheduler registered: daily at %02d:%02d %s "
+                            "(once per local day; catch-up 15m after startup if needed)",
+                            hour,
+                            minute,
+                            tz_name or "local",
+                        )
+                    else:
+                        # Legacy multi-run-per-day mode when INTERVAL_HOURS < 24
+                        _scheduler.add_job(
+                            _run_delta_report,
+                            "date",
+                            run_date=datetime.utcnow() + timedelta(minutes=15),
+                            id="gt_delta_report_startup",
+                            max_instances=1,
+                        )
+                        _scheduler.add_job(
+                            _run_delta_report,
+                            "interval",
+                            hours=hours,
+                            id="gt_delta_report",
+                            max_instances=1,
+                            misfire_grace_time=3600,
+                            next_run_time=datetime.utcnow() + timedelta(hours=hours),
+                        )
+                        logger.info(
+                            "Delta report scheduler registered: first in 15m, then every %sh",
+                            hours,
+                        )
             except Exception as exc:
                 logger.warning("Delta report scheduler not registered: %s", exc)
     except Exception as exc:
@@ -1145,7 +1184,7 @@ def start_scheduler():
     def _run_cctv_ingest_cycle():
         from services.fetchers._store import is_any_active
 
-        if not is_any_active("cctv"):
+        if not is_any_active("cctv", "cctv_flock"):
             return
         for ingestor, name in _cctv_ingestors:
             _run_task_with_health(ingestor.ingest, name)

@@ -1482,6 +1482,7 @@ export interface ActiveLayers {
   ships_tracked_yachts: boolean;
   earthquakes: boolean;
   cctv: boolean;
+  cctv_flock: boolean;
   ukraine_frontline: boolean;
   global_incidents: boolean;
   day_night: boolean;

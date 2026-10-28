@@ -508,11 +508,6 @@ export function useDataPolling() {
         void fetchFastData();
       }, 2500);
     };
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        wakeLiveData();
-      }
-    };
 
     const onWindowFocus = () => {
       wakeLiveData();

@@ -368,13 +368,20 @@ export default function Dashboard() {
     let cancelled = false;
     const pollOverrides = () =>
       fetch(`${API_BASE}/api/layers`)
-        .then((r) => r.json())
+        .then((r) => {
+          if (r.status === 404 || r.status === 405) {
+            clearInterval(id);
+            return null;
+          }
+          if (!r.ok) return null;
+          return r.json();
+        })
         .then((d) => {
-          if (!cancelled) setLayerOverrides(d?.overrides ?? {});
+          if (!cancelled && d) setLayerOverrides(d?.overrides ?? {});
         })
         .catch(() => {});
-    void pollOverrides();
     const id = setInterval(pollOverrides, 5000);
+    void pollOverrides();
     return () => {
       cancelled = true;
       clearInterval(id);
@@ -540,6 +547,7 @@ export default function Dashboard() {
     return {
       ...activeLayers,
       cctv: false,
+      cctv_flock: false,
       sar: false,
       gibs_imagery: false,
       highres_satellite: false,

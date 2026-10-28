@@ -419,10 +419,40 @@ def get_api_keys():
 
 
 def get_basemap_config() -> dict:
-    """Public config for the browser map: the CARTO key (or empty when unset)."""
+    """Public config for the browser map.
+
+    CARTO tiles without ``?key=`` are watermarked 'API KEY REQUIRED'. When the
+    key is unset, return Esri canvas templates so the dashboard stays usable.
+    """
     load_persisted_api_keys_into_environ()
-    key = os.environ.get("CARTO_API_KEY", "").strip()
-    return {"carto": {"configured": bool(key), "key": key}}
+    key = str(os.environ.get("CARTO_API_KEY") or "").strip()
+    carto = {"configured": bool(key), "key": key}
+    if key:
+        q = f"?key={key}"
+        return {
+            "carto": carto,
+            "provider": "carto",
+            "dark_tiles": [
+                f"https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{{z}}/{{x}}/{{y}}@2x.png{q}"
+                for s in "abcd"
+            ],
+            "light_tiles": [
+                f"https://{s}.basemaps.cartocdn.com/rastertiles/light_all/{{z}}/{{x}}/{{y}}@2x.png{q}"
+                for s in "abcd"
+            ],
+            "attribution": "© OpenStreetMap contributors, © CARTO",
+        }
+    return {
+        "carto": carto,
+        "provider": "esri",
+        "dark_tiles": [
+            "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        ],
+        "light_tiles": [
+            "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        ],
+        "attribution": "Esri, HERE, Garmin, © OpenStreetMap contributors",
+    }
 
 
 def save_api_keys(updates: dict[str, str]) -> dict:

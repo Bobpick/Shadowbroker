@@ -75,8 +75,14 @@ def _get_start_time() -> float:
     return _start_time_ref["value"]
 
 
+@router.get("/api/ping")
+async def ping():
+    """Liveness only — no store lock, no SLO, no rate limit. Docker healthcheck."""
+    return {"ok": True}
+
+
 @router.get("/api/health", response_model=HealthResponse)
-@limiter.limit("30/minute")
+@limiter.limit("120/minute")
 async def health_check(request: Request):
     from services.fetchers._store import get_source_timestamps_snapshot
     from services.slo import compute_all_statuses, summarise_statuses

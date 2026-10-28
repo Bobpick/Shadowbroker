@@ -1263,7 +1263,7 @@ const MaplibreViewer = ({
   const dynamicShips = shipsLayerEnabled ? data?.ships : undefined;
   const dynamicSigint = sigintLayerEnabled ? data?.sigint : undefined;
 
-  const staticCctv = activeLayers.cctv ? data?.cctv : undefined;
+  const staticCctv = activeLayers.cctv || activeLayers.cctv_flock ? data?.cctv : undefined;
   const staticKiwisdr = activeLayers.kiwisdr ? data?.kiwisdr : undefined;
   const staticPskReporter = activeLayers.psk_reporter ? data?.psk_reporter : undefined;
   const staticSatnogsStations = activeLayers.satnogs ? data?.satnogs_stations : undefined;
@@ -1468,6 +1468,7 @@ const MaplibreViewer = ({
       bounds: mapBounds,
       activeLayers: {
         cctv: activeLayers.cctv,
+        cctv_flock: activeLayers.cctv_flock,
         kiwisdr: activeLayers.kiwisdr,
         psk_reporter: activeLayers.psk_reporter,
         satnogs: activeLayers.satnogs,
@@ -1494,6 +1495,7 @@ const MaplibreViewer = ({
     [
       mapBounds,
       activeLayers.cctv,
+      activeLayers.cctv_flock,
       activeLayers.kiwisdr,
       activeLayers.psk_reporter,
       activeLayers.satnogs,
@@ -2147,7 +2149,9 @@ const MaplibreViewer = ({
           compact
           customAttribution={[
             '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>',
-            '<a href="https://carto.com/attribution" target="_blank" rel="noopener">CARTO</a>',
+            cartoApiKey
+              ? '<a href="https://carto.com/attribution" target="_blank" rel="noopener">CARTO</a>'
+              : '<a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a>',
             '<a href="https://adsb.lol" target="_blank" rel="noopener">adsb.lol (ODbL)</a>',
             '<a href="https://opensky-network.org" target="_blank" rel="noopener">OpenSky</a>',
             '<a href="https://celestrak.org" target="_blank" rel="noopener">CelesTrak</a>',
@@ -2808,7 +2812,7 @@ const MaplibreViewer = ({
             type="circle"
             filter={['!', ['has', 'point_count']]}
             paint={{
-              'circle-color': '#ffffff',
+              'circle-color': ['case', ['get', 'flock'], '#f59e0b', '#ffffff'],
               'circle-radius': ['interpolate', ['linear'], ['zoom'], 2, 2, 8, 4, 14, 6],
               'circle-opacity': 0.9,
               'circle-stroke-width': 1,

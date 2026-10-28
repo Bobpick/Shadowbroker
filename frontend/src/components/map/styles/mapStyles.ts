@@ -21,6 +21,17 @@ export const OSM_ATTRIBUTION_HTML =
   '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a>';
 export const CARTO_ATTRIBUTION_HTML =
   '<a href="https://carto.com/attribution" target="_blank" rel="noopener">CARTO</a>';
+export const ESRI_ATTRIBUTION_HTML =
+  '<a href="https://www.esri.com" target="_blank" rel="noopener">Esri</a>';
+
+const ESRI_CANVAS_TILES: Record<BasemapTheme, string[]> = {
+  dark: [
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+  ],
+  light: [
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+  ],
+};
 
 /** Tile URL templates for a CARTO raster style, keyed when a key is supplied. */
 export function cartoTileUrls(theme: BasemapTheme, cartoApiKey?: string | null): string[] {
@@ -33,6 +44,26 @@ export function cartoTileUrls(theme: BasemapTheme, cartoApiKey?: string | null):
 }
 
 export function buildBasemapStyle(theme: BasemapTheme, cartoApiKey?: string | null) {
+  const key = (cartoApiKey || '').trim();
+  if (!key) {
+    const sourceId = `esri-${theme}`;
+    return {
+      version: 8,
+      glyphs: GLYPHS_URL,
+      sources: {
+        [sourceId]: {
+          type: 'raster',
+          tiles: ESRI_CANVAS_TILES[theme],
+          tileSize: 256,
+          attribution: `${OSM_ATTRIBUTION_HTML} ${ESRI_ATTRIBUTION_HTML}`,
+        },
+      },
+      layers: [
+        { id: `${sourceId}-layer`, type: 'raster', source: sourceId, minzoom: 0, maxzoom: 22 },
+        { id: 'imagery-ceiling', type: 'background', paint: { 'background-opacity': 0 } },
+      ],
+    };
+  }
   const sourceId = `carto-${theme}`;
   return {
     version: 8,
@@ -40,7 +71,7 @@ export function buildBasemapStyle(theme: BasemapTheme, cartoApiKey?: string | nu
     sources: {
       [sourceId]: {
         type: 'raster',
-        tiles: cartoTileUrls(theme, cartoApiKey),
+        tiles: cartoTileUrls(theme, key),
         tileSize: 256,
         attribution: `${OSM_ATTRIBUTION_HTML} ${CARTO_ATTRIBUTION_HTML}`,
       },

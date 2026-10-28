@@ -19,6 +19,7 @@ _INSTANT_LAYER_KEYS: frozenset[str] = frozenset(
 _SLOW_LAYER_KEYS: frozenset[str] = frozenset(
     {
         "cctv",
+        "cctv_flock",
         "firms",
         "psk_reporter",
         "fishing_activity",
@@ -61,8 +62,12 @@ def _instant_fetch(key: str) -> None:
 
 
 def _slow_fetch(key: str) -> None:
-    if key == "cctv":
-        from services.cctv_pipeline import get_camera_count, run_all_ingestors
+    if key in {"cctv", "cctv_flock"}:
+        from services.cctv_pipeline import (
+            OSMFlockCameraIngestor,
+            get_camera_count,
+            run_all_ingestors,
+        )
         from services.fetchers.infrastructure import fetch_cctv
 
         # A fresh checkout can have an empty SQLite catalog even though the
@@ -71,6 +76,8 @@ def _slow_fetch(key: str) -> None:
         # later scheduler cycle happens to run.
         if get_camera_count() == 0:
             run_all_ingestors()
+        elif key == "cctv_flock":
+            OSMFlockCameraIngestor().ingest()
         fetch_cctv()
         logger.info("CCTV loaded (layer enabled)")
         return

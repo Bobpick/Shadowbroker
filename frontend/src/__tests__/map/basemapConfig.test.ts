@@ -24,15 +24,16 @@ const VIEWER_SRC = fs.readFileSync(
 );
 
 describe('buildBasemapStyle', () => {
-  it('produces unkeyed CARTO tile URLs when no key is given', () => {
+  it('uses Esri canvas tiles when no CARTO key is given (avoids API KEY REQUIRED watermark)', () => {
     const style = buildBasemapStyle('dark');
-    const source = style.sources['carto-dark'];
-    expect(source.tiles).toHaveLength(4);
-    for (const url of source.tiles) {
-      expect(url).toMatch(/^https:\/\/[abcd]\.basemaps\.cartocdn\.com\/rastertiles\/dark_all\//);
-      expect(url).not.toContain('?');
-    }
-    expect(style.layers[0]).toMatchObject({ id: 'carto-dark-layer', source: 'carto-dark' });
+    const source = style.sources['esri-dark'];
+    expect(source.tiles).toEqual([
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    ]);
+    expect(source.tiles[0]).not.toContain('cartocdn');
+    expect(style.layers[0]).toMatchObject({ id: 'esri-dark-layer', source: 'esri-dark' });
+    expect(source.attribution).toContain('Esri');
+    expect(source.attribution).not.toContain('carto.com/attribution');
   });
 
   it('appends ?key= to every tile URL when a key is given', () => {
@@ -52,22 +53,21 @@ describe('buildBasemapStyle', () => {
     expect(lightStyle).toEqual(buildBasemapStyle('light'));
   });
 
-  it('declares OpenStreetMap and CARTO attribution on the raster source, keyed or not', () => {
-    for (const style of [buildBasemapStyle('dark'), buildBasemapStyle('light', 'k')]) {
-      const source = Object.values(style.sources)[0];
-      expect(source.attribution).toContain('openstreetmap.org/copyright');
-      expect(source.attribution).toContain('carto.com/attribution');
-    }
+  it('declares CARTO attribution only when a key is present', () => {
+    const keyed = Object.values(buildBasemapStyle('light', 'k').sources)[0];
+    expect(keyed.attribution).toContain('openstreetmap.org/copyright');
+    expect(keyed.attribution).toContain('carto.com/attribution');
   });
 });
 
 describe('MaplibreViewer attribution and basemap gating', () => {
-  it('still renders the explicit AttributionControl with the same OSM/CARTO markup', () => {
+  it('still renders the explicit AttributionControl with OSM plus CARTO or Esri', () => {
     // attributionControl={false} only disables the default control; the
     // explicit child below it is the visible attribution and must survive.
     expect(VIEWER_SRC).toContain('<AttributionControl');
     expect(VIEWER_SRC).toContain(OSM_ATTRIBUTION_HTML);
     expect(VIEWER_SRC).toContain(CARTO_ATTRIBUTION_HTML);
+    expect(VIEWER_SRC).toContain('cartoApiKey');
   });
 
   it('gates the map on the bounded basemap config, not on an open-ended request', () => {

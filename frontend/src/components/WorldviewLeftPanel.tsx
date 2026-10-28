@@ -68,6 +68,7 @@ import {
   saveLayerSectionExpanded,
 } from '@/lib/layerPreferences';
 import { gtLeanLayerWarning, useRuntimeProfile } from '@/hooks/useRuntimeProfile';
+import { isFlockCamera } from '@/components/map/geoJSONBuilders';
 
 function relativeTime(iso: string | undefined): string {
   if (!iso) return '';
@@ -99,6 +100,7 @@ const FRESHNESS_MAP: Record<string, string> = {
   ukraine_frontline: 'frontlines',
   global_incidents: 'gdelt',
   cctv: 'cctv',
+  cctv_flock: 'cctv',
   gps_jamming: 'commercial_flights',
   kiwisdr: 'kiwisdr',
   psk_reporter: 'psk_reporter',
@@ -1101,7 +1103,9 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
     [meshtasticScanning, stopMeshtasticScanPoll],
   );
 
-  const cctvCount = Number(data?.cctv_total || data?.cctv?.length || 0);
+  const cctvItems = data?.cctv || [];
+  const flockCount = cctvItems.filter(isFlockCamera).length;
+  const cctvCount = Number(data?.cctv_total || cctvItems.length || 0);
   const satnogsCount = Number(data?.satnogs_total || data?.satnogs_stations?.length || 0);
   const tinygsCount = Number(data?.tinygs_total || data?.tinygs_satellites?.length || 0);
 
@@ -1414,6 +1418,13 @@ const WorldviewLeftPanel = React.memo(function WorldviewLeftPanel({
           name: t('layers.cctv'),
           source: 'CCTV Mesh + Street View',
           count: cctvCount,
+          icon: Cctv,
+        },
+        {
+          id: 'cctv_flock',
+          name: t('layers.flockCameras'),
+          source: 'OSM / DeFlock',
+          count: flockCount,
           icon: Cctv,
         },
         {

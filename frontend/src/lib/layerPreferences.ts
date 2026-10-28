@@ -62,9 +62,15 @@ export function getDefaultActiveLayers(): ActiveLayers {
     firms: false,
     ukraine_alerts: true,
     weather_alerts: true,
+    weather_radar: true,
+    weather_cloud: false,
+    weather_precip: false,
+    global_weather_hazards: true,
+    reddit_osint: true,
     volcanoes: true,
     air_quality: true,
     cctv: false,
+    cctv_flock: false,
     datacenters: false,
     internet_outages: true,
     power_plants: false,
@@ -97,6 +103,8 @@ const LAYER_BACKEND_SYNC_INTERVAL_MS = 5000;
 let layerBackendSyncTimer: number | null = null;
 let layerBackendSyncInFlight = false;
 let repairedDefaultBackendState = false;
+/** Older backends (e.g. 0.9.82) have POST /api/layers but not GET. */
+let layersGetUnsupported = false;
 
 function isBooleanRecord(value: unknown): value is Record<string, boolean> {
   if (!value || typeof value !== 'object') return false;
@@ -203,6 +211,7 @@ function emitLayerPreferencesChanged(layers: ActiveLayers): void {
  */
 export async function reconcileActiveLayersWithBackend(): Promise<'synced' | 'noop' | 'offline'> {
   if (typeof window === 'undefined' || typeof fetch !== 'function') return 'offline';
+  if (layersGetUnsupported) return 'offline';
   if (layerBackendSyncInFlight) return 'noop';
   layerBackendSyncInFlight = true;
 
@@ -211,6 +220,14 @@ export async function reconcileActiveLayersWithBackend(): Promise<'synced' | 'no
       headers: { Accept: 'application/json' },
       cache: 'no-store',
     });
+    if (response.status === 404 || response.status === 405) {
+      layersGetUnsupported = true;
+      if (layerBackendSyncTimer !== null) {
+        window.clearInterval(layerBackendSyncTimer);
+        layerBackendSyncTimer = null;
+      }
+      return 'offline';
+    }
     if (!response.ok) throw new Error(`layer state probe failed (${response.status})`);
 
     const payload: unknown = await response.json();

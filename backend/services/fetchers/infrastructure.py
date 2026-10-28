@@ -363,7 +363,7 @@ def fetch_power_plants():
 def fetch_cctv():
     from services.fetchers._store import is_any_active
 
-    if not is_any_active("cctv"):
+    if not is_any_active("cctv", "cctv_flock"):
         return
     try:
         from services.cctv_pipeline import get_all_cameras
